@@ -65,7 +65,19 @@ export type DailyTargets = {
 export type StoredMealLog = {
   id: string;
   text: string;
-  source: "text" | "image";
+  source: "text" | "image" | "quick_meal";
   result: CalorieResponse;
   createdAt: string;
+};
+
+
+export type QuickMeal = {
+  id: string;
+  title: string;
+  calories: number;
+  protein: number;
+  carbs: number;
+  fat: number;
+  createdAt: string;
+  updatedAt: string;
 };

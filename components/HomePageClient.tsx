@@ -1,14 +1,12 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
 import { AppHeaderNav } from "@/components/AppHeaderNav";
 import { NutritionAnalysisModal } from "@/components/NutritionAnalysisModal";
-import { ProfileGoalsModal } from "@/components/ProfileGoalsModal";
+import { QuickMealsModal } from "@/components/QuickMealsModal";
 import { Spinner } from "@/components/Spinner";
 import { STORAGE_KEYS, readJson, writeJson } from "@/lib/local-data";
-import { calculateDailyTargets } from "@/lib/nutrition";
-import { CalorieResponse, DailyTargets, ProfileInput, StoredMealLog } from "@/lib/types";
+import { CalorieResponse, DailyTargets, QuickMeal, StoredMealLog } from "@/lib/types";
 
 type MacroRowProps = {
   label: string;
@@ -16,16 +14,6 @@ type MacroRowProps = {
   value: number;
   target?: number;
   accent: string;
-};
-
-const defaultProfile: ProfileInput = {
-  heightCm: 170,
-  weightKg: 70,
-  waistCm: 80,
-  age: 30,
-  gender: "female",
-  activityLevel: "moderate",
-  goalText: "I want to improve body composition and feel more energetic."
 };
 
 function MacroProgressRow({ label, unit, value, target, accent }: MacroRowProps) {
@@ -54,18 +42,15 @@ function CameraIcon() {
 
 export function HomePageClient() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const searchParams = useSearchParams();
-  const router = useRouter();
 
-  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
-  const [profile, setProfile] = useState<ProfileInput>(defaultProfile);
   const [dailyTargets, setDailyTargets] = useState<DailyTargets | null>(null);
-
   const [mealDescription, setMealDescription] = useState("");
   const [isTextLoading, setIsTextLoading] = useState(false);
   const [isImageLoading, setIsImageLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [history, setHistory] = useState<StoredMealLog[]>([]);
+  const [quickMeals, setQuickMeals] = useState<QuickMeal[]>([]);
+  const [isQuickMealsOpen, setIsQuickMealsOpen] = useState(false);
 
   const [isAnalysisModalOpen, setIsAnalysisModalOpen] = useState(false);
   const [analysisStatus, setAnalysisStatus] = useState<"loading" | "success" | "error">("loading");
@@ -75,12 +60,12 @@ export function HomePageClient() {
 
   useEffect(() => {
     const savedMeals = readJson<StoredMealLog[]>(STORAGE_KEYS.meals);
-    const savedProfile = readJson<ProfileInput>(STORAGE_KEYS.profile);
     const savedTargets = readJson<DailyTargets>(STORAGE_KEYS.targets);
+    const savedQuickMeals = readJson<QuickMeal[]>(STORAGE_KEYS.quickMeals);
 
     if (savedMeals) setHistory(savedMeals);
-    if (savedProfile) setProfile(savedProfile);
     if (savedTargets) setDailyTargets(savedTargets);
+    if (savedQuickMeals) setQuickMeals(savedQuickMeals);
   }, []);
 
   useEffect(() => {
@@ -88,10 +73,8 @@ export function HomePageClient() {
   }, [history]);
 
   useEffect(() => {
-    if (!searchParams.get("openProfile")) return;
-    setIsProfileModalOpen(true);
-    router.replace("/");
-  }, [router, searchParams]);
+    writeJson(STORAGE_KEYS.quickMeals, quickMeals);
+  }, [quickMeals]);
 
   const consumed = useMemo(
     () =>
@@ -106,35 +89,6 @@ export function HomePageClient() {
       ),
     [history]
   );
-
-  async function handleSaveProfile(nextProfile: ProfileInput) {
-    setProfile(nextProfile);
-
-    try {
-      const response = await fetch("/api/targets", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ profile: nextProfile })
-      });
-
-      const payload = (await response.json()) as { data?: DailyTargets; error?: string };
-      if (!response.ok || !payload.data) {
-        throw new Error(payload.error ?? "Unable to calculate personalized goals right now.");
-      }
-
-      setDailyTargets(payload.data);
-      writeJson(STORAGE_KEYS.profile, nextProfile);
-      writeJson(STORAGE_KEYS.targets, payload.data);
-      setError(null);
-    } catch {
-      // Deterministic local fallback keeps the app usable even if API classification fails.
-      const fallback = calculateDailyTargets(nextProfile);
-      setDailyTargets(fallback);
-      writeJson(STORAGE_KEYS.profile, nextProfile);
-      writeJson(STORAGE_KEYS.targets, fallback);
-      setError("Using local fallback calculation. Add OPENAI_API_KEY for AI goal interpretation.");
-    }
-  }
 
   async function runAnalysis(requestFn: () => Promise<{ data?: CalorieResponse; error?: string; ok: boolean }>, meta: { text: string; source: "text" | "image" }) {
     setError(null);
@@ -190,6 +144,72 @@ export function HomePageClient() {
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
+  function handleAddQuickMealToDay(meal: QuickMeal) {
+    const quickMealResult: CalorieResponse = {
+      items: [
+        {
+          food: meal.title,
+          quantity: "Saved quick meal",
+          calories: meal.calories,
+          protein: meal.protein,
+          carbs: meal.carbs,
+          fat: meal.fat
+        }
+      ],
+      totals: {
+        calories: meal.calories,
+        protein: meal.protein,
+        carbs: meal.carbs,
+        fat: meal.fat
+      },
+      notes: "Added from Quick Meals."
+    };
+
+    setHistory((prev) => [
+      {
+        id: crypto.randomUUID(),
+        text: meal.title,
+        source: "quick_meal",
+        createdAt: new Date().toISOString(),
+        result: quickMealResult
+      },
+      ...prev
+    ]);
+
+    setIsQuickMealsOpen(false);
+  }
+
+  function handleCreateOrUpdateQuickMeal(
+    meal: Omit<QuickMeal, "id" | "createdAt" | "updatedAt">,
+    mealId?: string
+  ) {
+    if (mealId) {
+      setQuickMeals((prev) =>
+        prev.map((item) =>
+          item.id === mealId
+            ? { ...item, ...meal, updatedAt: new Date().toISOString() }
+            : item
+        )
+      );
+      return;
+    }
+
+    const now = new Date().toISOString();
+    setQuickMeals((prev) => [
+      {
+        id: crypto.randomUUID(),
+        ...meal,
+        createdAt: now,
+        updatedAt: now
+      },
+      ...prev
+    ]);
+  }
+
+  function handleDeleteQuickMeal(mealId: string) {
+    setQuickMeals((prev) => prev.filter((meal) => meal.id !== mealId));
+  }
+
   function handleAddMeal() {
     if (!analysisResult || !pendingMealMeta) return;
     setHistory((prev) => [{ id: crypto.randomUUID(), createdAt: new Date().toISOString(), ...pendingMealMeta, result: analysisResult }, ...prev]);
@@ -201,11 +221,18 @@ export function HomePageClient() {
 
   return (
     <>
-      <ProfileGoalsModal isOpen={isProfileModalOpen} initialProfile={profile} onClose={() => setIsProfileModalOpen(false)} onSave={handleSaveProfile} />
       <NutritionAnalysisModal isOpen={isAnalysisModalOpen} status={analysisStatus} result={analysisResult} errorMessage={analysisError} onClose={() => setIsAnalysisModalOpen(false)} onAddMeal={handleAddMeal} />
+      <QuickMealsModal
+        isOpen={isQuickMealsOpen}
+        quickMeals={quickMeals}
+        onClose={() => setIsQuickMealsOpen(false)}
+        onAddQuickMealToDay={handleAddQuickMealToDay}
+        onCreateOrUpdateQuickMeal={handleCreateOrUpdateQuickMeal}
+        onDeleteQuickMeal={handleDeleteQuickMeal}
+      />
 
       <main className="mx-auto w-full max-w-6xl space-y-6 px-4 py-8 md:px-8">
-        <AppHeaderNav onProfileClick={() => setIsProfileModalOpen(true)} />
+        <AppHeaderNav />
 
         <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
           <div className="grid gap-4 md:grid-cols-2">
@@ -230,7 +257,16 @@ export function HomePageClient() {
 
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <button type="button" onClick={() => fileInputRef.current?.click()} className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"><CameraIcon />Take Photo</button>
-              <button type="submit" disabled={isTextLoading} className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-500 px-5 py-3 text-sm font-semibold text-white hover:bg-emerald-400 disabled:opacity-60">{isTextLoading ? <Spinner /> : <BoltIcon />}Analyze Meal</button>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsQuickMealsOpen(true)}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  Quick Meals
+                </button>
+                <button type="submit" disabled={isTextLoading} className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-500 px-5 py-3 text-sm font-semibold text-white hover:bg-emerald-400 disabled:opacity-60">{isTextLoading ? <Spinner /> : <BoltIcon />}Analyze Meal</button>
+              </div>
             </div>
           </form>
 
@@ -244,7 +280,7 @@ export function HomePageClient() {
             <ul className="mt-4 space-y-3">
               {history.map((entry) => (
                 <li key={entry.id} className="rounded-xl border border-slate-200 p-4">
-                  <p className="text-xs uppercase tracking-wide text-slate-400">{entry.source === "image" ? "Photo meal" : "Text meal"} · {new Date(entry.createdAt).toLocaleDateString()}</p>
+                  <p className="text-xs uppercase tracking-wide text-slate-400">{entry.source === "image" ? "Photo meal" : entry.source === "quick_meal" ? "Quick meal" : "Text meal"} · {new Date(entry.createdAt).toLocaleDateString()}</p>
                   <p className="mt-1 text-sm text-slate-700">{entry.text}</p>
                   <p className="mt-1 text-xs text-slate-500">{entry.result.totals.calories} kcal • {entry.result.totals.protein}g protein • {entry.result.totals.carbs}g carbs • {entry.result.totals.fat}g fat</p>
                 </li>

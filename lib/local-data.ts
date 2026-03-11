@@ -3,7 +3,8 @@ import { DailyTargets, ProfileInput } from "@/lib/types";
 export const STORAGE_KEYS = {
   meals: "ai-calorie-coach-meals",
   profile: "ai-calorie-coach-profile",
-  targets: "ai-calorie-coach-targets"
+  targets: "ai-calorie-coach-targets",
+  quickMeals: "ai-calorie-coach-quick-meals"
 } as const;
 
 export function readJson<T>(key: string): T | null {

@@ -1,20 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
-
-type AppHeaderNavProps = {
-  onProfileClick?: () => void;
-};
+import { usePathname } from "next/navigation";
 
 const navItems = [
   { label: "Meals", href: "/" },
-  { label: "Insights", href: "/insights" }
+  { label: "Insights", href: "/insights" },
+  { label: "Profile", href: "/profile" }
 ];
 
-export function AppHeaderNav({ onProfileClick }: AppHeaderNavProps) {
+export function AppHeaderNav() {
   const pathname = usePathname();
-  const router = useRouter();
 
   return (
     <header className="sticky top-3 z-40 flex flex-col items-start justify-between gap-4 rounded-2xl bg-white/95 p-5 shadow-sm ring-1 ring-slate-200 backdrop-blur md:flex-row md:items-center">
@@ -43,24 +39,6 @@ export function AppHeaderNav({ onProfileClick }: AppHeaderNavProps) {
             </Link>
           );
         })}
-
-        <button
-          type="button"
-          onClick={() => {
-            if (onProfileClick) {
-              onProfileClick();
-              return;
-            }
-            router.push("/?openProfile=1");
-          }}
-          className={`rounded-xl border px-4 py-2 text-sm font-medium transition ${
-            pathname === "/profile"
-              ? "border-emerald-500 bg-emerald-50 text-emerald-700"
-              : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-          }`}
-        >
-          Profile
-        </button>
       </nav>
     </header>
   );
