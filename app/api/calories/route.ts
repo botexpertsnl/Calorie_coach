@@ -2,8 +2,6 @@ import { NextResponse } from "next/server";
 import OpenAI from "openai";
 import { CalorieResponse } from "@/lib/types";
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
 const systemPrompt = `You are a nutrition assistant. Given a meal description, estimate calories and macros.
 Return ONLY valid JSON with this exact shape:
 {
@@ -40,9 +38,19 @@ function isValid(data: CalorieResponse) {
   );
 }
 
+function getOpenAIClient() {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) return null;
+  return new OpenAI({ apiKey });
+}
+
 export async function POST(request: Request) {
-  if (!process.env.OPENAI_API_KEY) {
-    return NextResponse.json({ error: "OPENAI_API_KEY is not configured on the server." }, { status: 500 });
+  const openai = getOpenAIClient();
+  if (!openai) {
+    return NextResponse.json(
+      { error: "OPENAI_API_KEY is not configured on the server." },
+      { status: 500 }
+    );
   }
 
   try {

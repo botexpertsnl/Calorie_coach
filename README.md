@@ -81,3 +81,9 @@ The structure supports easy expansion to:
 - Import repo into Vercel.
 - Set `OPENAI_API_KEY` in Project Environment Variables.
 - Deploy.
+
+
+## Vercel deployment note
+
+This app now initializes the OpenAI client at **request time** inside the API handler.
+That means builds won't fail if `OPENAI_API_KEY` is missing during compile, but runtime API calls will return a clear error until you configure the variable in Vercel.
