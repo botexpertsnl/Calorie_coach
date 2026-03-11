@@ -7,8 +7,10 @@ Users set a personal profile and goal, get personalized daily calorie/macro targ
 
 - Profile setup: age, gender, height, weight, waist, activity level, and open goal text.
 - Personalized daily targets: calories, protein, carbs, fat.
+- Profile & Goals modal to configure body stats and instantly calculate macro targets.
 - Goal-aware targeting for fat loss, muscle gain, maintenance, or recomposition.
 - Natural-language meal parsing through OpenAI server route.
+- Photo capture/upload flow with image preview and server-side AI image analysis route.
 - Structured JSON results table with calories + macros per food item.
 - Top dashboard progress bars showing consumed vs target + percentage.
 - Error handling and loading state.
@@ -47,7 +49,8 @@ npm run dev
 - `components/ProfileForm.tsx`: personal profile input UI.
 - `components/ProgressBars.tsx`: progress widgets for calories/protein/carbs/fat.
 - `components/ResultsTable.tsx`: food-level nutrition table and macro totals.
-- `app/api/calories/route.ts`: server-side OpenAI call and JSON validation.
+- `app/api/calories/route.ts`: server-side OpenAI call and JSON validation for text input.
+- `app/api/analyze-image/route.ts`: server-side OpenAI image analysis for camera/upload photos.
 - `lib/nutrition.ts`: personalized target calculation engine (BMR/TDEE + goal heuristic).
 - `lib/types.ts`: shared app domain types.
 
