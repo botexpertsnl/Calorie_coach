@@ -14,6 +14,7 @@ Users set a personal profile and goal, get personalized daily calorie/macro targ
 - Nutrition Analysis popup modal with loading, result, and confirm-to-add meal flow.
 - Structured JSON nutrition table with calories + macros per food item.
 - Top dashboard progress bars showing consumed vs target + percentage.
+- Dedicated Insights page with timeline chart and date-range controls.
 - Error handling and loading state.
 
 ## Tech stack
@@ -46,9 +47,12 @@ npm run dev
 
 ## Architecture
 
-- `app/page.tsx`: dashboard composition and state.
+- `app/page.tsx`: meals dashboard composition and state.
+- `app/insights/page.tsx`: insights experience with timeline filters and chart.
 - `components/ProfileForm.tsx`: personal profile input UI.
 - `components/ProgressBars.tsx`: progress widgets for calories/protein/carbs/fat.
+- `components/AppHeaderNav.tsx`: reusable top navigation for Meals/Insights/Profile.
+- `components/InsightsLineChart.tsx`: reusable timeline line chart.
 - `components/ResultsTable.tsx`: food-level nutrition table and macro totals.
 - `app/api/calories/route.ts`: server-side OpenAI call and JSON validation for text input.
 - `app/api/analyze-image/route.ts`: server-side OpenAI image analysis for camera/upload photos.

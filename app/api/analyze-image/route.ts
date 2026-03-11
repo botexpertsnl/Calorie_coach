@@ -44,6 +44,11 @@ function getOpenAIClient() {
   return new OpenAI({ apiKey });
 }
 
+function parseJsonResponse(content: string): CalorieResponse {
+  const cleaned = content.trim().replace(/^```json\s*/i, "").replace(/```$/, "").trim();
+  return JSON.parse(cleaned) as CalorieResponse;
+}
+
 export async function POST(request: Request) {
   const openai = getOpenAIClient();
   if (!openai) {
@@ -62,30 +67,49 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Uploaded file must be an image." }, { status: 400 });
     }
 
+    const supportedMimeTypes = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+    if (!supportedMimeTypes.includes(image.type)) {
+      return NextResponse.json(
+        { error: "Unsupported image type. Please use JPG, PNG, WEBP, or GIF." },
+        { status: 400 }
+      );
+    }
+
+    const mimeType = image.type;
+
+    const maxSizeInBytes = 8 * 1024 * 1024;
+    if (image.size > maxSizeInBytes) {
+      return NextResponse.json(
+        { error: "Image is too large. Please upload an image under 8MB." },
+        { status: 400 }
+      );
+    }
+
     const buffer = Buffer.from(await image.arrayBuffer());
     const base64Image = buffer.toString("base64");
-    const dataUrl = `data:${image.type};base64,${base64Image}`;
+    const dataUrl = `data:${mimeType};base64,${base64Image}`;
 
-    const completion = await openai.chat.completions.create({
+    const response = await openai.responses.create({
       model: "gpt-4o-mini",
-      response_format: { type: "json_object" },
-      messages: [
-        { role: "system", content: systemPrompt },
+      input: [
+        {
+          role: "system",
+          content: [{ type: "input_text", text: systemPrompt }]
+        },
         {
           role: "user",
           content: [
-            { type: "text", text: "Analyze this meal photo and estimate nutrition." },
-            { type: "image_url", image_url: { url: dataUrl } }
+            { type: "input_text", text: "Analyze this meal photo and estimate nutrition." },
+            { type: "input_image", image_url: dataUrl, detail: "auto" }
           ]
         }
-      ],
-      temperature: 0.2
+      ]
     });
 
-    const content = completion.choices[0]?.message?.content;
-    if (!content) throw new Error("No content returned from OpenAI.");
+    const outputText = response.output_text;
+    if (!outputText) throw new Error("No content returned from OpenAI.");
 
-    const parsed = JSON.parse(content) as CalorieResponse;
+    const parsed = parseJsonResponse(outputText);
     if (!isValid(parsed)) throw new Error("AI returned an unexpected response shape.");
 
     return NextResponse.json({ data: parsed });
