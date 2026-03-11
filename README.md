@@ -11,7 +11,8 @@ Users set a personal profile and goal, get personalized daily calorie/macro targ
 - Goal-aware targeting for fat loss, muscle gain, maintenance, or recomposition.
 - Natural-language meal parsing through OpenAI server route.
 - Photo capture/upload flow with image preview and server-side AI image analysis route.
-- Structured JSON results table with calories + macros per food item.
+- Nutrition Analysis popup modal with loading, result, and confirm-to-add meal flow.
+- Structured JSON nutrition table with calories + macros per food item.
 - Top dashboard progress bars showing consumed vs target + percentage.
 - Error handling and loading state.
 

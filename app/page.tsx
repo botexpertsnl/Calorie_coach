@@ -2,8 +2,8 @@
 
 import Image from "next/image";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { NutritionAnalysisModal } from "@/components/NutritionAnalysisModal";
 import { ProfileGoalsModal } from "@/components/ProfileGoalsModal";
-import { ResultsTable } from "@/components/ResultsTable";
 import { Spinner } from "@/components/Spinner";
 import { calculateDailyTargets } from "@/lib/nutrition";
 import { CalorieResponse, DailyTargets, ProfileInput } from "@/lib/types";
@@ -78,12 +78,27 @@ export default function HomePage() {
   const [isTextLoading, setIsTextLoading] = useState(false);
   const [isImageLoading, setIsImageLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [latestResult, setLatestResult] = useState<CalorieResponse | null>(null);
+
   const [history, setHistory] = useState<MealLog[]>([]);
 
+  const [isAnalysisModalOpen, setIsAnalysisModalOpen] = useState(false);
+  const [analysisStatus, setAnalysisStatus] = useState<"loading" | "success" | "error">("loading");
+  const [analysisResult, setAnalysisResult] = useState<CalorieResponse | null>(null);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
+  const [pendingMealMeta, setPendingMealMeta] = useState<{ text: string; source: "text" | "image" } | null>(null);
+
   const consumed = useMemo(
-    () => latestResult?.totals ?? { calories: 0, protein: 0, carbs: 0, fat: 0 },
-    [latestResult]
+    () =>
+      history.reduce(
+        (sum, meal) => ({
+          calories: sum.calories + meal.result.totals.calories,
+          protein: sum.protein + meal.result.totals.protein,
+          carbs: sum.carbs + meal.result.totals.carbs,
+          fat: sum.fat + meal.result.totals.fat
+        }),
+        { calories: 0, protein: 0, carbs: 0, fat: 0 }
+      ),
+    [history]
   );
 
   useEffect(() => {
@@ -105,54 +120,67 @@ export default function HomePage() {
     setDailyTargets(calculateDailyTargets(nextProfile));
   }
 
+  async function runAnalysis(
+    requestFn: () => Promise<{ data?: CalorieResponse; error?: string; ok: boolean }>,
+    mealMeta: { text: string; source: "text" | "image" }
+  ) {
+    setError(null);
+    setAnalysisResult(null);
+    setAnalysisError(null);
+    setPendingMealMeta(mealMeta);
+    setAnalysisStatus("loading");
+    setIsAnalysisModalOpen(true);
+
+    try {
+      const payload = await requestFn();
+
+      if (!payload.ok || !payload.data) {
+        throw new Error(payload.error ?? "Unable to analyze meal right now.");
+      }
+
+      setAnalysisResult(payload.data);
+      setAnalysisStatus("success");
+    } catch (submitError) {
+      const message = submitError instanceof Error ? submitError.message : "Something went wrong.";
+      setError(message);
+      setAnalysisError(message);
+      setAnalysisStatus("error");
+    }
+  }
+
   async function analyzeMealText(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!mealDescription.trim()) {
+    const trimmed = mealDescription.trim();
+
+    if (!trimmed) {
       setError("Please describe your meal before analyzing.");
       return;
     }
 
-    setError(null);
     setIsTextLoading(true);
 
-    try {
+    await runAnalysis(async () => {
       const response = await fetch("/api/calories", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mealDescription })
+        body: JSON.stringify({ mealDescription: trimmed })
       });
 
       const payload = (await response.json()) as { data?: CalorieResponse; error?: string };
-      if (!response.ok || !payload.data) {
-        throw new Error(payload.error ?? "Unable to analyze meal right now.");
-      }
+      return { ...payload, ok: response.ok };
+    }, { text: trimmed, source: "text" });
 
-      const data = payload.data;
-      setLatestResult(data);
-      setHistory((prev) => [
-        { id: crypto.randomUUID(), text: mealDescription, source: "text", result: data },
-        ...prev
-      ]);
-      setMealDescription("");
-    } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : "Something went wrong.");
-    } finally {
-      setIsTextLoading(false);
-    }
+    setIsTextLoading(false);
+    setMealDescription("");
   }
 
-  async function analyzeMealImage() {
-    if (!selectedImage) {
-      setError("Please take a photo or select an image first.");
-      return;
-    }
-
-    setError(null);
+  async function analyzeMealImage(file: File) {
+    setSelectedImage(file);
     setIsImageLoading(true);
 
-    try {
+    await runAnalysis(async () => {
       const formData = new FormData();
-      formData.append("image", selectedImage);
+      formData.append("image", file);
 
       const response = await fetch("/api/analyze-image", {
         method: "POST",
@@ -160,21 +188,28 @@ export default function HomePage() {
       });
 
       const payload = (await response.json()) as { data?: CalorieResponse; error?: string };
-      if (!response.ok || !payload.data) {
-        throw new Error(payload.error ?? "Unable to analyze image right now.");
-      }
+      return { ...payload, ok: response.ok };
+    }, { text: file.name || "Photo meal", source: "image" });
 
-      const data = payload.data;
-      setLatestResult(data);
-      setHistory((prev) => [
-        { id: crypto.randomUUID(), text: selectedImage.name, source: "image", result: data },
-        ...prev
-      ]);
-    } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : "Something went wrong.");
-    } finally {
-      setIsImageLoading(false);
-    }
+    setIsImageLoading(false);
+  }
+
+  function handleAddMeal() {
+    if (!analysisResult || !pendingMealMeta) return;
+
+    setHistory((prev) => [
+      {
+        id: crypto.randomUUID(),
+        text: pendingMealMeta.text,
+        source: pendingMealMeta.source,
+        result: analysisResult
+      },
+      ...prev
+    ]);
+
+    setIsAnalysisModalOpen(false);
+    setAnalysisResult(null);
+    setPendingMealMeta(null);
   }
 
   return (
@@ -186,37 +221,22 @@ export default function HomePage() {
         onSave={handleSaveProfile}
       />
 
+      <NutritionAnalysisModal
+        isOpen={isAnalysisModalOpen}
+        status={analysisStatus}
+        result={analysisResult}
+        errorMessage={analysisError}
+        onClose={() => setIsAnalysisModalOpen(false)}
+        onAddMeal={handleAddMeal}
+      />
+
       <main className="mx-auto w-full max-w-6xl space-y-6 px-4 py-8 md:px-8">
         <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
           <div className="grid gap-4 md:grid-cols-2">
-            <MacroProgressRow
-              label="Calories"
-              unit="kcal"
-              value={consumed.calories}
-              target={dailyTargets?.calories}
-              accent="bg-slate-700"
-            />
-            <MacroProgressRow
-              label="Protein"
-              unit="g"
-              value={consumed.protein}
-              target={dailyTargets?.protein}
-              accent="bg-emerald-500"
-            />
-            <MacroProgressRow
-              label="Carbs"
-              unit="g"
-              value={consumed.carbs}
-              target={dailyTargets?.carbs}
-              accent="bg-amber-500"
-            />
-            <MacroProgressRow
-              label="Fat"
-              unit="g"
-              value={consumed.fat}
-              target={dailyTargets?.fat}
-              accent="bg-rose-500"
-            />
+            <MacroProgressRow label="Calories" unit="kcal" value={consumed.calories} target={dailyTargets?.calories} accent="bg-slate-700" />
+            <MacroProgressRow label="Protein" unit="g" value={consumed.protein} target={dailyTargets?.protein} accent="bg-emerald-500" />
+            <MacroProgressRow label="Carbs" unit="g" value={consumed.carbs} target={dailyTargets?.carbs} accent="bg-amber-500" />
+            <MacroProgressRow label="Fat" unit="g" value={consumed.fat} target={dailyTargets?.fat} accent="bg-rose-500" />
           </div>
         </section>
 
@@ -229,19 +249,9 @@ export default function HomePage() {
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
-            <button type="button" className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50">
-              Insights
-            </button>
-            <button
-              type="button"
-              onClick={() => setIsProfileModalOpen(true)}
-              className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-            >
-              Profile
-            </button>
-            <button type="button" className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50">
-              Account
-            </button>
+            <button type="button" className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50">Insights</button>
+            <button type="button" onClick={() => setIsProfileModalOpen(true)} className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50">Profile</button>
+            <button type="button" className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50">Account</button>
           </div>
         </header>
 
@@ -263,61 +273,46 @@ export default function HomePage() {
               accept="image/*"
               capture="environment"
               className="hidden"
-              onChange={(event) => setSelectedImage(event.target.files?.[0] ?? null)}
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (file) {
+                  void analyzeMealImage(file);
+                }
+              }}
             />
 
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-              >
+              <button type="button" onClick={() => fileInputRef.current?.click()} className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50">
                 <CameraIcon />
                 Take Photo
               </button>
 
-              <button
-                type="submit"
-                disabled={isTextLoading}
-                className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-500 px-5 py-3 text-sm font-semibold text-white hover:bg-emerald-400 disabled:opacity-60"
-              >
+              <button type="submit" disabled={isTextLoading} className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-500 px-5 py-3 text-sm font-semibold text-white hover:bg-emerald-400 disabled:opacity-60">
                 {isTextLoading ? <Spinner /> : <BoltIcon />}
                 Analyze Meal
               </button>
             </div>
           </form>
 
-          <p className="mt-3 text-xs text-slate-500">
-            On mobile, this opens your camera when supported. If not available, it gracefully falls back to the image picker.
-          </p>
+          <p className="mt-3 text-xs text-slate-500">On mobile, this opens your camera when supported. If not available, it gracefully falls back to the image picker.</p>
 
           {previewUrl ? (
             <div className="mt-4 space-y-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-              <p className="text-sm font-medium text-slate-700">Photo preview</p>
+              <p className="text-sm font-medium text-slate-700">Latest photo preview</p>
               <div className="relative h-56 w-full overflow-hidden rounded-xl border border-slate-200 bg-white">
                 <Image src={previewUrl} alt="Selected meal preview" fill className="object-cover" unoptimized />
               </div>
-              <button
-                type="button"
-                onClick={analyzeMealImage}
-                disabled={isImageLoading}
-                className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-60"
-              >
-                {isImageLoading ? <Spinner /> : <CameraIcon />}
-                Analyze Photo
-              </button>
+              {isImageLoading ? (
+                <p className="inline-flex items-center gap-2 text-xs text-slate-500">
+                  <Spinner />
+                  Analyzing selected image...
+                </p>
+              ) : null}
             </div>
           ) : null}
 
           {error ? <p className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600">{error}</p> : null}
         </section>
-
-        {latestResult ? (
-          <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
-            <h2 className="mb-3 text-xl font-semibold text-slate-900">Nutrition Analysis</h2>
-            <ResultsTable results={latestResult} />
-          </section>
-        ) : null}
 
         <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
           <h2 className="text-xl font-semibold text-slate-900">Meal History</h2>
