@@ -17,7 +17,7 @@ export function AppHeaderNav({ onProfileClick }: AppHeaderNavProps) {
   const router = useRouter();
 
   return (
-    <header className="flex flex-col items-start justify-between gap-4 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200 md:flex-row md:items-center">
+    <header className="sticky top-3 z-40 flex flex-col items-start justify-between gap-4 rounded-2xl bg-white/95 p-5 shadow-sm ring-1 ring-slate-200 backdrop-blur md:flex-row md:items-center">
       <div className="flex items-center gap-3">
         <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700">🥗</div>
         <div>

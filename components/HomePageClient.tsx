@@ -107,12 +107,33 @@ export function HomePageClient() {
     [history]
   );
 
-  function handleSaveProfile(nextProfile: ProfileInput) {
-    const targets = calculateDailyTargets(nextProfile);
+  async function handleSaveProfile(nextProfile: ProfileInput) {
     setProfile(nextProfile);
-    setDailyTargets(targets);
-    writeJson(STORAGE_KEYS.profile, nextProfile);
-    writeJson(STORAGE_KEYS.targets, targets);
+
+    try {
+      const response = await fetch("/api/targets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ profile: nextProfile })
+      });
+
+      const payload = (await response.json()) as { data?: DailyTargets; error?: string };
+      if (!response.ok || !payload.data) {
+        throw new Error(payload.error ?? "Unable to calculate personalized goals right now.");
+      }
+
+      setDailyTargets(payload.data);
+      writeJson(STORAGE_KEYS.profile, nextProfile);
+      writeJson(STORAGE_KEYS.targets, payload.data);
+      setError(null);
+    } catch {
+      // Deterministic local fallback keeps the app usable even if API classification fails.
+      const fallback = calculateDailyTargets(nextProfile);
+      setDailyTargets(fallback);
+      writeJson(STORAGE_KEYS.profile, nextProfile);
+      writeJson(STORAGE_KEYS.targets, fallback);
+      setError("Using local fallback calculation. Add OPENAI_API_KEY for AI goal interpretation.");
+    }
   }
 
   async function runAnalysis(requestFn: () => Promise<{ data?: CalorieResponse; error?: string; ok: boolean }>, meta: { text: string; source: "text" | "image" }) {
@@ -184,6 +205,8 @@ export function HomePageClient() {
       <NutritionAnalysisModal isOpen={isAnalysisModalOpen} status={analysisStatus} result={analysisResult} errorMessage={analysisError} onClose={() => setIsAnalysisModalOpen(false)} onAddMeal={handleAddMeal} />
 
       <main className="mx-auto w-full max-w-6xl space-y-6 px-4 py-8 md:px-8">
+        <AppHeaderNav onProfileClick={() => setIsProfileModalOpen(true)} />
+
         <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
           <div className="grid gap-4 md:grid-cols-2">
             <MacroProgressRow label="Calories" unit="kcal" value={consumed.calories} target={dailyTargets?.calories} accent="bg-slate-700" />
@@ -192,8 +215,6 @@ export function HomePageClient() {
             <MacroProgressRow label="Fat" unit="g" value={consumed.fat} target={dailyTargets?.fat} accent="bg-rose-500" />
           </div>
         </section>
-
-        <AppHeaderNav onProfileClick={() => setIsProfileModalOpen(true)} />
 
         <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
           <h2 className="text-2xl font-semibold text-slate-900">What did you eat?</h2>

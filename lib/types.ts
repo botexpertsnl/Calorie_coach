@@ -46,12 +46,19 @@ export type GoalType =
   | "recomposition";
 
 export type DailyTargets = {
-  goalType: GoalType;
+  goalCategory: GoalType;
+  // Backward-compatible alias for older UI code.
+  goalType?: GoalType;
+  bmr: number;
+  activityFactor: number;
+  tdee: number;
+  calorieStrategy: string;
   calories: number;
   protein: number;
   carbs: number;
   fat: number;
   explanation: string;
+  macroReasoning: string;
 };
 
 

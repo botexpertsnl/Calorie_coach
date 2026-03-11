@@ -5,7 +5,7 @@ type ProfileGoalsModalProps = {
   isOpen: boolean;
   initialProfile: ProfileInput;
   onClose: () => void;
-  onSave: (profile: ProfileInput) => void;
+  onSave: (profile: ProfileInput) => void | Promise<void>;
 };
 
 const activityOptions: Array<{ value: ActivityLevel; label: string }> = [
@@ -27,14 +27,18 @@ export function ProfileGoalsModal({ isOpen, initialProfile, onClose, onSave }: P
     }
   }, [initialProfile, isOpen]);
 
+  const [isSaving, setIsSaving] = useState(false);
+
   if (!isOpen) return null;
 
   function setField<K extends keyof ProfileInput>(key: K, value: ProfileInput[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
   }
 
-  function handleSave() {
-    onSave(form);
+  async function handleSave() {
+    setIsSaving(true);
+    await onSave(form);
+    setIsSaving(false);
     onClose();
   }
 
@@ -142,9 +146,10 @@ export function ProfileGoalsModal({ isOpen, initialProfile, onClose, onSave }: P
           <button
             type="button"
             onClick={handleSave}
-            className="rounded-xl bg-emerald-500 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-400"
+            disabled={isSaving}
+            className="rounded-xl bg-emerald-500 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-400 disabled:opacity-60"
           >
-            Save &amp; Calculate Goals
+            {isSaving ? "Calculating..." : "Save &amp; Calculate Goals"}
           </button>
         </div>
       </div>
