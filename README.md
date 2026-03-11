@@ -56,7 +56,8 @@ npm run dev
 - `components/ResultsTable.tsx`: food-level nutrition table and macro totals.
 - `app/api/calories/route.ts`: server-side OpenAI call and JSON validation for text input.
 - `app/api/analyze-image/route.ts`: server-side OpenAI image analysis for camera/upload photos.
-- `lib/nutrition.ts`: personalized target calculation engine (BMR/TDEE + goal heuristic).
+- `app/api/targets/route.ts`: AI-assisted goal interpretation + deterministic BMR/TDEE macro target calculation.
+- `lib/nutrition.ts`: deterministic nutrition target engine (Mifflin-St Jeor BMR, TDEE activity factors, goal-based calorie strategy, protein/fat g/kg, carbs from remaining calories with rebalancing).
 - `lib/types.ts`: shared app domain types.
 
 ## Target calculation model

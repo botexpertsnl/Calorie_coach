@@ -107,12 +107,33 @@ export function HomePageClient() {
     [history]
   );
 
-  function handleSaveProfile(nextProfile: ProfileInput) {
-    const targets = calculateDailyTargets(nextProfile);
+  async function handleSaveProfile(nextProfile: ProfileInput) {
     setProfile(nextProfile);
-    setDailyTargets(targets);
-    writeJson(STORAGE_KEYS.profile, nextProfile);
-    writeJson(STORAGE_KEYS.targets, targets);
+
+    try {
+      const response = await fetch("/api/targets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ profile: nextProfile })
+      });
+
+      const payload = (await response.json()) as { data?: DailyTargets; error?: string };
+      if (!response.ok || !payload.data) {
+        throw new Error(payload.error ?? "Unable to calculate personalized goals right now.");
+      }
+
+      setDailyTargets(payload.data);
+      writeJson(STORAGE_KEYS.profile, nextProfile);
+      writeJson(STORAGE_KEYS.targets, payload.data);
+      setError(null);
+    } catch {
+      // Deterministic local fallback keeps the app usable even if API classification fails.
+      const fallback = calculateDailyTargets(nextProfile);
+      setDailyTargets(fallback);
+      writeJson(STORAGE_KEYS.profile, nextProfile);
+      writeJson(STORAGE_KEYS.targets, fallback);
+      setError("Using local fallback calculation. Add OPENAI_API_KEY for AI goal interpretation.");
+    }
   }
 
   async function runAnalysis(requestFn: () => Promise<{ data?: CalorieResponse; error?: string; ok: boolean }>, meta: { text: string; source: "text" | "image" }) {
