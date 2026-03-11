@@ -53,3 +53,12 @@ export type DailyTargets = {
   fat: number;
   explanation: string;
 };
+
+
+export type StoredMealLog = {
+  id: string;
+  text: string;
+  source: "text" | "image";
+  result: CalorieResponse;
+  createdAt: string;
+};

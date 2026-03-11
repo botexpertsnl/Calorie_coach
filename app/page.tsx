@@ -1,18 +1,14 @@
 "use client";
 
-import { FormEvent, useMemo, useRef, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { AppHeaderNav } from "@/components/AppHeaderNav";
 import { NutritionAnalysisModal } from "@/components/NutritionAnalysisModal";
 import { ProfileGoalsModal } from "@/components/ProfileGoalsModal";
 import { Spinner } from "@/components/Spinner";
+import { STORAGE_KEYS, readJson, writeJson } from "@/lib/local-data";
 import { calculateDailyTargets } from "@/lib/nutrition";
-import { CalorieResponse, DailyTargets, ProfileInput } from "@/lib/types";
-
-type MealLog = {
-  id: string;
-  text: string;
-  source: "text" | "image";
-  result: CalorieResponse;
-};
+import { CalorieResponse, DailyTargets, ProfileInput, StoredMealLog } from "@/lib/types";
 
 type MacroRowProps = {
   label: string;
@@ -49,23 +45,17 @@ function MacroProgressRow({ label, unit, value, target, accent }: MacroRowProps)
 }
 
 function BoltIcon() {
-  return (
-    <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4" aria-hidden="true">
-      <path d="M11.25 1.5a.75.75 0 0 0-1.37-.17l-6 10a.75.75 0 0 0 .64 1.17h4.06l-1.8 5.4a.75.75 0 0 0 1.35.63l8-12A.75.75 0 0 0 15.5 5h-4.24l.74-2.95a.75.75 0 0 0-.75-.55Z" />
-    </svg>
-  );
+  return <span>⚡</span>;
 }
 
 function CameraIcon() {
-  return (
-    <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4" aria-hidden="true">
-      <path d="M4.5 5.5A2.5 2.5 0 0 0 2 8v6a2.5 2.5 0 0 0 2.5 2.5h11A2.5 2.5 0 0 0 18 14V8a2.5 2.5 0 0 0-2.5-2.5h-1.88a1 1 0 0 1-.83-.45l-.58-.88a1 1 0 0 0-.83-.45H8.62a1 1 0 0 0-.83.45l-.58.88a1 1 0 0 1-.83.45H4.5Zm5.5 3a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Z" />
-    </svg>
-  );
+  return <span>📷</span>;
 }
 
 export default function HomePage() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const searchParams = useSearchParams();
+  const router = useRouter();
 
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [profile, setProfile] = useState<ProfileInput>(defaultProfile);
@@ -75,14 +65,33 @@ export default function HomePage() {
   const [isTextLoading, setIsTextLoading] = useState(false);
   const [isImageLoading, setIsImageLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const [history, setHistory] = useState<MealLog[]>([]);
+  const [history, setHistory] = useState<StoredMealLog[]>([]);
 
   const [isAnalysisModalOpen, setIsAnalysisModalOpen] = useState(false);
   const [analysisStatus, setAnalysisStatus] = useState<"loading" | "success" | "error">("loading");
   const [analysisResult, setAnalysisResult] = useState<CalorieResponse | null>(null);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [pendingMealMeta, setPendingMealMeta] = useState<{ text: string; source: "text" | "image" } | null>(null);
+
+  useEffect(() => {
+    const savedMeals = readJson<StoredMealLog[]>(STORAGE_KEYS.meals);
+    const savedProfile = readJson<ProfileInput>(STORAGE_KEYS.profile);
+    const savedTargets = readJson<DailyTargets>(STORAGE_KEYS.targets);
+
+    if (savedMeals) setHistory(savedMeals);
+    if (savedProfile) setProfile(savedProfile);
+    if (savedTargets) setDailyTargets(savedTargets);
+  }, []);
+
+  useEffect(() => {
+    writeJson(STORAGE_KEYS.meals, history);
+  }, [history]);
+
+  useEffect(() => {
+    if (!searchParams.get("openProfile")) return;
+    setIsProfileModalOpen(true);
+    router.replace("/");
+  }, [router, searchParams]);
 
   const consumed = useMemo(
     () =>
@@ -99,34 +108,30 @@ export default function HomePage() {
   );
 
   function handleSaveProfile(nextProfile: ProfileInput) {
+    const targets = calculateDailyTargets(nextProfile);
     setProfile(nextProfile);
-    setDailyTargets(calculateDailyTargets(nextProfile));
+    setDailyTargets(targets);
+    writeJson(STORAGE_KEYS.profile, nextProfile);
+    writeJson(STORAGE_KEYS.targets, targets);
   }
 
-  async function runAnalysis(
-    requestFn: () => Promise<{ data?: CalorieResponse; error?: string; ok: boolean }>,
-    mealMeta: { text: string; source: "text" | "image" }
-  ) {
+  async function runAnalysis(requestFn: () => Promise<{ data?: CalorieResponse; error?: string; ok: boolean }>, meta: { text: string; source: "text" | "image" }) {
     setError(null);
     setAnalysisResult(null);
     setAnalysisError(null);
-    setPendingMealMeta(mealMeta);
+    setPendingMealMeta(meta);
     setAnalysisStatus("loading");
     setIsAnalysisModalOpen(true);
 
     try {
       const payload = await requestFn();
-
-      if (!payload.ok || !payload.data) {
-        throw new Error(payload.error ?? "Unable to analyze meal right now.");
-      }
-
+      if (!payload.ok || !payload.data) throw new Error(payload.error ?? "Unable to analyze meal right now.");
       setAnalysisResult(payload.data);
       setAnalysisStatus("success");
-    } catch (submitError) {
-      const message = submitError instanceof Error ? submitError.message : "Something went wrong.";
-      setError(message);
-      setAnalysisError(message);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Something went wrong.";
+      setError(msg);
+      setAnalysisError(msg);
       setAnalysisStatus("error");
     }
   }
@@ -134,12 +139,7 @@ export default function HomePage() {
   async function analyzeMealText(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const trimmed = mealDescription.trim();
-
-    if (!trimmed) {
-      setError("Please describe your meal before analyzing.");
-      return;
-    }
-
+    if (!trimmed) return setError("Please describe your meal before analyzing.");
     setIsTextLoading(true);
 
     await runAnalysis(async () => {
@@ -148,7 +148,6 @@ export default function HomePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ mealDescription: trimmed })
       });
-
       const payload = (await response.json()) as { data?: CalorieResponse; error?: string };
       return { ...payload, ok: response.ok };
     }, { text: trimmed, source: "text" });
@@ -159,48 +158,20 @@ export default function HomePage() {
 
   async function analyzeMealImage(file: File) {
     setIsImageLoading(true);
-
     await runAnalysis(async () => {
       const formData = new FormData();
       formData.append("image", file);
-
-      const response = await fetch("/api/analyze-image", {
-        method: "POST",
-        body: formData
-      });
-
+      const response = await fetch("/api/analyze-image", { method: "POST", body: formData });
       const payload = (await response.json()) as { data?: CalorieResponse; error?: string };
       return { ...payload, ok: response.ok };
     }, { text: file.name || "Photo meal", source: "image" });
-
     setIsImageLoading(false);
-
-    // Important: clear the picker value so stale images are not reused.
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
-    }
+    if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
   function handleAddMeal() {
     if (!analysisResult || !pendingMealMeta) return;
-
-    setHistory((prev) => [
-      {
-        id: crypto.randomUUID(),
-        text: pendingMealMeta.text,
-        source: pendingMealMeta.source,
-        result: analysisResult
-      },
-      ...prev
-    ]);
-
-    setIsAnalysisModalOpen(false);
-    setAnalysisResult(null);
-    setPendingMealMeta(null);
-    setAnalysisError(null);
-  }
-
-  function handleCloseAnalysisModal() {
+    setHistory((prev) => [{ id: crypto.randomUUID(), createdAt: new Date().toISOString(), ...pendingMealMeta, result: analysisResult }, ...prev]);
     setIsAnalysisModalOpen(false);
     setAnalysisResult(null);
     setPendingMealMeta(null);
@@ -209,21 +180,8 @@ export default function HomePage() {
 
   return (
     <>
-      <ProfileGoalsModal
-        isOpen={isProfileModalOpen}
-        initialProfile={profile}
-        onClose={() => setIsProfileModalOpen(false)}
-        onSave={handleSaveProfile}
-      />
-
-      <NutritionAnalysisModal
-        isOpen={isAnalysisModalOpen}
-        status={analysisStatus}
-        result={analysisResult}
-        errorMessage={analysisError}
-        onClose={handleCloseAnalysisModal}
-        onAddMeal={handleAddMeal}
-      />
+      <ProfileGoalsModal isOpen={isProfileModalOpen} initialProfile={profile} onClose={() => setIsProfileModalOpen(false)} onSave={handleSaveProfile} />
+      <NutritionAnalysisModal isOpen={isAnalysisModalOpen} status={analysisStatus} result={analysisResult} errorMessage={analysisError} onClose={() => setIsAnalysisModalOpen(false)} onAddMeal={handleAddMeal} />
 
       <main className="mx-auto w-full max-w-6xl space-y-6 px-4 py-8 md:px-8">
         <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
@@ -235,82 +193,37 @@ export default function HomePage() {
           </div>
         </section>
 
-        <header className="flex flex-col items-start justify-between gap-4 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200 md:flex-row md:items-center">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700">🥗</div>
-            <div>
-              <p className="text-lg font-semibold text-slate-900">AI Calorie Coach</p>
-              <p className="text-sm text-slate-500">Smart nutrition tracking dashboard</p>
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <button type="button" className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50">Insights</button>
-            <button type="button" onClick={() => setIsProfileModalOpen(true)} className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50">Profile</button>
-            <button type="button" className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50">Account</button>
-          </div>
-        </header>
+        <AppHeaderNav onProfileClick={() => setIsProfileModalOpen(true)} />
 
         <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
           <h2 className="text-2xl font-semibold text-slate-900">What did you eat?</h2>
           <p className="mt-1 text-sm text-slate-500">Describe your meal in detail or take a photo for better accuracy.</p>
 
           <form onSubmit={analyzeMealText} className="mt-4 space-y-4">
-            <textarea
-              className="min-h-36 w-full rounded-2xl border border-slate-200 bg-white p-4 text-slate-800 outline-none transition focus:border-emerald-400"
-              placeholder="e.g., Two scrambled eggs with a slice of whole grain toast and half an avocado..."
-              value={mealDescription}
-              onChange={(event) => setMealDescription(event.target.value)}
-            />
+            <textarea className="min-h-36 w-full rounded-2xl border border-slate-200 bg-white p-4 text-slate-800 outline-none transition focus:border-emerald-400" placeholder="e.g., Two scrambled eggs with a slice of whole grain toast and half an avocado..." value={mealDescription} onChange={(event) => setMealDescription(event.target.value)} />
 
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              capture="environment"
-              className="hidden"
-              onChange={(event) => {
-                const file = event.target.files?.[0];
-                if (file) {
-                  void analyzeMealImage(file);
-                }
-              }}
-            />
+            <input ref={fileInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (file) void analyzeMealImage(file);
+            }} />
 
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <button type="button" onClick={() => fileInputRef.current?.click()} className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50">
-                <CameraIcon />
-                Take Photo
-              </button>
-
-              <button type="submit" disabled={isTextLoading} className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-500 px-5 py-3 text-sm font-semibold text-white hover:bg-emerald-400 disabled:opacity-60">
-                {isTextLoading ? <Spinner /> : <BoltIcon />}
-                Analyze Meal
-              </button>
+              <button type="button" onClick={() => fileInputRef.current?.click()} className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"><CameraIcon />Take Photo</button>
+              <button type="submit" disabled={isTextLoading} className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-500 px-5 py-3 text-sm font-semibold text-white hover:bg-emerald-400 disabled:opacity-60">{isTextLoading ? <Spinner /> : <BoltIcon />}Analyze Meal</button>
             </div>
           </form>
 
-          <p className="mt-3 text-xs text-slate-500">On mobile, this opens your camera when supported. If not available, it gracefully falls back to the image picker.</p>
-
-          {isImageLoading ? (
-            <p className="mt-4 inline-flex items-center gap-2 text-xs text-slate-500">
-              <Spinner />
-              Analyzing selected image...
-            </p>
-          ) : null}
-
+          {isImageLoading ? <p className="mt-4 inline-flex items-center gap-2 text-xs text-slate-500"><Spinner />Analyzing selected image...</p> : null}
           {error ? <p className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600">{error}</p> : null}
         </section>
 
         <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
           <h2 className="text-xl font-semibold text-slate-900">Meal History</h2>
-
-          {history.length === 0 ? (
-            <div className="mt-8 rounded-xl border border-dashed border-slate-200 py-10 text-center text-slate-500">No meals logged yet.</div>
-          ) : (
+          {history.length === 0 ? <div className="mt-8 rounded-xl border border-dashed border-slate-200 py-10 text-center text-slate-500">No meals logged yet.</div> : (
             <ul className="mt-4 space-y-3">
               {history.map((entry) => (
                 <li key={entry.id} className="rounded-xl border border-slate-200 p-4">
-                  <p className="text-xs uppercase tracking-wide text-slate-400">{entry.source === "image" ? "Photo meal" : "Text meal"}</p>
+                  <p className="text-xs uppercase tracking-wide text-slate-400">{entry.source === "image" ? "Photo meal" : "Text meal"} · {new Date(entry.createdAt).toLocaleDateString()}</p>
                   <p className="mt-1 text-sm text-slate-700">{entry.text}</p>
                   <p className="mt-1 text-xs text-slate-500">{entry.result.totals.calories} kcal • {entry.result.totals.protein}g protein • {entry.result.totals.carbs}g carbs • {entry.result.totals.fat}g fat</p>
                 </li>
