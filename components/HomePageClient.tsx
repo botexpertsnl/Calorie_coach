@@ -1,15 +1,12 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
 import { AppHeaderNav } from "@/components/AppHeaderNav";
 import { NutritionAnalysisModal } from "@/components/NutritionAnalysisModal";
-import { ProfileGoalsModal } from "@/components/ProfileGoalsModal";
 import { QuickMealsModal } from "@/components/QuickMealsModal";
 import { Spinner } from "@/components/Spinner";
 import { STORAGE_KEYS, readJson, writeJson } from "@/lib/local-data";
-import { calculateDailyTargets } from "@/lib/nutrition";
-import { CalorieResponse, DailyTargets, ProfileInput, QuickMeal, StoredMealLog } from "@/lib/types";
+import { CalorieResponse, DailyTargets, QuickMeal, StoredMealLog } from "@/lib/types";
 
 type MacroRowProps = {
   label: string;
@@ -17,16 +14,6 @@ type MacroRowProps = {
   value: number;
   target?: number;
   accent: string;
-};
-
-const defaultProfile: ProfileInput = {
-  heightCm: 170,
-  weightKg: 70,
-  waistCm: 80,
-  age: 30,
-  gender: "female",
-  activityLevel: "moderate",
-  goalText: "I want to improve body composition and feel more energetic."
 };
 
 function MacroProgressRow({ label, unit, value, target, accent }: MacroRowProps) {
@@ -55,13 +42,8 @@ function CameraIcon() {
 
 export function HomePageClient() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const searchParams = useSearchParams();
-  const router = useRouter();
 
-  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
-  const [profile, setProfile] = useState<ProfileInput>(defaultProfile);
   const [dailyTargets, setDailyTargets] = useState<DailyTargets | null>(null);
-
   const [mealDescription, setMealDescription] = useState("");
   const [isTextLoading, setIsTextLoading] = useState(false);
   const [isImageLoading, setIsImageLoading] = useState(false);
@@ -78,12 +60,10 @@ export function HomePageClient() {
 
   useEffect(() => {
     const savedMeals = readJson<StoredMealLog[]>(STORAGE_KEYS.meals);
-    const savedProfile = readJson<ProfileInput>(STORAGE_KEYS.profile);
     const savedTargets = readJson<DailyTargets>(STORAGE_KEYS.targets);
     const savedQuickMeals = readJson<QuickMeal[]>(STORAGE_KEYS.quickMeals);
 
     if (savedMeals) setHistory(savedMeals);
-    if (savedProfile) setProfile(savedProfile);
     if (savedTargets) setDailyTargets(savedTargets);
     if (savedQuickMeals) setQuickMeals(savedQuickMeals);
   }, []);
@@ -95,12 +75,6 @@ export function HomePageClient() {
   useEffect(() => {
     writeJson(STORAGE_KEYS.quickMeals, quickMeals);
   }, [quickMeals]);
-
-  useEffect(() => {
-    if (!searchParams.get("openProfile")) return;
-    setIsProfileModalOpen(true);
-    router.replace("/");
-  }, [router, searchParams]);
 
   const consumed = useMemo(
     () =>
@@ -115,35 +89,6 @@ export function HomePageClient() {
       ),
     [history]
   );
-
-  async function handleSaveProfile(nextProfile: ProfileInput) {
-    setProfile(nextProfile);
-
-    try {
-      const response = await fetch("/api/targets", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ profile: nextProfile })
-      });
-
-      const payload = (await response.json()) as { data?: DailyTargets; error?: string };
-      if (!response.ok || !payload.data) {
-        throw new Error(payload.error ?? "Unable to calculate personalized goals right now.");
-      }
-
-      setDailyTargets(payload.data);
-      writeJson(STORAGE_KEYS.profile, nextProfile);
-      writeJson(STORAGE_KEYS.targets, payload.data);
-      setError(null);
-    } catch {
-      // Deterministic local fallback keeps the app usable even if API classification fails.
-      const fallback = calculateDailyTargets(nextProfile);
-      setDailyTargets(fallback);
-      writeJson(STORAGE_KEYS.profile, nextProfile);
-      writeJson(STORAGE_KEYS.targets, fallback);
-      setError("Using local fallback calculation. Add OPENAI_API_KEY for AI goal interpretation.");
-    }
-  }
 
   async function runAnalysis(requestFn: () => Promise<{ data?: CalorieResponse; error?: string; ok: boolean }>, meta: { text: string; source: "text" | "image" }) {
     setError(null);
@@ -198,7 +143,6 @@ export function HomePageClient() {
     setIsImageLoading(false);
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
-
 
   function handleAddQuickMealToDay(meal: QuickMeal) {
     const quickMealResult: CalorieResponse = {
@@ -277,7 +221,6 @@ export function HomePageClient() {
 
   return (
     <>
-      <ProfileGoalsModal isOpen={isProfileModalOpen} initialProfile={profile} onClose={() => setIsProfileModalOpen(false)} onSave={handleSaveProfile} />
       <NutritionAnalysisModal isOpen={isAnalysisModalOpen} status={analysisStatus} result={analysisResult} errorMessage={analysisError} onClose={() => setIsAnalysisModalOpen(false)} onAddMeal={handleAddMeal} />
       <QuickMealsModal
         isOpen={isQuickMealsOpen}
@@ -289,7 +232,7 @@ export function HomePageClient() {
       />
 
       <main className="mx-auto w-full max-w-6xl space-y-6 px-4 py-8 md:px-8">
-        <AppHeaderNav onProfileClick={() => setIsProfileModalOpen(true)} />
+        <AppHeaderNav />
 
         <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
           <div className="grid gap-4 md:grid-cols-2">

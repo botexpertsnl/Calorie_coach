@@ -50,6 +50,7 @@ npm run dev
 
 - `app/page.tsx`: meals dashboard composition and state.
 - `app/insights/page.tsx`: insights experience with timeline filters and chart.
+- `app/profile/page.tsx`: dedicated profile page for editable targets, profile fields, and goal calculation workflow.
 - `components/ProfileForm.tsx`: personal profile input UI.
 - `components/ProgressBars.tsx`: progress widgets for calories/protein/carbs/fat.
 - `components/AppHeaderNav.tsx`: reusable top navigation for Meals/Insights/Profile.
