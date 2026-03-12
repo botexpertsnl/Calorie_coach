@@ -4,7 +4,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { AppHeaderNav } from "@/components/AppHeaderNav";
 import { STORAGE_KEYS, readJson, writeJson } from "@/lib/local-data";
 import { calculateTrainingVolume, estimateCaloriesForType } from "@/lib/workouts";
-import { buildWorkoutAdjustedSummary, getCurrentWeekDateKeys } from "@/lib/workout-execution";
+import { buildWorkoutAdjustedSummary, deriveWeeklyWorkoutTargets, getCurrentWeekDateKeys } from "@/lib/workout-execution";
 import {
   CardioExercise,
   CrossfitExercise,
@@ -114,6 +114,7 @@ export default function WorkoutsPage() {
   const [deleteExerciseId, setDeleteExerciseId] = useState<string | null>(null);
   const [progressExerciseId, setProgressExerciseId] = useState<string | null>(null);
   const [profileWeight, setProfileWeight] = useState(70);
+  const [profile, setProfile] = useState<ProfileInput | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [exceptions, setExceptions] = useState<WorkoutException[]>([]);
   const [isExceptionsOpen, setIsExceptionsOpen] = useState(false);
@@ -136,6 +137,7 @@ export default function WorkoutsPage() {
 
     if (savedPlan) setPlan(savedPlan);
     if (savedProfile?.weightKg) setProfileWeight(savedProfile.weightKg);
+    if (savedProfile) setProfile(savedProfile);
     setExceptions(savedExceptions);
   }, []);
 
@@ -174,6 +176,8 @@ export default function WorkoutsPage() {
     () => buildWorkoutAdjustedSummary(plan, exceptions, weekDateKeys),
     [plan, exceptions, weekDateKeys]
   );
+
+  const weeklyTargets = useMemo(() => deriveWeeklyWorkoutTargets(profile), [profile]);
 
   const plannedOptionsForExceptionDay = useMemo(() => {
     const day = new Date(`${exceptionDate}T00:00:00`).toLocaleDateString("en-US", { weekday: "long" }).toLowerCase() as WorkoutDay;
@@ -727,12 +731,27 @@ export default function WorkoutsPage() {
       <main className="mx-auto w-full max-w-6xl space-y-6 px-4 py-8 md:px-8">
         <AppHeaderNav />
 
-        <section className="grid gap-4 md:grid-cols-5">
-          <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200"><p className="text-xs text-slate-500">Planned sessions</p><p className="text-2xl font-semibold text-slate-900">{adjustedSummary.plannedSessions}</p></div>
-          <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200"><p className="text-xs text-slate-500">Adjusted sessions</p><p className="text-2xl font-semibold text-slate-900">{adjustedSummary.adjustedSessions}</p></div>
-          <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200"><p className="text-xs text-slate-500">Exercises</p><p className="text-2xl font-semibold text-slate-900">{adjustedSummary.totalExercises}</p></div>
-          <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200"><p className="text-xs text-slate-500">Calories</p><p className="text-2xl font-semibold text-slate-900">{adjustedSummary.totalCalories}</p></div>
-          <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200"><p className="text-xs text-slate-500">Fitness volume</p><p className="text-2xl font-semibold text-slate-900">{adjustedSummary.totalFitnessVolume}</p></div>
+        <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
+            <p className="text-xs text-slate-500">Strength Sessions</p>
+            <p className="text-lg font-semibold text-slate-900">{adjustedSummary.fitnessSessions} / {weeklyTargets.strengthSessions}</p>
+            <div className="mt-2 h-2 rounded-full bg-slate-100"><div className="h-full rounded-full bg-emerald-500" style={{ width: `${Math.min(100, (adjustedSummary.fitnessSessions / Math.max(weeklyTargets.strengthSessions, 1)) * 100)}%` }} /></div>
+          </div>
+          <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
+            <p className="text-xs text-slate-500">Cardio Sessions</p>
+            <p className="text-lg font-semibold text-slate-900">{adjustedSummary.cardioSessions} / {weeklyTargets.cardioSessions}</p>
+            <div className="mt-2 h-2 rounded-full bg-slate-100"><div className="h-full rounded-full bg-sky-500" style={{ width: `${Math.min(100, (adjustedSummary.cardioSessions / Math.max(weeklyTargets.cardioSessions, 1)) * 100)}%` }} /></div>
+          </div>
+          <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
+            <p className="text-xs text-slate-500">CrossFit Sessions</p>
+            <p className="text-lg font-semibold text-slate-900">{adjustedSummary.crossfitSessions} / {weeklyTargets.crossfitSessions}</p>
+            <div className="mt-2 h-2 rounded-full bg-slate-100"><div className="h-full rounded-full bg-violet-500" style={{ width: `${Math.min(100, (adjustedSummary.crossfitSessions / Math.max(weeklyTargets.crossfitSessions, 1)) * 100)}%` }} /></div>
+          </div>
+          <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
+            <p className="text-xs text-slate-500">Total Workout Minutes</p>
+            <p className="text-lg font-semibold text-slate-900">{adjustedSummary.totalMinutes} / {weeklyTargets.totalWorkoutMinutes}</p>
+            <div className="mt-2 h-2 rounded-full bg-slate-100"><div className="h-full rounded-full bg-amber-500" style={{ width: `${Math.min(100, (adjustedSummary.totalMinutes / Math.max(weeklyTargets.totalWorkoutMinutes, 1)) * 100)}%` }} /></div>
+          </div>
         </section>
 
         <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">

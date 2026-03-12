@@ -1,4 +1,5 @@
-import { WorkoutDay, WorkoutException, WorkoutExercise, WorkoutWeekPlan } from "@/lib/types";
+import { inferGoalCategoryFromText } from "@/lib/nutrition";
+import { ProfileInput, WorkoutDay, WorkoutException, WorkoutExercise, WorkoutWeekPlan } from "@/lib/types";
 
 const dayOrder: WorkoutDay[] = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
 
@@ -12,6 +13,36 @@ const dayIndex: Record<WorkoutDay, number> = {
   sunday: 6
 };
 
+export type WorkoutAdjustedSummary = {
+  plannedSessions: number;
+  adjustedSessions: number;
+  completedSessions: number;
+  missedSessions: number;
+  extraSessions: number;
+  replacedSessions: number;
+  rescheduledSessions: number;
+  totalExercises: number;
+  totalCalories: number;
+  totalFitnessVolume: number;
+  totalMinutes: number;
+  cardioSessions: number;
+  fitnessSessions: number;
+  crossfitSessions: number;
+};
+
+export type EffectiveWorkoutInstance = {
+  date: string;
+  source: "planned" | "extra" | "replacement" | "rescheduled";
+  exercise: WorkoutExercise;
+};
+
+export type WorkoutWeeklyTargets = {
+  strengthSessions: number;
+  cardioSessions: number;
+  crossfitSessions: number;
+  totalWorkoutMinutes: number;
+};
+
 export function toDateKey(date: Date) {
   return date.toISOString().slice(0, 10);
 }
@@ -23,7 +54,7 @@ function getAmsterdamDate(date = new Date()) {
 
 export function getCurrentWeekDateKeys() {
   const now = getAmsterdamDate();
-  const jsDay = now.getDay(); // Sun=0
+  const jsDay = now.getDay();
   const mondayOffset = jsDay === 0 ? -6 : 1 - jsDay;
   const monday = new Date(now);
   monday.setDate(now.getDate() + mondayOffset);
@@ -34,6 +65,22 @@ export function getCurrentWeekDateKeys() {
     d.setDate(monday.getDate() + idx);
     return toDateKey(d);
   });
+}
+
+export function getDateKeysInRange(start: Date, end: Date) {
+  const dateKeys: string[] = [];
+  const cursor = new Date(start);
+  cursor.setHours(0, 0, 0, 0);
+
+  const rangeEnd = new Date(end);
+  rangeEnd.setHours(0, 0, 0, 0);
+
+  while (cursor <= rangeEnd) {
+    dateKeys.push(toDateKey(cursor));
+    cursor.setDate(cursor.getDate() + 1);
+  }
+
+  return dateKeys;
 }
 
 function weekdayFromDateKey(dateKey: string): WorkoutDay {
@@ -51,101 +98,193 @@ function weekdayFromDateKey(dateKey: string): WorkoutDay {
   return map[isoDay];
 }
 
-export type WorkoutAdjustedSummary = {
-  plannedSessions: number;
-  adjustedSessions: number;
-  totalExercises: number;
-  totalCalories: number;
-  totalFitnessVolume: number;
-  cardioSessions: number;
-  fitnessSessions: number;
-  crossfitSessions: number;
-};
+function estimateMinutes(exercise: WorkoutExercise) {
+  if (exercise.type === "cardio") return exercise.durationMinutes;
+  if (exercise.type === "crossfit") return Math.max(exercise.durationMinutes, (exercise.sets ?? 0) * 3);
 
-export function buildWorkoutAdjustedSummary(plan: WorkoutWeekPlan | null, exceptions: WorkoutException[], dateKeys: string[]): WorkoutAdjustedSummary {
-  if (!plan) {
-    return {
-      plannedSessions: 0,
-      adjustedSessions: 0,
-      totalExercises: 0,
-      totalCalories: 0,
-      totalFitnessVolume: 0,
-      cardioSessions: 0,
-      fitnessSessions: 0,
-      crossfitSessions: 0
-    };
-  }
+  const setTime = exercise.sets * 3;
+  return Math.max(20, setTime);
+}
 
-  let plannedSessions = 0;
-  let adjustedSessions = 0;
-  let totalExercises = 0;
-  let totalCalories = 0;
-  let totalFitnessVolume = 0;
-  let cardioSessions = 0;
-  let fitnessSessions = 0;
-  let crossfitSessions = 0;
+function getPlannedExercisesForDay(plan: WorkoutWeekPlan, dateKey: string) {
+  const day = weekdayFromDateKey(dateKey);
+  return (plan[day]?.exercises ?? []).filter((exercise) => !exercise.isPaused);
+}
+
+export function buildEffectiveWorkoutInstances(plan: WorkoutWeekPlan | null, exceptions: WorkoutException[], dateKeys: string[]) {
+  if (!plan) return [] as EffectiveWorkoutInstance[];
+
+  const instances: EffectiveWorkoutInstance[] = [];
 
   for (const dateKey of dateKeys) {
-    const day = weekdayFromDateKey(dateKey);
-    const planned = plan[day]?.exercises.filter((e) => !e.isPaused) ?? [];
-    if (planned.length) plannedSessions += 1;
-
+    const planned = getPlannedExercisesForDay(plan, dateKey);
     const todaysExceptions = exceptions.filter((item) => item.date === dateKey);
 
     const missedIds = new Set(
       todaysExceptions.filter((item) => item.exceptionType === "missed" && item.originalWorkoutId).map((item) => item.originalWorkoutId as string)
     );
+
     const replacedMap = new Map(
       todaysExceptions
         .filter((item) => item.exceptionType === "replaced" && item.originalWorkoutId && item.replacementWorkoutData)
         .map((item) => [item.originalWorkoutId as string, item.replacementWorkoutData as WorkoutExercise])
     );
 
-    let executed: WorkoutExercise[] = planned
-      .filter((exercise) => !missedIds.has(exercise.id))
-      .map((exercise) => replacedMap.get(exercise.id) ?? exercise);
-
-    const extras = todaysExceptions
-      .filter((item) => item.exceptionType === "extra" && item.extraWorkoutData)
-      .map((item) => item.extraWorkoutData as WorkoutExercise);
-    executed = [...executed, ...extras];
-
-    const movedIn = exceptions
-      .filter((item) => item.exceptionType === "rescheduled" && item.newDate === dateKey && item.originalWorkoutId)
-      .map((item) => {
-        const originDay = weekdayFromDateKey(item.date);
-        const found = plan[originDay]?.exercises.find((exercise) => exercise.id === item.originalWorkoutId);
-        return found ?? null;
-      })
-      .filter(Boolean) as WorkoutExercise[];
-
     const movedOutIds = new Set(
       todaysExceptions.filter((item) => item.exceptionType === "rescheduled" && item.originalWorkoutId).map((item) => item.originalWorkoutId as string)
     );
 
-    executed = executed.filter((exercise) => !movedOutIds.has(exercise.id)).concat(movedIn);
+    const plannedAfterAdjustments = planned
+      .filter((exercise) => !missedIds.has(exercise.id) && !movedOutIds.has(exercise.id))
+      .map((exercise) => {
+        const replacement = replacedMap.get(exercise.id);
+        return {
+          date: dateKey,
+          source: replacement ? "replacement" : "planned",
+          exercise: replacement ?? exercise
+        } as EffectiveWorkoutInstance;
+      });
 
-    if (executed.length) adjustedSessions += 1;
+    const extras = todaysExceptions
+      .filter((item) => item.exceptionType === "extra" && item.extraWorkoutData)
+      .map(
+        (item) =>
+          ({
+            date: dateKey,
+            source: "extra",
+            exercise: item.extraWorkoutData as WorkoutExercise
+          }) as EffectiveWorkoutInstance
+      );
 
-    for (const exercise of executed) {
-      totalExercises += 1;
-      totalCalories += exercise.estimatedCalories;
-      totalFitnessVolume += exercise.trainingVolume;
-      if (exercise.type === "cardio") cardioSessions += 1;
-      if (exercise.type === "fitness") fitnessSessions += 1;
-      if (exercise.type === "crossfit") crossfitSessions += 1;
-    }
+    const movedIn = exceptions
+      .filter((item) => item.exceptionType === "rescheduled" && item.newDate === dateKey && item.originalWorkoutId)
+      .map((item) => {
+        const sourceDayExercises = getPlannedExercisesForDay(plan, item.date);
+        const original = sourceDayExercises.find((exercise) => exercise.id === item.originalWorkoutId);
+        if (!original) return null;
+        return {
+          date: dateKey,
+          source: "rescheduled",
+          exercise: original
+        } as EffectiveWorkoutInstance;
+      })
+      .filter(Boolean) as EffectiveWorkoutInstance[];
+
+    instances.push(...plannedAfterAdjustments, ...extras, ...movedIn);
+  }
+
+  return instances;
+}
+
+export function buildWorkoutAdjustedSummary(plan: WorkoutWeekPlan | null, exceptions: WorkoutException[], dateKeys: string[]): WorkoutAdjustedSummary {
+  if (!plan) {
+    return {
+      plannedSessions: 0,
+      adjustedSessions: 0,
+      completedSessions: 0,
+      missedSessions: 0,
+      extraSessions: 0,
+      replacedSessions: 0,
+      rescheduledSessions: 0,
+      totalExercises: 0,
+      totalCalories: 0,
+      totalFitnessVolume: 0,
+      totalMinutes: 0,
+      cardioSessions: 0,
+      fitnessSessions: 0,
+      crossfitSessions: 0
+    };
+  }
+
+  const effective = buildEffectiveWorkoutInstances(plan, exceptions, dateKeys);
+  const plannedSessions = dateKeys.filter((dateKey) => getPlannedExercisesForDay(plan, dateKey).length > 0).length;
+  const completedSessions = new Set(effective.map((item) => item.date)).size;
+
+  const missedSessions = exceptions.filter((item) => item.exceptionType === "missed" && dateKeys.includes(item.date)).length;
+  const extraSessions = exceptions.filter((item) => item.exceptionType === "extra" && dateKeys.includes(item.date)).length;
+  const replacedSessions = exceptions.filter((item) => item.exceptionType === "replaced" && dateKeys.includes(item.date)).length;
+  const rescheduledSessions = exceptions.filter((item) => item.exceptionType === "rescheduled" && (dateKeys.includes(item.date) || (item.newDate ? dateKeys.includes(item.newDate) : false))).length;
+
+  let totalCalories = 0;
+  let totalFitnessVolume = 0;
+  let totalMinutes = 0;
+  let cardioSessions = 0;
+  let fitnessSessions = 0;
+  let crossfitSessions = 0;
+
+  for (const item of effective) {
+    const exercise = item.exercise;
+    totalCalories += exercise.estimatedCalories;
+    totalFitnessVolume += exercise.trainingVolume;
+    totalMinutes += estimateMinutes(exercise);
+
+    if (exercise.type === "cardio") cardioSessions += 1;
+    if (exercise.type === "fitness") fitnessSessions += 1;
+    if (exercise.type === "crossfit") crossfitSessions += 1;
   }
 
   return {
     plannedSessions,
-    adjustedSessions,
-    totalExercises,
+    adjustedSessions: completedSessions,
+    completedSessions,
+    missedSessions,
+    extraSessions,
+    replacedSessions,
+    rescheduledSessions,
+    totalExercises: effective.length,
     totalCalories: Math.round(totalCalories),
     totalFitnessVolume: Math.round(totalFitnessVolume),
+    totalMinutes: Math.round(totalMinutes),
     cardioSessions,
     fitnessSessions,
     crossfitSessions
+  };
+}
+
+export function deriveWeeklyWorkoutTargets(profile: ProfileInput | null): WorkoutWeeklyTargets {
+  if (!profile) {
+    return {
+      strengthSessions: 3,
+      cardioSessions: 2,
+      crossfitSessions: 1,
+      totalWorkoutMinutes: 180
+    };
+  }
+
+  const goal = inferGoalCategoryFromText(profile.goalText);
+
+  if (goal === "fat_loss") {
+    return {
+      strengthSessions: 3,
+      cardioSessions: profile.activityLevel === "sedentary" ? 4 : 3,
+      crossfitSessions: 0,
+      totalWorkoutMinutes: 220
+    };
+  }
+
+  if (goal === "muscle_gain") {
+    return {
+      strengthSessions: 4,
+      cardioSessions: 1,
+      crossfitSessions: 0,
+      totalWorkoutMinutes: 210
+    };
+  }
+
+  if (goal === "recomposition") {
+    return {
+      strengthSessions: 3,
+      cardioSessions: 2,
+      crossfitSessions: 1,
+      totalWorkoutMinutes: 200
+    };
+  }
+
+  return {
+    strengthSessions: 2,
+    cardioSessions: 2,
+    crossfitSessions: 1,
+    totalWorkoutMinutes: 180
   };
 }
 
