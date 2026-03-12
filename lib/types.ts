@@ -94,44 +94,73 @@ export type WorkoutDay =
   | "saturday"
   | "sunday";
 
+export type WorkoutExerciseType = "cardio" | "fitness" | "crossfit";
+
+export type WorkoutIntensity = "low" | "moderate" | "high";
+
 export type CardioExercise = {
   id: string;
   type: "cardio";
+  workoutDayId: WorkoutDay;
   name: string;
-  durationMin: number;
-  intensity?: "low" | "moderate" | "high";
-  caloriesBurned: number;
+  durationMinutes: number;
+  intensity?: WorkoutIntensity;
+  trainingVolume: number;
+  estimatedCalories: number;
   notes: string;
-  progressHistory: WorkoutProgressEntry[];
+  createdAt: string;
+  updatedAt: string;
   isPaused: boolean;
 };
 
 export type FitnessExercise = {
   id: string;
   type: "fitness";
+  workoutDayId: WorkoutDay;
   name: string;
   sets: number;
   reps: number;
-  weightKg: number;
+  weight: number;
   trainingVolume: number;
+  estimatedCalories: number;
   notes: string;
-  progressHistory: WorkoutProgressEntry[];
+  createdAt: string;
+  updatedAt: string;
+  intensity?: WorkoutIntensity;
+  isPaused: boolean;
+};
+
+export type CrossfitExercise = {
+  id: string;
+  type: "crossfit";
+  workoutDayId: WorkoutDay;
+  name: string;
+  durationMinutes: number;
+  weight?: number;
+  sets?: number;
+  reps?: number;
+  trainingVolume: number;
+  estimatedCalories: number;
+  notes: string;
+  intensity?: WorkoutIntensity;
+  createdAt: string;
+  updatedAt: string;
   isPaused: boolean;
 };
 
 export type WorkoutProgressEntry = {
   recordedAt: string;
-  durationMin?: number;
-  intensity?: "low" | "moderate" | "high";
-  caloriesBurned?: number;
+  durationMinutes?: number;
+  intensity?: WorkoutIntensity;
+  estimatedCalories?: number;
   sets?: number;
   reps?: number;
-  weightKg?: number;
+  weight?: number;
   trainingVolume?: number;
   notes?: string;
 };
 
-export type WorkoutExercise = CardioExercise | FitnessExercise;
+export type WorkoutExercise = CardioExercise | FitnessExercise | CrossfitExercise;
 
 export type WorkoutDayLog = {
   notes: string;
