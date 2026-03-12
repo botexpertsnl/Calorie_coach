@@ -165,7 +165,7 @@ export function HomePageClient() {
         carbs: meal.carbs,
         fat: meal.fat
       },
-      notes: "Added from Quick Meals."
+      notes: "Added from Quick Add."
     };
 
     setHistory((prev) => [
@@ -266,7 +266,7 @@ export function HomePageClient() {
                   onClick={() => setIsQuickMealsOpen(true)}
                   className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
                 >
-                  Quick Meals
+                  Quick Add
                 </button>
                 <button type="submit" disabled={isTextLoading} className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-500 px-5 py-3 text-sm font-semibold text-white hover:bg-emerald-400 disabled:opacity-60">{isTextLoading ? <Spinner /> : <BoltIcon />}Analyze Meal</button>
               </div>
