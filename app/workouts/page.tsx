@@ -111,6 +111,7 @@ export default function WorkoutsPage() {
   const [progressExerciseId, setProgressExerciseId] = useState<string | null>(null);
   const [progressCardioDraft, setProgressCardioDraft] = useState<CardioDraft>(defaultCardioDraft);
   const [progressFitnessDraft, setProgressFitnessDraft] = useState<FitnessDraft>(defaultFitnessDraft);
+  const [deleteExerciseId, setDeleteExerciseId] = useState<string | null>(null);
 
   useEffect(() => {
     const savedPlan = readJson<WorkoutWeekPlan>(STORAGE_KEYS.workouts);
@@ -250,6 +251,10 @@ export default function WorkoutsPage() {
     setFitnessDraft({ name: exercise.name, sets: exercise.sets, reps: exercise.reps, weightKg: exercise.weightKg });
   }
 
+  function confirmDeleteExercise(exerciseId: string) {
+    setDeleteExerciseId(exerciseId);
+  }
+
   function deleteExercise(exerciseId: string) {
     setPlan((prev) => {
       const dayLog = prev[selectedDay];
@@ -258,6 +263,7 @@ export default function WorkoutsPage() {
 
     if (editingExerciseId === exerciseId) resetForm();
     if (progressExerciseId === exerciseId) setProgressExerciseId(null);
+    setDeleteExerciseId(null);
     setMessage("Exercise deleted.");
   }
 
@@ -329,6 +335,19 @@ export default function WorkoutsPage() {
 
   return (
     <>
+      {deleteExerciseId ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl ring-1 ring-slate-200">
+            <h3 className="text-lg font-semibold text-slate-900">Delete exercise?</h3>
+            <p className="mt-2 text-sm text-slate-600">This action removes the exercise from the selected day.</p>
+            <div className="mt-5 flex justify-end gap-2">
+              <button type="button" onClick={() => setDeleteExerciseId(null)} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700">Cancel</button>
+              <button type="button" onClick={() => deleteExercise(deleteExerciseId)} className="rounded-xl bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-500">Delete</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {progressExercise ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45 p-4">
           <div className="w-full max-w-xl rounded-2xl bg-white p-6 shadow-xl ring-1 ring-slate-200">
@@ -503,14 +522,26 @@ export default function WorkoutsPage() {
                   </label>
 
                   <div className="grid gap-3 sm:grid-cols-3">
-                    <label className="block text-sm text-slate-700">Sets
-                      <input type="number" min={1} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={fitnessDraft.sets} onChange={(event) => setFitnessDraft((prev) => ({ ...prev, sets: Number(event.target.value) }))} />
+                    <label className="text-sm text-slate-700">Sets
+                      <div className="mt-1 flex rounded-xl border border-slate-200">
+                        <button type="button" onClick={() => setFitnessDraft((p) => ({ ...p, sets: Math.max(1, p.sets - 1) }))} className="px-3">-</button>
+                        <input type="number" min={1} className="w-full border-x border-slate-200 px-2 py-2" value={fitnessDraft.sets} onChange={(event) => setFitnessDraft((prev) => ({ ...prev, sets: Number(event.target.value) }))} />
+                        <button type="button" onClick={() => setFitnessDraft((p) => ({ ...p, sets: p.sets + 1 }))} className="px-3">+</button>
+                      </div>
                     </label>
-                    <label className="block text-sm text-slate-700">Reps
-                      <input type="number" min={1} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={fitnessDraft.reps} onChange={(event) => setFitnessDraft((prev) => ({ ...prev, reps: Number(event.target.value) }))} />
+                    <label className="text-sm text-slate-700">Reps
+                      <div className="mt-1 flex rounded-xl border border-slate-200">
+                        <button type="button" onClick={() => setFitnessDraft((p) => ({ ...p, reps: Math.max(1, p.reps - 1) }))} className="px-3">-</button>
+                        <input type="number" min={1} className="w-full border-x border-slate-200 px-2 py-2" value={fitnessDraft.reps} onChange={(event) => setFitnessDraft((prev) => ({ ...prev, reps: Number(event.target.value) }))} />
+                        <button type="button" onClick={() => setFitnessDraft((p) => ({ ...p, reps: p.reps + 1 }))} className="px-3">+</button>
+                      </div>
                     </label>
-                    <label className="block text-sm text-slate-700">Weight (kg)
-                      <input type="number" min={0} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={fitnessDraft.weightKg} onChange={(event) => setFitnessDraft((prev) => ({ ...prev, weightKg: Number(event.target.value) }))} />
+                    <label className="text-sm text-slate-700">Weight (kg)
+                      <div className="mt-1 flex rounded-xl border border-slate-200">
+                        <button type="button" onClick={() => setFitnessDraft((p) => ({ ...p, weightKg: Math.max(0, p.weightKg - 2.5) }))} className="px-3">-</button>
+                        <input type="number" min={0} step="0.5" className="w-full border-x border-slate-200 px-2 py-2" value={fitnessDraft.weightKg} onChange={(event) => setFitnessDraft((prev) => ({ ...prev, weightKg: Number(event.target.value) }))} />
+                        <button type="button" onClick={() => setFitnessDraft((p) => ({ ...p, weightKg: p.weightKg + 2.5 }))} className="px-3">+</button>
+                      </div>
                     </label>
                   </div>
 
@@ -542,7 +573,7 @@ export default function WorkoutsPage() {
             ) : (
               <ul className="mt-4 space-y-3">
                 {activeDay.exercises.map((exercise) => (
-                  <li key={exercise.id} className="rounded-xl border border-slate-200 p-4">
+                  <li key={exercise.id} className="rounded-xl border border-slate-200 p-4 cursor-pointer hover:bg-slate-50" onClick={() => openProgressModal(exercise)}>
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div>
                         <p className="font-semibold text-slate-900">{exercise.name}</p>
@@ -554,9 +585,9 @@ export default function WorkoutsPage() {
                       </div>
 
                       <div className="flex gap-2">
-                        <button type="button" onClick={() => openProgressModal(exercise)} className="rounded-lg border border-emerald-200 px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-50">Progress</button>
-                        <button type="button" onClick={() => startEdit(exercise)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">Edit</button>
-                        <button type="button" onClick={() => deleteExercise(exercise.id)} className="rounded-lg border border-rose-200 px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50">Delete</button>
+                        <button type="button" onClick={(event) => { event.stopPropagation(); openProgressModal(exercise); }} className="rounded-lg border border-emerald-200 px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-50">Progress</button>
+                        <button type="button" onClick={(event) => { event.stopPropagation(); startEdit(exercise); }} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">Edit</button>
+                        <button type="button" onClick={(event) => { event.stopPropagation(); confirmDeleteExercise(exercise.id); }} className="rounded-lg border border-rose-200 px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50">Delete</button>
                       </div>
                     </div>
                   </li>
