@@ -102,6 +102,7 @@ export type CardioExercise = {
   intensity?: "low" | "moderate" | "high";
   caloriesBurned: number;
   progressHistory: WorkoutProgressEntry[];
+  isPaused: boolean;
 };
 
 export type FitnessExercise = {
@@ -113,6 +114,7 @@ export type FitnessExercise = {
   weightKg: number;
   trainingVolume: number;
   progressHistory: WorkoutProgressEntry[];
+  isPaused: boolean;
 };
 
 export type WorkoutProgressEntry = {

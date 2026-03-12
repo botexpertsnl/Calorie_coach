@@ -104,7 +104,6 @@ export default function WorkoutsPage() {
   const [exerciseType, setExerciseType] = useState<ExerciseType>("cardio");
   const [cardioDraft, setCardioDraft] = useState<CardioDraft>(defaultCardioDraft);
   const [fitnessDraft, setFitnessDraft] = useState<FitnessDraft>(defaultFitnessDraft);
-  const [editingExerciseId, setEditingExerciseId] = useState<string | null>(null);
   const [profileWeight, setProfileWeight] = useState(70);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -142,6 +141,16 @@ export default function WorkoutsPage() {
     return progressExercise.progressHistory[progressExercise.progressHistory.length - 1];
   }, [progressExercise]);
 
+  const activeExercises = useMemo(
+    () => activeDay.exercises.filter((exercise) => !exercise.isPaused),
+    [activeDay.exercises]
+  );
+
+  const pausedExercises = useMemo(
+    () => activeDay.exercises.filter((exercise) => exercise.isPaused),
+    [activeDay.exercises]
+  );
+
   const weeklySummary = useMemo(() => {
     let totalExercises = 0;
     let totalCardioCalories = 0;
@@ -149,6 +158,7 @@ export default function WorkoutsPage() {
 
     dayOrder.forEach((day) => {
       plan[day].exercises.forEach((exercise) => {
+        if (exercise.isPaused) return;
         totalExercises += 1;
         if (exercise.type === "cardio") totalCardioCalories += exercise.caloriesBurned;
         if (exercise.type === "fitness") totalVolume += exercise.trainingVolume;
@@ -159,7 +169,6 @@ export default function WorkoutsPage() {
   }, [plan]);
 
   function resetForm() {
-    setEditingExerciseId(null);
     setCardioDraft(defaultCardioDraft);
     setFitnessDraft(defaultFitnessDraft);
     setExerciseType("cardio");
@@ -176,23 +185,19 @@ export default function WorkoutsPage() {
 
       const caloriesBurned = calculateCardioCalories(profileWeight, cardioDraft.name, cardioDraft.durationMin, cardioDraft.intensity);
       const nextExercise: CardioExercise = {
-        id: editingExerciseId ?? crypto.randomUUID(),
+        id: crypto.randomUUID(),
         type: "cardio",
         name: cardioDraft.name.trim(),
         durationMin: cardioDraft.durationMin,
         intensity: cardioDraft.intensity,
         caloriesBurned,
-        progressHistory: []
+        progressHistory: [],
+        isPaused: false
       };
 
       setPlan((prev) => {
         const dayLog = prev[selectedDay];
-        const existing = dayLog.exercises.find((exercise) => exercise.id === editingExerciseId);
-        if (existing?.type === "cardio") nextExercise.progressHistory = [...existing.progressHistory, toProgressEntry(existing)];
-
-        const exercises = editingExerciseId
-          ? dayLog.exercises.map((exercise) => (exercise.id === editingExerciseId ? nextExercise : exercise))
-          : [nextExercise, ...dayLog.exercises];
+        const exercises = [nextExercise, ...dayLog.exercises];
 
         return { ...prev, [selectedDay]: { ...dayLog, exercises } };
       });
@@ -209,46 +214,26 @@ export default function WorkoutsPage() {
 
     const volume = Math.round(fitnessDraft.sets * fitnessDraft.reps * fitnessDraft.weightKg);
     const nextExercise: FitnessExercise = {
-      id: editingExerciseId ?? crypto.randomUUID(),
+      id: crypto.randomUUID(),
       type: "fitness",
       name: fitnessDraft.name.trim(),
       sets: fitnessDraft.sets,
       reps: fitnessDraft.reps,
       weightKg: fitnessDraft.weightKg,
       trainingVolume: volume,
-      progressHistory: []
+      progressHistory: [],
+      isPaused: false
     };
 
     setPlan((prev) => {
       const dayLog = prev[selectedDay];
-      const existing = dayLog.exercises.find((exercise) => exercise.id === editingExerciseId);
-      if (existing?.type === "fitness") nextExercise.progressHistory = [...existing.progressHistory, toProgressEntry(existing)];
-
-      const exercises = editingExerciseId
-        ? dayLog.exercises.map((exercise) => (exercise.id === editingExerciseId ? nextExercise : exercise))
-        : [nextExercise, ...dayLog.exercises];
+      const exercises = [nextExercise, ...dayLog.exercises];
 
       return { ...prev, [selectedDay]: { ...dayLog, exercises } };
     });
 
     setMessage("Fitness exercise saved.");
     resetForm();
-  }
-
-  function startEdit(exercise: WorkoutExercise) {
-    setEditingExerciseId(exercise.id);
-    setExerciseType(exercise.type);
-
-    if (exercise.type === "cardio") {
-      setCardioDraft({
-        name: exercise.name,
-        durationMin: exercise.durationMin,
-        intensity: exercise.intensity ?? "moderate"
-      });
-      return;
-    }
-
-    setFitnessDraft({ name: exercise.name, sets: exercise.sets, reps: exercise.reps, weightKg: exercise.weightKg });
   }
 
   function confirmDeleteExercise(exerciseId: string) {
@@ -261,7 +246,6 @@ export default function WorkoutsPage() {
       return { ...prev, [selectedDay]: { ...dayLog, exercises: dayLog.exercises.filter((exercise) => exercise.id !== exerciseId) } };
     });
 
-    if (editingExerciseId === exerciseId) resetForm();
     if (progressExerciseId === exerciseId) setProgressExerciseId(null);
     setDeleteExerciseId(null);
     setMessage("Exercise deleted.");
@@ -331,6 +315,21 @@ export default function WorkoutsPage() {
 
     setProgressExerciseId(null);
     setMessage("Workout progress updated.");
+  }
+
+  function togglePauseWorkout(isPaused: boolean) {
+    if (!progressExercise) return;
+
+    setPlan((prev) => {
+      const dayLog = prev[selectedDay];
+      const exercises = dayLog.exercises.map((exercise) =>
+        exercise.id === progressExercise.id ? { ...exercise, isPaused } : exercise
+      );
+      return { ...prev, [selectedDay]: { ...dayLog, exercises } };
+    });
+
+    setProgressExerciseId(null);
+    setMessage(isPaused ? "Workout paused." : "Workout re-activated.");
   }
 
   return (
@@ -415,6 +414,13 @@ export default function WorkoutsPage() {
             )}
 
             <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => togglePauseWorkout(!progressExercise.isPaused)}
+                className="rounded-xl border border-amber-200 px-4 py-2 text-sm font-semibold text-amber-700 hover:bg-amber-50"
+              >
+                {progressExercise.isPaused ? "Re-activate Workout" : "Pause Workout"}
+              </button>
               <button type="button" onClick={() => setProgressExerciseId(null)} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700">Close</button>
               <button type="button" onClick={saveProgressUpdate} className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-400">Save Progress</button>
             </div>
@@ -455,7 +461,7 @@ export default function WorkoutsPage() {
                   className={`rounded-xl border px-3 py-2 text-left text-sm ${selected ? "border-emerald-500 bg-emerald-50 text-emerald-700" : "border-slate-200 text-slate-700 hover:bg-slate-50"}`}
                 >
                   <p className="font-semibold">{dayLabels[day]}</p>
-                  <p className="text-xs">{plan[day].exercises.length} exercise(s)</p>
+                  <p className="text-xs">{plan[day].exercises.filter((exercise) => !exercise.isPaused).length} active</p>
                 </button>
               );
             })}
@@ -553,13 +559,8 @@ export default function WorkoutsPage() {
 
               <div className="flex gap-2">
                 <button type="submit" className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-400">
-                  {editingExerciseId ? "Save Changes" : "Save Exercise"}
+                  Save Exercise
                 </button>
-                {editingExerciseId ? (
-                  <button type="button" onClick={resetForm} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
-                    Cancel Edit
-                  </button>
-                ) : null}
               </div>
             </form>
 
@@ -568,11 +569,11 @@ export default function WorkoutsPage() {
 
           <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
             <h2 className="text-xl font-semibold text-slate-900">{dayLabels[selectedDay]} exercises</h2>
-            {activeDay.exercises.length === 0 ? (
+            {activeExercises.length === 0 ? (
               <p className="mt-4 rounded-xl border border-dashed border-slate-200 p-8 text-center text-sm text-slate-500">No exercises yet for this day.</p>
             ) : (
               <ul className="mt-4 space-y-3">
-                {activeDay.exercises.map((exercise) => (
+                {activeExercises.map((exercise) => (
                   <li key={exercise.id} className="rounded-xl border border-slate-200 p-4 cursor-pointer hover:bg-slate-50" onClick={() => openProgressModal(exercise)}>
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div>
@@ -586,7 +587,6 @@ export default function WorkoutsPage() {
 
                       <div className="flex gap-2">
                         <button type="button" onClick={(event) => { event.stopPropagation(); openProgressModal(exercise); }} className="rounded-lg border border-emerald-200 px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-50">Progress</button>
-                        <button type="button" onClick={(event) => { event.stopPropagation(); startEdit(exercise); }} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">Edit</button>
                         <button type="button" onClick={(event) => { event.stopPropagation(); confirmDeleteExercise(exercise.id); }} className="rounded-lg border border-rose-200 px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50">Delete</button>
                       </div>
                     </div>
@@ -594,6 +594,24 @@ export default function WorkoutsPage() {
                 ))}
               </ul>
             )}
+
+            {pausedExercises.length > 0 ? (
+              <div className="mt-6 border-t border-slate-200 pt-4">
+                <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Paused workouts</h3>
+                <ul className="mt-3 space-y-2">
+                  {pausedExercises.map((exercise) => (
+                    <li
+                      key={exercise.id}
+                      className="rounded-xl border border-amber-200 bg-amber-50 p-3 cursor-pointer"
+                      onClick={() => openProgressModal(exercise)}
+                    >
+                      <p className="text-sm font-semibold text-amber-800">{exercise.name}</p>
+                      <p className="text-xs text-amber-700">Paused • click to open and re-activate</p>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
           </div>
         </section>
       </main>
