@@ -171,3 +171,18 @@ export type WorkoutDayLog = {
 };
 
 export type WorkoutWeekPlan = Record<WorkoutDay, WorkoutDayLog>;
+
+
+export type WorkoutExceptionType = "missed" | "extra" | "replaced" | "rescheduled";
+
+export type WorkoutException = {
+  id: string;
+  date: string;
+  exceptionType: WorkoutExceptionType;
+  originalWorkoutId?: string;
+  replacementWorkoutData?: WorkoutExercise;
+  extraWorkoutData?: WorkoutExercise;
+  newDate?: string;
+  createdAt: string;
+  updatedAt: string;
+};

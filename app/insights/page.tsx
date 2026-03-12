@@ -4,7 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import { AppHeaderNav } from "@/components/AppHeaderNav";
 import { InsightsLineChart } from "@/components/InsightsLineChart";
 import { STORAGE_KEYS, readJson } from "@/lib/local-data";
-import { MacroKey, MacroTotals, StoredMealLog, WorkoutDay, WorkoutWeekPlan } from "@/lib/types";
+import { buildWorkoutAdjustedSummary, getCurrentWeekDateKeys } from "@/lib/workout-execution";
+import { MacroKey, MacroTotals, StoredMealLog, WorkoutException, WorkoutWeekPlan } from "@/lib/types";
 
 type RangePreset = "7d" | "1m" | "3m" | "6m" | "custom";
 
@@ -28,31 +29,13 @@ export default function InsightsPage() {
 
   const meals = useMemo(() => readJson<StoredMealLog[]>(STORAGE_KEYS.meals) ?? [], []);
   const workouts = useMemo(() => readJson<WorkoutWeekPlan>(STORAGE_KEYS.workouts), []);
+  const workoutExceptions = useMemo(() => readJson<WorkoutException[]>(STORAGE_KEYS.workoutExceptions) ?? [], []);
+  const weekDateKeys = useMemo(() => getCurrentWeekDateKeys(), []);
 
-  const workoutSummary = useMemo(() => {
-    const dayOrder: WorkoutDay[] = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
-
-    let plannedSessions = 0;
-    let totalExercises = 0;
-    let totalCalories = 0;
-    let totalFitnessVolume = 0;
-
-    dayOrder.forEach((day) => {
-      const dayLog = workouts?.[day];
-      if (!dayLog) return;
-
-      const activeExercises = dayLog.exercises.filter((exercise) => !exercise.isPaused);
-      if (activeExercises.length) plannedSessions += 1;
-
-      activeExercises.forEach((exercise) => {
-        totalExercises += 1;
-        totalCalories += exercise.estimatedCalories;
-        totalFitnessVolume += exercise.trainingVolume;
-      });
-    });
-
-    return { plannedSessions, totalExercises, totalCalories, totalFitnessVolume };
-  }, [workouts]);
+  const workoutSummary = useMemo(
+    () => buildWorkoutAdjustedSummary(workouts, workoutExceptions, weekDateKeys),
+    [workouts, workoutExceptions, weekDateKeys]
+  );
 
   useEffect(() => {
     const savedDisabled = readJson<MacroKey[]>(STORAGE_KEYS.disabledMacros) ?? [];
@@ -133,23 +116,15 @@ export default function InsightsPage() {
     <main className="mx-auto w-full max-w-6xl space-y-6 px-4 py-8 md:px-8">
       <AppHeaderNav />
 
-      <section className="grid gap-4 md:grid-cols-4">
-        <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
-          <p className="text-xs text-slate-500">Planned sessions</p>
-          <p className="mt-1 text-2xl font-semibold text-slate-900">{workoutSummary.plannedSessions}</p>
-        </div>
-        <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
-          <p className="text-xs text-slate-500">Total exercises</p>
-          <p className="mt-1 text-2xl font-semibold text-slate-900">{workoutSummary.totalExercises}</p>
-        </div>
-        <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
-          <p className="text-xs text-slate-500">Total calories</p>
-          <p className="mt-1 text-2xl font-semibold text-slate-900">{workoutSummary.totalCalories}</p>
-        </div>
-        <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
-          <p className="text-xs text-slate-500">Total fitness volume</p>
-          <p className="mt-1 text-2xl font-semibold text-slate-900">{workoutSummary.totalFitnessVolume}</p>
-        </div>
+      <section className="grid gap-4 md:grid-cols-4 xl:grid-cols-8">
+        <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200"><p className="text-xs text-slate-500">Planned sessions</p><p className="mt-1 text-2xl font-semibold text-slate-900">{workoutSummary.plannedSessions}</p></div>
+        <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200"><p className="text-xs text-slate-500">Adjusted sessions</p><p className="mt-1 text-2xl font-semibold text-slate-900">{workoutSummary.adjustedSessions}</p></div>
+        <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200"><p className="text-xs text-slate-500">Exercises</p><p className="mt-1 text-2xl font-semibold text-slate-900">{workoutSummary.totalExercises}</p></div>
+        <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200"><p className="text-xs text-slate-500">Workout calories</p><p className="mt-1 text-2xl font-semibold text-slate-900">{workoutSummary.totalCalories}</p></div>
+        <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200"><p className="text-xs text-slate-500">Fitness volume</p><p className="mt-1 text-2xl font-semibold text-slate-900">{workoutSummary.totalFitnessVolume}</p></div>
+        <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200"><p className="text-xs text-slate-500">Cardio sessions</p><p className="mt-1 text-2xl font-semibold text-slate-900">{workoutSummary.cardioSessions}</p></div>
+        <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200"><p className="text-xs text-slate-500">Fitness sessions</p><p className="mt-1 text-2xl font-semibold text-slate-900">{workoutSummary.fitnessSessions}</p></div>
+        <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200"><p className="text-xs text-slate-500">CrossFit sessions</p><p className="mt-1 text-2xl font-semibold text-slate-900">{workoutSummary.crossfitSessions}</p></div>
       </section>
 
       <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">

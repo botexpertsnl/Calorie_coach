@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { AppHeaderNav } from "@/components/AppHeaderNav";
 import { STORAGE_KEYS, readJson, writeJson } from "@/lib/local-data";
 import { calculateTrainingVolume, estimateCaloriesForType } from "@/lib/workouts";
+import { buildWorkoutAdjustedSummary, getCurrentWeekDateKeys } from "@/lib/workout-execution";
 import {
   CardioExercise,
   CrossfitExercise,
@@ -12,6 +13,8 @@ import {
   WorkoutDay,
   WorkoutExercise,
   WorkoutExerciseType,
+  WorkoutException,
+  WorkoutExceptionType,
   WorkoutIntensity,
   WorkoutProgressEntry,
   WorkoutWeekPlan
@@ -112,18 +115,37 @@ export default function WorkoutsPage() {
   const [progressExerciseId, setProgressExerciseId] = useState<string | null>(null);
   const [profileWeight, setProfileWeight] = useState(70);
   const [message, setMessage] = useState<string | null>(null);
+  const [exceptions, setExceptions] = useState<WorkoutException[]>([]);
+  const [isExceptionsOpen, setIsExceptionsOpen] = useState(false);
+  const [exceptionType, setExceptionType] = useState<WorkoutExceptionType>("missed");
+  const [exceptionDate, setExceptionDate] = useState(new Date().toISOString().slice(0, 10));
+  const [exceptionNewDate, setExceptionNewDate] = useState(new Date().toISOString().slice(0, 10));
+  const [exceptionOriginalWorkoutId, setExceptionOriginalWorkoutId] = useState("");
+  const [exceptionExerciseName, setExceptionExerciseName] = useState("");
+  const [exceptionExerciseType, setExceptionExerciseType] = useState<WorkoutExerciseType>("fitness");
+  const [exceptionDuration, setExceptionDuration] = useState(20);
+  const [exceptionSets, setExceptionSets] = useState(3);
+  const [exceptionReps, setExceptionReps] = useState(10);
+  const [exceptionWeight, setExceptionWeight] = useState(20);
+  const [exceptionIntensity, setExceptionIntensity] = useState<WorkoutIntensity>("moderate");
 
   useEffect(() => {
     const savedPlan = readJson<WorkoutWeekPlan>(STORAGE_KEYS.workouts);
     const savedProfile = readJson<ProfileInput>(STORAGE_KEYS.profile);
+    const savedExceptions = readJson<WorkoutException[]>(STORAGE_KEYS.workoutExceptions) ?? [];
 
     if (savedPlan) setPlan(savedPlan);
     if (savedProfile?.weightKg) setProfileWeight(savedProfile.weightKg);
+    setExceptions(savedExceptions);
   }, []);
 
   useEffect(() => {
     writeJson(STORAGE_KEYS.workouts, plan);
   }, [plan]);
+
+  useEffect(() => {
+    writeJson(STORAGE_KEYS.workoutExceptions, exceptions);
+  }, [exceptions]);
 
   function resetDraft(type: WorkoutExerciseType = "fitness") {
     setDraft({ ...defaultDraft, type });
@@ -145,6 +167,18 @@ export default function WorkoutsPage() {
     const history = getHistory(progressExercise);
     return history.slice(-2).reverse();
   }, [progressExercise]);
+
+  const weekDateKeys = useMemo(() => getCurrentWeekDateKeys(), []);
+
+  const adjustedSummary = useMemo(
+    () => buildWorkoutAdjustedSummary(plan, exceptions, weekDateKeys),
+    [plan, exceptions, weekDateKeys]
+  );
+
+  const plannedOptionsForExceptionDay = useMemo(() => {
+    const day = new Date(`${exceptionDate}T00:00:00`).toLocaleDateString("en-US", { weekday: "long" }).toLowerCase() as WorkoutDay;
+    return (plan[day]?.exercises ?? []).filter((exercise) => !exercise.isPaused);
+  }, [exceptionDate, plan]);
 
   function setDraftField<K extends keyof PlannerDraft>(key: K, value: PlannerDraft[K]) {
     setDraft((prev) => ({ ...prev, [key]: value }));
@@ -343,6 +377,132 @@ export default function WorkoutsPage() {
     setEditingExerciseId(null);
   }
 
+  function createExerciseFromException(type: WorkoutExerciseType): WorkoutExercise {
+    const now = new Date().toISOString();
+
+    if (type === "cardio") {
+      const estimatedCalories = estimateCaloriesForType({
+        type: "cardio",
+        weightKg: profileWeight,
+        name: exceptionExerciseName,
+        durationMinutes: Math.max(1, exceptionDuration),
+        intensity: exceptionIntensity
+      });
+
+      return {
+        id: crypto.randomUUID(),
+        type: "cardio",
+        workoutDayId: selectedDay,
+        name: exceptionExerciseName.trim(),
+        durationMinutes: Math.max(1, exceptionDuration),
+        intensity: exceptionIntensity,
+        trainingVolume: 0,
+        estimatedCalories,
+        notes: "",
+        progressHistory: [],
+        createdAt: now,
+        updatedAt: now,
+        isPaused: false
+      } as CardioExercise;
+    }
+
+    if (type === "crossfit") {
+      const duration = Math.max(0, exceptionDuration);
+      const sets = exceptionSets > 0 ? exceptionSets : undefined;
+      const reps = exceptionReps > 0 ? exceptionReps : undefined;
+      const weight = exceptionWeight > 0 ? exceptionWeight : undefined;
+
+      return {
+        id: crypto.randomUUID(),
+        type: "crossfit",
+        workoutDayId: selectedDay,
+        name: exceptionExerciseName.trim(),
+        durationMinutes: duration,
+        sets,
+        reps,
+        weight,
+        trainingVolume: calculateTrainingVolume(sets, reps, weight),
+        estimatedCalories: estimateCaloriesForType({
+          type: "crossfit",
+          weightKg: profileWeight,
+          name: exceptionExerciseName,
+          durationMinutes: duration,
+          intensity: exceptionIntensity
+        }),
+        notes: "",
+        intensity: exceptionIntensity,
+        progressHistory: [],
+        createdAt: now,
+        updatedAt: now,
+        isPaused: false
+      } as CrossfitExercise;
+    }
+
+    return {
+      id: crypto.randomUUID(),
+      type: "fitness",
+      workoutDayId: selectedDay,
+      name: exceptionExerciseName.trim(),
+      sets: Math.max(1, exceptionSets),
+      reps: Math.max(1, exceptionReps),
+      weight: Math.max(0, exceptionWeight),
+      trainingVolume: calculateTrainingVolume(Math.max(1, exceptionSets), Math.max(1, exceptionReps), Math.max(0, exceptionWeight)),
+      estimatedCalories: estimateCaloriesForType({
+        type: "fitness",
+        weightKg: profileWeight,
+        name: exceptionExerciseName,
+        sets: Math.max(1, exceptionSets),
+        reps: Math.max(1, exceptionReps),
+        weight: Math.max(0, exceptionWeight),
+        intensity: exceptionIntensity
+      }),
+      notes: "",
+      intensity: exceptionIntensity,
+      progressHistory: [],
+      createdAt: now,
+      updatedAt: now,
+      isPaused: false
+    } as FitnessExercise;
+  }
+
+  function saveException(event: FormEvent) {
+    event.preventDefault();
+
+    if ((exceptionType === "missed" || exceptionType === "replaced" || exceptionType === "rescheduled") && !exceptionOriginalWorkoutId) {
+      setMessage("Select a planned workout for this exception.");
+      return;
+    }
+
+    if ((exceptionType === "extra" || exceptionType === "replaced") && !exceptionExerciseName.trim()) {
+      setMessage("Provide a workout title for extra/replacement workout.");
+      return;
+    }
+
+    if (exceptionType === "rescheduled" && !exceptionNewDate) {
+      setMessage("Choose a new date for rescheduled workout.");
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const payload: WorkoutException = {
+      id: crypto.randomUUID(),
+      date: exceptionDate,
+      exceptionType,
+      originalWorkoutId: exceptionOriginalWorkoutId || undefined,
+      newDate: exceptionType === "rescheduled" ? exceptionNewDate : undefined,
+      replacementWorkoutData: exceptionType === "replaced" ? createExerciseFromException(exceptionExerciseType) : undefined,
+      extraWorkoutData: exceptionType === "extra" ? createExerciseFromException(exceptionExerciseType) : undefined,
+      createdAt: now,
+      updatedAt: now
+    };
+
+    setExceptions((prev) => [payload, ...prev]);
+    setMessage("Workout exception saved.");
+    setIsExceptionsOpen(false);
+    setExceptionOriginalWorkoutId("");
+    setExceptionExerciseName("");
+  }
+
   return (
     <>
       {deleteExerciseId ? (
@@ -354,6 +514,77 @@ export default function WorkoutsPage() {
               <button type="button" onClick={() => setDeleteExerciseId(null)} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700">Cancel</button>
               <button type="button" onClick={confirmDelete} className="rounded-xl bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-500">Delete</button>
             </div>
+          </div>
+        </div>
+      ) : null}
+
+      {isExceptionsOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45 p-4">
+          <div className="w-full max-w-2xl rounded-2xl bg-white p-6 shadow-xl ring-1 ring-slate-200">
+            <div className="flex items-start justify-between">
+              <div>
+                <h3 className="text-xl font-semibold text-slate-900">Workout Exceptions</h3>
+                <p className="text-sm text-slate-500">Only log differences from your weekly plan.</p>
+              </div>
+              <button type="button" onClick={() => setIsExceptionsOpen(false)} className="rounded-md p-1 text-slate-400 hover:bg-slate-100">✕</button>
+            </div>
+
+            <form onSubmit={saveException} className="mt-4 space-y-4">
+              <label className="block text-sm text-slate-700">Exception type
+                <select className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={exceptionType} onChange={(e) => setExceptionType(e.target.value as WorkoutExceptionType)}>
+                  <option value="missed">Missed Workout</option>
+                  <option value="extra">Extra Workout</option>
+                  <option value="replaced">Replaced Workout</option>
+                  <option value="rescheduled">Rescheduled Workout</option>
+                </select>
+              </label>
+
+              <label className="block text-sm text-slate-700">Date
+                <input type="date" className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={exceptionDate} onChange={(e) => setExceptionDate(e.target.value)} />
+              </label>
+
+              {(exceptionType === "missed" || exceptionType === "replaced" || exceptionType === "rescheduled") ? (
+                <label className="block text-sm text-slate-700">Planned workout
+                  <select className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={exceptionOriginalWorkoutId} onChange={(e) => setExceptionOriginalWorkoutId(e.target.value)}>
+                    <option value="">Select workout</option>
+                    {plannedOptionsForExceptionDay.map((exercise) => (<option key={exercise.id} value={exercise.id}>{exercise.name} ({exercise.type})</option>))}
+                  </select>
+                </label>
+              ) : null}
+
+              {exceptionType === "rescheduled" ? (
+                <label className="block text-sm text-slate-700">New date
+                  <input type="date" className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={exceptionNewDate} onChange={(e) => setExceptionNewDate(e.target.value)} />
+                </label>
+              ) : null}
+
+              {(exceptionType === "extra" || exceptionType === "replaced") ? (
+                <div className="space-y-3 rounded-xl border border-slate-200 p-4">
+                  <label className="block text-sm text-slate-700">Workout title
+                    <input className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={exceptionExerciseName} onChange={(e) => setExceptionExerciseName(e.target.value)} />
+                  </label>
+                  <label className="block text-sm text-slate-700">Type
+                    <select className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={exceptionExerciseType} onChange={(e) => setExceptionExerciseType(e.target.value as WorkoutExerciseType)}>
+                      <option value="cardio">Cardio</option>
+                      <option value="fitness">Fitness</option>
+                      <option value="crossfit">CrossFit</option>
+                    </select>
+                  </label>
+                  {(exceptionExerciseType === "cardio" || exceptionExerciseType === "crossfit") ? <label className="block text-sm text-slate-700">Duration (minutes)<input type="number" min={0} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={exceptionDuration} onChange={(e)=>setExceptionDuration(Number(e.target.value))} /></label> : null}
+                  {(exceptionExerciseType === "fitness" || exceptionExerciseType === "crossfit") ? <div className="grid gap-3 sm:grid-cols-3"><label className="text-sm text-slate-700">Sets<input type="number" min={0} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={exceptionSets} onChange={(e)=>setExceptionSets(Number(e.target.value))} /></label><label className="text-sm text-slate-700">Reps<input type="number" min={0} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={exceptionReps} onChange={(e)=>setExceptionReps(Number(e.target.value))} /></label><label className="text-sm text-slate-700">Weight (kg)<input type="number" min={0} step="0.5" className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={exceptionWeight} onChange={(e)=>setExceptionWeight(Number(e.target.value))} /></label></div> : null}
+                  <label className="block text-sm text-slate-700">Intensity
+                    <select className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={exceptionIntensity} onChange={(e)=>setExceptionIntensity(e.target.value as WorkoutIntensity)}>
+                      <option value="low">Low</option><option value="moderate">Moderate</option><option value="high">High</option>
+                    </select>
+                  </label>
+                </div>
+              ) : null}
+
+              <div className="flex justify-end gap-2">
+                <button type="button" onClick={() => setIsExceptionsOpen(false)} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700">Cancel</button>
+                <button type="submit" className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-400">Save Exception</button>
+              </div>
+            </form>
           </div>
         </div>
       ) : null}
@@ -496,9 +727,22 @@ export default function WorkoutsPage() {
       <main className="mx-auto w-full max-w-6xl space-y-6 px-4 py-8 md:px-8">
         <AppHeaderNav />
 
+        <section className="grid gap-4 md:grid-cols-5">
+          <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200"><p className="text-xs text-slate-500">Planned sessions</p><p className="text-2xl font-semibold text-slate-900">{adjustedSummary.plannedSessions}</p></div>
+          <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200"><p className="text-xs text-slate-500">Adjusted sessions</p><p className="text-2xl font-semibold text-slate-900">{adjustedSummary.adjustedSessions}</p></div>
+          <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200"><p className="text-xs text-slate-500">Exercises</p><p className="text-2xl font-semibold text-slate-900">{adjustedSummary.totalExercises}</p></div>
+          <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200"><p className="text-xs text-slate-500">Calories</p><p className="text-2xl font-semibold text-slate-900">{adjustedSummary.totalCalories}</p></div>
+          <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200"><p className="text-xs text-slate-500">Fitness volume</p><p className="text-2xl font-semibold text-slate-900">{adjustedSummary.totalFitnessVolume}</p></div>
+        </section>
+
         <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
-          <h1 className="text-3xl font-semibold text-slate-900">Workouts Planner</h1>
-          <p className="mt-2 text-sm text-slate-500">Schedule workouts across the week and manage exercises by day.</p>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h1 className="text-3xl font-semibold text-slate-900">Workouts Planner</h1>
+              <p className="mt-2 text-sm text-slate-500">Planned workouts are treated as completed by default. Only log exceptions when reality differed from plan.</p>
+            </div>
+            <button type="button" onClick={() => setIsExceptionsOpen(true)} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Workout Exceptions</button>
+          </div>
           <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-7">
             {dayOrder.map((day) => (
               <button
