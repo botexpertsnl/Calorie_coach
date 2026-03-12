@@ -65,6 +65,8 @@ export type DailyTargets = {
 };
 
 
+export type MealWeekday = "monday" | "tuesday" | "wednesday" | "thursday" | "friday" | "saturday" | "sunday";
+
 export type MealSourceType = "manual" | "ai" | "quick" | "daily";
 
 export type StoredMealLog = {
@@ -88,6 +90,7 @@ export type QuickMeal = {
   carbs: number;
   fat: number;
   isDailyMeal: boolean;
+  dailyMealDays: MealWeekday[];
   createdAt: string;
   updatedAt: string;
 };

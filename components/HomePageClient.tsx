@@ -6,7 +6,7 @@ import { NutritionAnalysisModal } from "@/components/NutritionAnalysisModal";
 import { QuickMealsModal } from "@/components/QuickMealsModal";
 import { Spinner } from "@/components/Spinner";
 import { STORAGE_KEYS, readJson, writeJson } from "@/lib/local-data";
-import { applyDailyMealsForDate, getLocalDateKey, getMealsForDate, toCalorieResponseFromQuickMeal } from "@/lib/meals";
+import { ALL_WEEKDAYS, applyDailyMealsForDate, getLocalDateKey, getMealsForDate, toCalorieResponseFromQuickMeal } from "@/lib/meals";
 import { CalorieResponse, DailyTargets, MacroKey, MealSourceType, QuickMeal, StoredMealLog } from "@/lib/types";
 
 type MacroRowProps = {
@@ -57,7 +57,8 @@ function normalizeHistoryEntry(entry: StoredMealLog): StoredMealLog {
 function normalizeQuickMeal(meal: QuickMeal): QuickMeal {
   return {
     ...meal,
-    isDailyMeal: meal.isDailyMeal ?? false
+    isDailyMeal: meal.isDailyMeal ?? false,
+    dailyMealDays: meal.dailyMealDays?.length ? meal.dailyMealDays : [...ALL_WEEKDAYS]
   };
 }
 

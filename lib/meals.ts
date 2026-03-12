@@ -1,10 +1,35 @@
-import { CalorieResponse, QuickMeal, StoredMealLog } from "@/lib/types";
+import { CalorieResponse, MealWeekday, QuickMeal, StoredMealLog } from "@/lib/types";
+
+export const ALL_WEEKDAYS: MealWeekday[] = [
+  "monday",
+  "tuesday",
+  "wednesday",
+  "thursday",
+  "friday",
+  "saturday",
+  "sunday"
+];
+
+const weekdayMap: Record<number, MealWeekday> = {
+  0: "sunday",
+  1: "monday",
+  2: "tuesday",
+  3: "wednesday",
+  4: "thursday",
+  5: "friday",
+  6: "saturday"
+};
 
 export function getLocalDateKey(date = new Date()) {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, "0");
   const d = String(date.getDate()).padStart(2, "0");
   return `${y}-${m}-${d}`;
+}
+
+export function getWeekdayFromDateKey(dateKey: string): MealWeekday {
+  const day = new Date(`${dateKey}T00:00:00`).getDay();
+  return weekdayMap[day] ?? "monday";
 }
 
 export function getMealsForDate(meals: StoredMealLog[], dateKey: string) {
@@ -48,8 +73,14 @@ export function createDailyMealEntry(quickMeal: QuickMeal, dateKey: string): Sto
   };
 }
 
+function isMealEnabledOnWeekday(meal: QuickMeal, weekday: MealWeekday) {
+  const mealDays = meal.dailyMealDays?.length ? meal.dailyMealDays : ALL_WEEKDAYS;
+  return mealDays.includes(weekday);
+}
+
 export function applyDailyMealsForDate(meals: StoredMealLog[], quickMeals: QuickMeal[], dateKey: string) {
-  const dailyQuickMeals = quickMeals.filter((meal) => meal.isDailyMeal);
+  const weekday = getWeekdayFromDateKey(dateKey);
+  const dailyQuickMeals = quickMeals.filter((meal) => meal.isDailyMeal && isMealEnabledOnWeekday(meal, weekday));
   if (dailyQuickMeals.length === 0) return meals;
 
   const existingDailyIds = new Set(
