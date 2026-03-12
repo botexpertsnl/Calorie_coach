@@ -392,7 +392,7 @@ export default function WorkoutsPage() {
                 <input className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={draft.name} onChange={(event) => setDraftField("name", event.target.value)} />
               </label>
 
-              {(draft.type === "cardio" || draft.type === "crossfit") ? (
+              {draft.type === "cardio" ? (
                 <label className="block text-sm text-slate-700">Duration (minutes)
                   <div className="mt-1 flex rounded-xl border border-slate-200">
                     <button type="button" onClick={() => setDraftField("durationMinutes", Math.max(0, draft.durationMinutes - 1))} className="px-3">-</button>
@@ -402,7 +402,7 @@ export default function WorkoutsPage() {
                 </label>
               ) : null}
 
-              {(draft.type === "fitness" || draft.type === "crossfit") ? (
+              {draft.type === "fitness" ? (
                 <div className="grid gap-3 sm:grid-cols-3">
                   <label className="text-sm text-slate-700">Sets
                     <div className="mt-1 flex rounded-xl border border-slate-200">
@@ -425,6 +425,62 @@ export default function WorkoutsPage() {
                       <button type="button" onClick={() => setDraftField("weight", draft.weight + 2.5)} className="px-3">+</button>
                     </div>
                   </label>
+                </div>
+              ) : null}
+
+              {draft.type === "crossfit" ? (
+                <div className="space-y-3 rounded-xl border border-slate-200 p-3">
+                  <p className="text-sm font-semibold text-slate-800">CrossFit fields</p>
+
+                  <label className={`block rounded-lg border p-3 text-sm ${draft.crossfitUseDuration ? "border-emerald-200 bg-emerald-50/40 text-slate-700" : "border-slate-200 bg-slate-50 text-slate-500"}`}>
+                    <span className="inline-flex items-center gap-2">
+                      <input type="checkbox" checked={draft.crossfitUseDuration} onChange={(event) => setDraftField("crossfitUseDuration", event.target.checked)} />
+                      Duration (minutes)
+                    </span>
+                    <div className={`mt-2 flex rounded-xl border ${draft.crossfitUseDuration ? "border-slate-200 bg-white" : "border-slate-200 bg-slate-100"}`}>
+                      <button type="button" disabled={!draft.crossfitUseDuration} onClick={() => setDraftField("durationMinutes", Math.max(1, draft.durationMinutes - 1))} className="px-3 disabled:cursor-not-allowed disabled:opacity-50">-</button>
+                      <input type="number" min={1} disabled={!draft.crossfitUseDuration} className="w-full border-x border-slate-200 px-2 py-2 disabled:bg-slate-100" value={draft.durationMinutes} onChange={(event) => setDraftField("durationMinutes", Number(event.target.value))} />
+                      <button type="button" disabled={!draft.crossfitUseDuration} onClick={() => setDraftField("durationMinutes", draft.durationMinutes + 1)} className="px-3 disabled:cursor-not-allowed disabled:opacity-50">+</button>
+                    </div>
+                  </label>
+
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <label className={`rounded-lg border p-3 text-sm ${draft.crossfitUseSets ? "border-emerald-200 bg-emerald-50/40 text-slate-700" : "border-slate-200 bg-slate-50 text-slate-500"}`}>
+                      <span className="inline-flex items-center gap-2">
+                        <input type="checkbox" checked={draft.crossfitUseSets} onChange={(event) => setDraftField("crossfitUseSets", event.target.checked)} />
+                        Sets
+                      </span>
+                      <div className={`mt-2 flex rounded-xl border ${draft.crossfitUseSets ? "border-slate-200 bg-white" : "border-slate-200 bg-slate-100"}`}>
+                        <button type="button" disabled={!draft.crossfitUseSets} onClick={() => setDraftField("sets", Math.max(1, draft.sets - 1))} className="px-3 disabled:cursor-not-allowed disabled:opacity-50">-</button>
+                        <input type="number" min={1} disabled={!draft.crossfitUseSets} className="w-full border-x border-slate-200 px-2 py-2 disabled:bg-slate-100" value={draft.sets} onChange={(event) => setDraftField("sets", Number(event.target.value))} />
+                        <button type="button" disabled={!draft.crossfitUseSets} onClick={() => setDraftField("sets", draft.sets + 1)} className="px-3 disabled:cursor-not-allowed disabled:opacity-50">+</button>
+                      </div>
+                    </label>
+
+                    <label className={`rounded-lg border p-3 text-sm ${draft.crossfitUseReps ? "border-emerald-200 bg-emerald-50/40 text-slate-700" : "border-slate-200 bg-slate-50 text-slate-500"}`}>
+                      <span className="inline-flex items-center gap-2">
+                        <input type="checkbox" checked={draft.crossfitUseReps} onChange={(event) => setDraftField("crossfitUseReps", event.target.checked)} />
+                        Reps
+                      </span>
+                      <div className={`mt-2 flex rounded-xl border ${draft.crossfitUseReps ? "border-slate-200 bg-white" : "border-slate-200 bg-slate-100"}`}>
+                        <button type="button" disabled={!draft.crossfitUseReps} onClick={() => setDraftField("reps", Math.max(1, draft.reps - 1))} className="px-3 disabled:cursor-not-allowed disabled:opacity-50">-</button>
+                        <input type="number" min={1} disabled={!draft.crossfitUseReps} className="w-full border-x border-slate-200 px-2 py-2 disabled:bg-slate-100" value={draft.reps} onChange={(event) => setDraftField("reps", Number(event.target.value))} />
+                        <button type="button" disabled={!draft.crossfitUseReps} onClick={() => setDraftField("reps", draft.reps + 1)} className="px-3 disabled:cursor-not-allowed disabled:opacity-50">+</button>
+                      </div>
+                    </label>
+
+                    <label className={`rounded-lg border p-3 text-sm ${draft.crossfitUseWeight ? "border-emerald-200 bg-emerald-50/40 text-slate-700" : "border-slate-200 bg-slate-50 text-slate-500"}`}>
+                      <span className="inline-flex items-center gap-2">
+                        <input type="checkbox" checked={draft.crossfitUseWeight} onChange={(event) => setDraftField("crossfitUseWeight", event.target.checked)} />
+                        Weight (kg)
+                      </span>
+                      <div className={`mt-2 flex rounded-xl border ${draft.crossfitUseWeight ? "border-slate-200 bg-white" : "border-slate-200 bg-slate-100"}`}>
+                        <button type="button" disabled={!draft.crossfitUseWeight} onClick={() => setDraftField("weight", Math.max(0, draft.weight - 2.5))} className="px-3 disabled:cursor-not-allowed disabled:opacity-50">-</button>
+                        <input type="number" min={0} step="0.5" disabled={!draft.crossfitUseWeight} className="w-full border-x border-slate-200 px-2 py-2 disabled:bg-slate-100" value={draft.weight} onChange={(event) => setDraftField("weight", Number(event.target.value))} />
+                        <button type="button" disabled={!draft.crossfitUseWeight} onClick={() => setDraftField("weight", draft.weight + 2.5)} className="px-3 disabled:cursor-not-allowed disabled:opacity-50">+</button>
+                      </div>
+                    </label>
+                  </div>
                 </div>
               ) : null}
 
@@ -508,22 +564,23 @@ export default function WorkoutsPage() {
               {draft.type === "crossfit" ? (
                 <div className="rounded-xl border border-slate-200 p-3 space-y-3">
                   <p className="text-sm font-semibold text-slate-800">CrossFit fields</p>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <label className={`rounded-lg border p-3 text-sm ${draft.crossfitUseDuration ? "border-emerald-200 bg-emerald-50/40 text-slate-700" : "border-slate-200 bg-slate-50 text-slate-500"}`}>
-                      <span className="inline-flex items-center gap-2">
-                        <input type="checkbox" checked={draft.crossfitUseDuration} onChange={(e) => setDraftField("crossfitUseDuration", e.target.checked)} />
-                        Duration (minutes)
-                      </span>
-                      <div className={`mt-2 flex rounded-xl border ${draft.crossfitUseDuration ? "border-slate-200 bg-white" : "border-slate-200 bg-slate-100"}`}>
-                        <button type="button" disabled={!draft.crossfitUseDuration} onClick={() => setDraftField("durationMinutes", Math.max(1, draft.durationMinutes - 1))} className="px-3 disabled:cursor-not-allowed disabled:opacity-50">-</button>
-                        <input type="number" min={1} disabled={!draft.crossfitUseDuration} className="w-full border-x border-slate-200 px-2 py-2 disabled:bg-slate-100" value={draft.durationMinutes} onChange={(event) => setDraftField("durationMinutes", Number(event.target.value))} />
-                        <button type="button" disabled={!draft.crossfitUseDuration} onClick={() => setDraftField("durationMinutes", draft.durationMinutes + 1)} className="px-3 disabled:cursor-not-allowed disabled:opacity-50">+</button>
-                      </div>
-                    </label>
 
+                  <label className={`block rounded-lg border p-3 text-sm ${draft.crossfitUseDuration ? "border-emerald-200 bg-emerald-50/40 text-slate-700" : "border-slate-200 bg-slate-50 text-slate-500"}`}>
+                    <span className="inline-flex items-center gap-2">
+                      <input type="checkbox" checked={draft.crossfitUseDuration} onChange={(event) => setDraftField("crossfitUseDuration", event.target.checked)} />
+                      Duration (minutes)
+                    </span>
+                    <div className={`mt-2 flex rounded-xl border ${draft.crossfitUseDuration ? "border-slate-200 bg-white" : "border-slate-200 bg-slate-100"}`}>
+                      <button type="button" disabled={!draft.crossfitUseDuration} onClick={() => setDraftField("durationMinutes", Math.max(1, draft.durationMinutes - 1))} className="px-3 disabled:cursor-not-allowed disabled:opacity-50">-</button>
+                      <input type="number" min={1} disabled={!draft.crossfitUseDuration} className="w-full border-x border-slate-200 px-2 py-2 disabled:bg-slate-100" value={draft.durationMinutes} onChange={(event) => setDraftField("durationMinutes", Number(event.target.value))} />
+                      <button type="button" disabled={!draft.crossfitUseDuration} onClick={() => setDraftField("durationMinutes", draft.durationMinutes + 1)} className="px-3 disabled:cursor-not-allowed disabled:opacity-50">+</button>
+                    </div>
+                  </label>
+
+                  <div className="grid gap-3 sm:grid-cols-3">
                     <label className={`rounded-lg border p-3 text-sm ${draft.crossfitUseSets ? "border-emerald-200 bg-emerald-50/40 text-slate-700" : "border-slate-200 bg-slate-50 text-slate-500"}`}>
                       <span className="inline-flex items-center gap-2">
-                        <input type="checkbox" checked={draft.crossfitUseSets} onChange={(e) => setDraftField("crossfitUseSets", e.target.checked)} />
+                        <input type="checkbox" checked={draft.crossfitUseSets} onChange={(event) => setDraftField("crossfitUseSets", event.target.checked)} />
                         Sets
                       </span>
                       <div className={`mt-2 flex rounded-xl border ${draft.crossfitUseSets ? "border-slate-200 bg-white" : "border-slate-200 bg-slate-100"}`}>
@@ -535,7 +592,7 @@ export default function WorkoutsPage() {
 
                     <label className={`rounded-lg border p-3 text-sm ${draft.crossfitUseReps ? "border-emerald-200 bg-emerald-50/40 text-slate-700" : "border-slate-200 bg-slate-50 text-slate-500"}`}>
                       <span className="inline-flex items-center gap-2">
-                        <input type="checkbox" checked={draft.crossfitUseReps} onChange={(e) => setDraftField("crossfitUseReps", e.target.checked)} />
+                        <input type="checkbox" checked={draft.crossfitUseReps} onChange={(event) => setDraftField("crossfitUseReps", event.target.checked)} />
                         Reps
                       </span>
                       <div className={`mt-2 flex rounded-xl border ${draft.crossfitUseReps ? "border-slate-200 bg-white" : "border-slate-200 bg-slate-100"}`}>
@@ -547,7 +604,7 @@ export default function WorkoutsPage() {
 
                     <label className={`rounded-lg border p-3 text-sm ${draft.crossfitUseWeight ? "border-emerald-200 bg-emerald-50/40 text-slate-700" : "border-slate-200 bg-slate-50 text-slate-500"}`}>
                       <span className="inline-flex items-center gap-2">
-                        <input type="checkbox" checked={draft.crossfitUseWeight} onChange={(e) => setDraftField("crossfitUseWeight", e.target.checked)} />
+                        <input type="checkbox" checked={draft.crossfitUseWeight} onChange={(event) => setDraftField("crossfitUseWeight", event.target.checked)} />
                         Weight (kg)
                       </span>
                       <div className={`mt-2 flex rounded-xl border ${draft.crossfitUseWeight ? "border-slate-200 bg-white" : "border-slate-200 bg-slate-100"}`}>
