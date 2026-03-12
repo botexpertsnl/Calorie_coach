@@ -13,6 +13,7 @@ import {
   WorkoutExercise,
   WorkoutExerciseType,
   WorkoutIntensity,
+  WorkoutProgressEntry,
   WorkoutWeekPlan
 } from "@/lib/types";
 
@@ -49,6 +50,10 @@ type PlannerDraft = {
   weight: number;
   intensity: WorkoutIntensity;
   notes: string;
+  crossfitUseDuration: boolean;
+  crossfitUseSets: boolean;
+  crossfitUseReps: boolean;
+  crossfitUseWeight: boolean;
 };
 
 const defaultDraft: PlannerDraft = {
@@ -59,8 +64,32 @@ const defaultDraft: PlannerDraft = {
   reps: 10,
   weight: 20,
   intensity: "moderate",
-  notes: ""
+  notes: "",
+  crossfitUseDuration: true,
+  crossfitUseSets: false,
+  crossfitUseReps: false,
+  crossfitUseWeight: false
 };
+
+function toProgressEntry(exercise: WorkoutExercise): WorkoutProgressEntry {
+  return {
+    recordedAt: new Date().toISOString(),
+    durationMinutes: "durationMinutes" in exercise ? exercise.durationMinutes : undefined,
+    intensity: exercise.intensity,
+    estimatedCalories: exercise.estimatedCalories,
+    sets: "sets" in exercise ? exercise.sets : undefined,
+    reps: "reps" in exercise ? exercise.reps : undefined,
+    weight: "weight" in exercise ? exercise.weight : undefined,
+    trainingVolume: exercise.trainingVolume,
+    notes: exercise.notes
+  };
+}
+
+function getHistory(exercise: WorkoutExercise) {
+  return Array.isArray((exercise as { progressHistory?: WorkoutProgressEntry[] }).progressHistory)
+    ? (exercise as { progressHistory: WorkoutProgressEntry[] }).progressHistory
+    : [];
+}
 
 export default function WorkoutsPage() {
   const [plan, setPlan] = useState<WorkoutWeekPlan>(createDefaultPlan());
@@ -68,6 +97,7 @@ export default function WorkoutsPage() {
   const [draft, setDraft] = useState<PlannerDraft>(defaultDraft);
   const [editingExerciseId, setEditingExerciseId] = useState<string | null>(null);
   const [deleteExerciseId, setDeleteExerciseId] = useState<string | null>(null);
+  const [progressExerciseId, setProgressExerciseId] = useState<string | null>(null);
   const [profileWeight, setProfileWeight] = useState(70);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -92,6 +122,17 @@ export default function WorkoutsPage() {
     () => plan[selectedDay].exercises.filter((exercise) => !exercise.isPaused),
     [plan, selectedDay]
   );
+
+  const progressExercise = useMemo(
+    () => selectedExercises.find((exercise) => exercise.id === progressExerciseId) ?? null,
+    [selectedExercises, progressExerciseId]
+  );
+
+  const previousProgress = useMemo(() => {
+    if (!progressExercise) return null;
+    const history = getHistory(progressExercise);
+    return history.length ? history[history.length - 1] : null;
+  }, [progressExercise]);
 
   const weeklySummary = useMemo(() => {
     let totalExercises = 0;
@@ -118,21 +159,37 @@ export default function WorkoutsPage() {
     setDraft((prev) => ({ ...prev, [key]: value }));
   }
 
+  function validateDraft() {
+    if (!draft.name.trim()) return "Please provide an exercise name.";
+
+    if (draft.type === "cardio") {
+      if (draft.durationMinutes <= 0) return "Please provide a valid duration.";
+      return null;
+    }
+
+    if (draft.type === "fitness") {
+      if (draft.sets <= 0 || draft.reps <= 0) return "Please provide valid sets and reps.";
+      return null;
+    }
+
+    // CrossFit: individually toggle optional fields
+    const enabled = [draft.crossfitUseDuration, draft.crossfitUseSets, draft.crossfitUseReps, draft.crossfitUseWeight].some(Boolean);
+    if (!enabled) return "Enable at least one CrossFit field (duration, sets, reps, or weight).";
+
+    if (draft.crossfitUseDuration && draft.durationMinutes <= 0) return "CrossFit duration must be greater than zero when enabled.";
+    if (draft.crossfitUseSets && draft.sets <= 0) return "CrossFit sets must be greater than zero when enabled.";
+    if (draft.crossfitUseReps && draft.reps <= 0) return "CrossFit reps must be greater than zero when enabled.";
+    if (draft.crossfitUseWeight && draft.weight < 0) return "CrossFit weight cannot be negative.";
+
+    return null;
+  }
+
   function saveExercise(event: FormEvent) {
     event.preventDefault();
 
-    if (!draft.name.trim()) {
-      setMessage("Please provide an exercise name.");
-      return;
-    }
-
-    if ((draft.type === "cardio" || draft.type === "crossfit") && draft.durationMinutes <= 0) {
-      setMessage("Please provide a valid duration.");
-      return;
-    }
-
-    if (draft.type === "fitness" && (draft.sets <= 0 || draft.reps <= 0)) {
-      setMessage("Please provide valid sets and reps.");
+    const validationError = validateDraft();
+    if (validationError) {
+      setMessage(validationError);
       return;
     }
 
@@ -168,22 +225,24 @@ export default function WorkoutsPage() {
         estimatedCalories,
         trainingVolume: 0,
         createdAt: existing?.createdAt ?? now,
+        progressHistory: existing ? [...getHistory(existing), toProgressEntry(existing)] : [],
         ...shared
       } as CardioExercise;
     } else if (draft.type === "crossfit") {
+      const duration = draft.crossfitUseDuration ? draft.durationMinutes : 0;
+      const sets = draft.crossfitUseSets ? draft.sets : undefined;
+      const reps = draft.crossfitUseReps ? draft.reps : undefined;
+      const weight = draft.crossfitUseWeight ? draft.weight : undefined;
+
       const estimatedCalories = estimateCaloriesForType({
         type: "crossfit",
         weightKg: profileWeight,
         name: draft.name,
-        durationMinutes: draft.durationMinutes,
+        durationMinutes: duration,
         intensity: draft.intensity
       });
 
-      const trainingVolume = calculateTrainingVolume(
-        draft.sets > 0 ? draft.sets : undefined,
-        draft.reps > 0 ? draft.reps : undefined,
-        draft.weight > 0 ? draft.weight : undefined
-      );
+      const trainingVolume = calculateTrainingVolume(sets, reps, weight);
 
       const existing = editingExerciseId
         ? plan[selectedDay].exercises.find((exercise) => exercise.id === editingExerciseId && exercise.type === "crossfit")
@@ -192,13 +251,14 @@ export default function WorkoutsPage() {
       nextExercise = {
         id: editingExerciseId ?? crypto.randomUUID(),
         type: "crossfit",
-        durationMinutes: draft.durationMinutes,
-        weight: draft.weight > 0 ? draft.weight : undefined,
-        sets: draft.sets > 0 ? draft.sets : undefined,
-        reps: draft.reps > 0 ? draft.reps : undefined,
+        durationMinutes: duration,
+        weight,
+        sets,
+        reps,
         trainingVolume,
         estimatedCalories,
         createdAt: existing?.createdAt ?? now,
+        progressHistory: existing ? [...getHistory(existing), toProgressEntry(existing)] : [],
         ...shared
       } as CrossfitExercise;
     } else {
@@ -226,6 +286,7 @@ export default function WorkoutsPage() {
         trainingVolume,
         estimatedCalories,
         createdAt: existing?.createdAt ?? now,
+        progressHistory: existing ? [...getHistory(existing), toProgressEntry(existing)] : [],
         ...shared
       } as FitnessExercise;
     }
@@ -252,7 +313,11 @@ export default function WorkoutsPage() {
       reps: "reps" in exercise && typeof exercise.reps === "number" ? exercise.reps : 10,
       weight: "weight" in exercise && typeof exercise.weight === "number" ? exercise.weight : 0,
       intensity: exercise.intensity ?? "moderate",
-      notes: exercise.notes ?? ""
+      notes: exercise.notes ?? "",
+      crossfitUseDuration: exercise.type === "crossfit" ? exercise.durationMinutes > 0 : true,
+      crossfitUseSets: exercise.type === "crossfit" ? typeof exercise.sets === "number" : false,
+      crossfitUseReps: exercise.type === "crossfit" ? typeof exercise.reps === "number" : false,
+      crossfitUseWeight: exercise.type === "crossfit" ? typeof exercise.weight === "number" : false
     });
   }
 
@@ -272,6 +337,16 @@ export default function WorkoutsPage() {
     setMessage("Exercise deleted.");
   }
 
+  function openProgress(exercise: WorkoutExercise) {
+    startEdit(exercise);
+    setProgressExerciseId(exercise.id);
+  }
+
+  function closeProgress() {
+    setProgressExerciseId(null);
+    setEditingExerciseId(null);
+  }
+
   return (
     <>
       {deleteExerciseId ? (
@@ -283,6 +358,56 @@ export default function WorkoutsPage() {
               <button type="button" onClick={() => setDeleteExerciseId(null)} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700">Cancel</button>
               <button type="button" onClick={confirmDelete} className="rounded-xl bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-500">Delete</button>
             </div>
+          </div>
+        </div>
+      ) : null}
+
+      {progressExercise ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45 p-4">
+          <div className="w-full max-w-2xl rounded-2xl bg-white p-6 shadow-xl ring-1 ring-slate-200">
+            <div className="flex items-start justify-between">
+              <div>
+                <h3 className="text-xl font-semibold text-slate-900">Exercise Progress</h3>
+                <p className="text-sm text-slate-500">{progressExercise.name}</p>
+                {previousProgress ? <p className="text-xs text-slate-500">Previous: {previousProgress.notes || "No notes"}</p> : null}
+              </div>
+              <button type="button" onClick={closeProgress} className="rounded-md p-1 text-slate-400 hover:bg-slate-100">✕</button>
+            </div>
+
+            <form onSubmit={saveExercise} className="mt-4 space-y-4">
+              <label className="block text-sm text-slate-700">Exercise name / description
+                <input className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={draft.name} onChange={(event) => setDraftField("name", event.target.value)} />
+              </label>
+
+              {(draft.type === "cardio" || draft.type === "crossfit") ? (
+                <label className="block text-sm text-slate-700">Duration (minutes)
+                  <input type="number" min={0} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={draft.durationMinutes} onChange={(event) => setDraftField("durationMinutes", Number(event.target.value))} />
+                </label>
+              ) : null}
+
+              {(draft.type === "fitness" || draft.type === "crossfit") ? (
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <label className="text-sm text-slate-700">Sets
+                    <input type="number" min={0} className="mt-1 w-full rounded-xl border border-slate-200 px-2 py-2" value={draft.sets} onChange={(event) => setDraftField("sets", Number(event.target.value))} />
+                  </label>
+                  <label className="text-sm text-slate-700">Reps
+                    <input type="number" min={0} className="mt-1 w-full rounded-xl border border-slate-200 px-2 py-2" value={draft.reps} onChange={(event) => setDraftField("reps", Number(event.target.value))} />
+                  </label>
+                  <label className="text-sm text-slate-700">Weight (kg)
+                    <input type="number" min={0} step="0.5" className="mt-1 w-full rounded-xl border border-slate-200 px-2 py-2" value={draft.weight} onChange={(event) => setDraftField("weight", Number(event.target.value))} />
+                  </label>
+                </div>
+              ) : null}
+
+              <label className="block text-sm text-slate-700">Notes
+                <textarea className="mt-1 min-h-20 w-full rounded-xl border border-slate-200 px-3 py-2" value={draft.notes} onChange={(event) => setDraftField("notes", event.target.value)} />
+              </label>
+
+              <div className="flex justify-end gap-2">
+                <button type="button" onClick={closeProgress} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700">Close</button>
+                <button type="submit" className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-400">Save Changes</button>
+              </div>
+            </form>
           </div>
         </div>
       ) : null}
@@ -345,13 +470,28 @@ export default function WorkoutsPage() {
                 <input className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={draft.name} onChange={(event) => setDraftField("name", event.target.value)} placeholder="e.g., Bench Press" />
               </label>
 
-              {draft.type === "cardio" || draft.type === "crossfit" ? (
+              {draft.type === "cardio" ? (
                 <label className="block text-sm text-slate-700">Duration (minutes)
                   <input type="number" min={1} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={draft.durationMinutes} onChange={(event) => setDraftField("durationMinutes", Number(event.target.value))} />
                 </label>
               ) : null}
 
-              {draft.type === "fitness" || draft.type === "crossfit" ? (
+              {draft.type === "crossfit" ? (
+                <div className="rounded-xl border border-slate-200 p-3 space-y-3">
+                  <p className="text-sm font-semibold text-slate-800">CrossFit fields</p>
+                  <label className="inline-flex items-center gap-2 text-sm text-slate-700"><input type="checkbox" checked={draft.crossfitUseDuration} onChange={(e) => setDraftField("crossfitUseDuration", e.target.checked)} />Duration</label>
+                  <label className="inline-flex items-center gap-2 text-sm text-slate-700 ml-4"><input type="checkbox" checked={draft.crossfitUseSets} onChange={(e) => setDraftField("crossfitUseSets", e.target.checked)} />Sets</label>
+                  <label className="inline-flex items-center gap-2 text-sm text-slate-700 ml-4"><input type="checkbox" checked={draft.crossfitUseReps} onChange={(e) => setDraftField("crossfitUseReps", e.target.checked)} />Reps</label>
+                  <label className="inline-flex items-center gap-2 text-sm text-slate-700 ml-4"><input type="checkbox" checked={draft.crossfitUseWeight} onChange={(e) => setDraftField("crossfitUseWeight", e.target.checked)} />Weight</label>
+
+                  {draft.crossfitUseDuration ? <label className="block text-sm text-slate-700">Duration (minutes)<input type="number" min={1} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={draft.durationMinutes} onChange={(event) => setDraftField("durationMinutes", Number(event.target.value))} /></label> : null}
+                  {draft.crossfitUseSets ? <label className="block text-sm text-slate-700">Sets<input type="number" min={1} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={draft.sets} onChange={(event) => setDraftField("sets", Number(event.target.value))} /></label> : null}
+                  {draft.crossfitUseReps ? <label className="block text-sm text-slate-700">Reps<input type="number" min={1} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={draft.reps} onChange={(event) => setDraftField("reps", Number(event.target.value))} /></label> : null}
+                  {draft.crossfitUseWeight ? <label className="block text-sm text-slate-700">Weight (kg)<input type="number" min={0} step="0.5" className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={draft.weight} onChange={(event) => setDraftField("weight", Number(event.target.value))} /></label> : null}
+                </div>
+              ) : null}
+
+              {draft.type === "fitness" ? (
                 <div className="grid gap-3 sm:grid-cols-3">
                   <label className="text-sm text-slate-700">Sets
                     <div className="mt-1 flex rounded-xl border border-slate-200">
@@ -405,33 +545,20 @@ export default function WorkoutsPage() {
             ) : (
               <ul className="mt-4 space-y-3">
                 {selectedExercises.map((exercise) => (
-                  <li key={exercise.id} className="rounded-xl border border-slate-200 p-4">
+                  <li key={exercise.id} className="rounded-xl border border-slate-200 p-4 cursor-pointer hover:bg-slate-50" onClick={() => openProgress(exercise)}>
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div>
                         <p className="font-semibold text-slate-900">{exercise.name}</p>
-                        {exercise.type === "cardio" ? (
-                          <p className="mt-1 text-sm text-slate-600">Duration: {exercise.durationMinutes} minutes</p>
-                        ) : null}
-                        {exercise.type === "fitness" ? (
-                          <>
-                            <p className="mt-1 text-sm text-slate-600">{exercise.sets} sets × {exercise.reps} reps × {exercise.weight} kg</p>
-                            <p className="text-xs text-slate-500">Training Volume: {exercise.trainingVolume}</p>
-                          </>
-                        ) : null}
-                        {exercise.type === "crossfit" ? (
-                          <>
-                            <p className="mt-1 text-sm text-slate-600">Duration: {exercise.durationMinutes} minutes</p>
-                            {exercise.weight ? <p className="text-sm text-slate-600">Weight: {exercise.weight} kg</p> : null}
-                            {(exercise.sets && exercise.reps) ? <p className="text-sm text-slate-600">{exercise.sets} sets × {exercise.reps} reps</p> : null}
-                          </>
-                        ) : null}
+                        {exercise.type === "cardio" ? <p className="mt-1 text-sm text-slate-600">Duration: {exercise.durationMinutes} minutes</p> : null}
+                        {exercise.type === "fitness" ? <><p className="mt-1 text-sm text-slate-600">{exercise.sets} sets × {exercise.reps} reps × {exercise.weight} kg</p><p className="text-xs text-slate-500">Training Volume: {exercise.trainingVolume}</p></> : null}
+                        {exercise.type === "crossfit" ? <><p className="mt-1 text-sm text-slate-600">Duration: {exercise.durationMinutes} minutes</p>{exercise.weight ? <p className="text-sm text-slate-600">Weight: {exercise.weight} kg</p> : null}{exercise.sets && exercise.reps ? <p className="text-sm text-slate-600">{exercise.sets} sets × {exercise.reps} reps</p> : null}</> : null}
                         {exercise.notes ? <p className="mt-1 text-xs text-slate-500">Notes: {exercise.notes}</p> : null}
-                        <p className="mt-1 text-xs text-slate-400">Intensity: {exercise.intensity ?? "moderate"}</p>
                       </div>
 
                       <div className="flex gap-2">
-                        <button type="button" onClick={() => startEdit(exercise)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">Edit</button>
-                        <button type="button" onClick={() => setDeleteExerciseId(exercise.id)} className="rounded-lg border border-rose-200 px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50">Delete</button>
+                        <button type="button" onClick={(event) => { event.stopPropagation(); openProgress(exercise); }} className="rounded-lg border border-emerald-200 px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-50">Progress</button>
+                        <button type="button" onClick={(event) => { event.stopPropagation(); startEdit(exercise); }} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">Edit</button>
+                        <button type="button" onClick={(event) => { event.stopPropagation(); setDeleteExerciseId(exercise.id); }} className="rounded-lg border border-rose-200 px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50">Delete</button>
                       </div>
                     </div>
                   </li>

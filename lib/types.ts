@@ -108,6 +108,7 @@ export type CardioExercise = {
   trainingVolume: number;
   estimatedCalories: number;
   notes: string;
+  progressHistory: WorkoutProgressEntry[];
   createdAt: string;
   updatedAt: string;
   isPaused: boolean;
@@ -124,6 +125,7 @@ export type FitnessExercise = {
   trainingVolume: number;
   estimatedCalories: number;
   notes: string;
+  progressHistory: WorkoutProgressEntry[];
   createdAt: string;
   updatedAt: string;
   intensity?: WorkoutIntensity;
@@ -143,6 +145,7 @@ export type CrossfitExercise = {
   estimatedCalories: number;
   notes: string;
   intensity?: WorkoutIntensity;
+  progressHistory: WorkoutProgressEntry[];
   createdAt: string;
   updatedAt: string;
   isPaused: boolean;
