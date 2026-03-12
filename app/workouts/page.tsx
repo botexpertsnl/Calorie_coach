@@ -94,22 +94,24 @@ export default function WorkoutsPage() {
   );
 
   const weeklySummary = useMemo(() => {
-    let sessions = 0;
-    let totalDuration = 0;
-    let totalVolume = 0;
+    let totalExercises = 0;
+    let plannedSessions = 0;
+    let totalCalories = 0;
+    let totalFitnessVolume = 0;
 
     dayOrder.forEach((day) => {
+      const hasExercises = plan[day].exercises.some((exercise) => !exercise.isPaused);
+      if (hasExercises) plannedSessions += 1;
+
       plan[day].exercises.forEach((exercise) => {
         if (exercise.isPaused) return;
-        sessions += 1;
-        if (exercise.type === "cardio" || exercise.type === "crossfit") {
-          totalDuration += exercise.durationMinutes;
-        }
-        totalVolume += exercise.trainingVolume;
+        totalExercises += 1;
+        totalCalories += exercise.estimatedCalories;
+        totalFitnessVolume += exercise.trainingVolume;
       });
     });
 
-    return { sessions, totalDuration, totalVolume };
+    return { plannedSessions, totalExercises, totalCalories, totalFitnessVolume };
   }, [plan]);
 
   function setDraftField<K extends keyof PlannerDraft>(key: K, value: PlannerDraft[K]) {
@@ -288,18 +290,22 @@ export default function WorkoutsPage() {
       <main className="mx-auto w-full max-w-6xl space-y-6 px-4 py-8 md:px-8">
         <AppHeaderNav />
 
-        <section className="grid gap-4 md:grid-cols-3">
+        <section className="grid gap-4 md:grid-cols-4">
           <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
             <p className="text-xs text-slate-500">Planned sessions</p>
-            <p className="mt-1 text-2xl font-semibold text-slate-900">{weeklySummary.sessions}</p>
+            <p className="mt-1 text-2xl font-semibold text-slate-900">{weeklySummary.plannedSessions}</p>
           </div>
           <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
-            <p className="text-xs text-slate-500">Planned duration</p>
-            <p className="mt-1 text-2xl font-semibold text-slate-900">{weeklySummary.totalDuration} min</p>
+            <p className="text-xs text-slate-500">Total exercises</p>
+            <p className="mt-1 text-2xl font-semibold text-slate-900">{weeklySummary.totalExercises}</p>
           </div>
           <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
-            <p className="text-xs text-slate-500">Training volume</p>
-            <p className="mt-1 text-2xl font-semibold text-slate-900">{weeklySummary.totalVolume}</p>
+            <p className="text-xs text-slate-500">Total calories</p>
+            <p className="mt-1 text-2xl font-semibold text-slate-900">{weeklySummary.totalCalories}</p>
+          </div>
+          <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
+            <p className="text-xs text-slate-500">Total fitness volume</p>
+            <p className="mt-1 text-2xl font-semibold text-slate-900">{weeklySummary.totalFitnessVolume}</p>
           </div>
         </section>
 
@@ -308,14 +314,15 @@ export default function WorkoutsPage() {
           <p className="mt-2 text-sm text-slate-500">Schedule workouts across the week and manage exercises by day.</p>
           <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-7">
             {dayOrder.map((day) => (
-              <div key={day} className={`rounded-xl border p-3 ${selectedDay === day ? "border-emerald-500 bg-emerald-50" : "border-slate-200"}`}>
+              <button
+                key={day}
+                type="button"
+                onClick={() => setSelectedDay(day)}
+                className={`rounded-xl border p-3 text-left transition ${selectedDay === day ? "border-emerald-500 bg-emerald-50" : "border-slate-200 hover:bg-slate-50"}`}
+              >
                 <p className="font-semibold text-slate-900">{dayLabels[day]}</p>
                 <p className="text-xs text-slate-500">{plan[day].exercises.filter((e) => !e.isPaused).length} planned</p>
-                <div className="mt-2 flex gap-2">
-                  <button type="button" onClick={() => setSelectedDay(day)} className="rounded-lg border border-slate-200 px-2 py-1 text-xs">View</button>
-                  <button type="button" onClick={() => { setSelectedDay(day); resetDraft(draft.type); }} className="rounded-lg bg-emerald-500 px-2 py-1 text-xs text-white">Add Exercise</button>
-                </div>
-              </div>
+              </button>
             ))}
           </div>
         </section>
