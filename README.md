@@ -14,6 +14,7 @@ Users set a personal profile and goal, get personalized daily calorie/macro targ
 - Nutrition Analysis popup modal with loading, result, and confirm-to-add meal flow.
 - Structured JSON nutrition table with calories + macros per food item.
 - Quick Meals: save frequently eaten meals and add them instantly to daily totals.
+- Workouts page: weekly planner for cardio and fitness exercises with edit/delete and persistent logs.
 - Top dashboard progress bars showing consumed vs target + percentage.
 - Dedicated Insights page with timeline chart and date-range controls.
 - Error handling and loading state.
@@ -51,6 +52,7 @@ npm run dev
 - `app/page.tsx`: meals dashboard composition and state.
 - `app/insights/page.tsx`: insights experience with timeline filters and chart.
 - `app/profile/page.tsx`: dedicated profile page for editable targets, profile fields, and goal calculation workflow.
+- `app/workouts/page.tsx`: weekly workout planner with cardio calories and fitness volume tracking.
 - `components/ProfileForm.tsx`: personal profile input UI.
 - `components/ProgressBars.tsx`: progress widgets for calories/protein/carbs/fat.
 - `components/AppHeaderNav.tsx`: reusable top navigation for Meals/Insights/Profile.

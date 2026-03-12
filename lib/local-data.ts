@@ -5,7 +5,8 @@ export const STORAGE_KEYS = {
   profile: "ai-calorie-coach-profile",
   targets: "ai-calorie-coach-targets",
   quickMeals: "ai-calorie-coach-quick-meals",
-  disabledMacros: "ai-calorie-coach-disabled-macros"
+  disabledMacros: "ai-calorie-coach-disabled-macros",
+  workouts: "ai-calorie-coach-workouts"
 } as const;
 
 export function readJson<T>(key: string): T | null {

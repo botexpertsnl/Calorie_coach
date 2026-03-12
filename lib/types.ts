@@ -84,3 +84,55 @@ export type QuickMeal = {
   createdAt: string;
   updatedAt: string;
 };
+
+export type WorkoutDay =
+  | "monday"
+  | "tuesday"
+  | "wednesday"
+  | "thursday"
+  | "friday"
+  | "saturday"
+  | "sunday";
+
+export type CardioExercise = {
+  id: string;
+  type: "cardio";
+  name: string;
+  durationMin: number;
+  intensity?: "low" | "moderate" | "high";
+  caloriesBurned: number;
+  progressHistory: WorkoutProgressEntry[];
+  isPaused: boolean;
+};
+
+export type FitnessExercise = {
+  id: string;
+  type: "fitness";
+  name: string;
+  sets: number;
+  reps: number;
+  weightKg: number;
+  trainingVolume: number;
+  progressHistory: WorkoutProgressEntry[];
+  isPaused: boolean;
+};
+
+export type WorkoutProgressEntry = {
+  recordedAt: string;
+  durationMin?: number;
+  intensity?: "low" | "moderate" | "high";
+  caloriesBurned?: number;
+  sets?: number;
+  reps?: number;
+  weightKg?: number;
+  trainingVolume?: number;
+};
+
+export type WorkoutExercise = CardioExercise | FitnessExercise;
+
+export type WorkoutDayLog = {
+  notes: string;
+  exercises: WorkoutExercise[];
+};
+
+export type WorkoutWeekPlan = Record<WorkoutDay, WorkoutDayLog>;
