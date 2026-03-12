@@ -7,7 +7,7 @@ import { QuickMealsModal } from "@/components/QuickMealsModal";
 import { Spinner } from "@/components/Spinner";
 import { STORAGE_KEYS, readJson, writeJson } from "@/lib/local-data";
 import { ALL_WEEKDAYS, applyDailyMealsForDate, getLocalDateKey, getMealsForDate, toCalorieResponseFromQuickMeal } from "@/lib/meals";
-import { CalorieResponse, DailyTargets, MacroKey, MealSourceType, QuickMeal, StoredMealLog } from "@/lib/types";
+import { CalorieResponse, DailyTargets, MacroKey, MealSourceType, MealWeekday, QuickMeal, StoredMealLog } from "@/lib/types";
 
 type MacroRowProps = {
   label: string;
@@ -98,6 +98,8 @@ export function HomePageClient() {
   const [pendingMealMeta, setPendingMealMeta] = useState<{ text: string; source: "text" | "image" } | null>(null);
   const [mealDateInput, setMealDateInput] = useState(getNowDateTimeInputValues().date);
   const [mealTimeInput, setMealTimeInput] = useState(getNowDateTimeInputValues().time);
+  const [analysisIsDailyMeal, setAnalysisIsDailyMeal] = useState(false);
+  const [analysisDailyMealDays, setAnalysisDailyMealDays] = useState<MealWeekday[]>([...ALL_WEEKDAYS]);
 
   useEffect(() => {
     const savedMeals = readJson<StoredMealLog[]>(STORAGE_KEYS.meals);
@@ -164,6 +166,8 @@ export function HomePageClient() {
     const now = getNowDateTimeInputValues();
     setMealDateInput(now.date);
     setMealTimeInput(now.time);
+    setAnalysisIsDailyMeal(false);
+    setAnalysisDailyMealDays([...ALL_WEEKDAYS]);
     setAnalysisStatus("loading");
     setIsAnalysisModalOpen(true);
 
@@ -221,6 +225,14 @@ export function HomePageClient() {
     const now = getNowDateTimeInputValues();
     setMealDateInput(now.date);
     setMealTimeInput(now.time);
+    setAnalysisIsDailyMeal(false);
+    setAnalysisDailyMealDays([...ALL_WEEKDAYS]);
+  }
+
+  function toggleAnalysisDailyMealDay(day: MealWeekday) {
+    setAnalysisDailyMealDays((prev) =>
+      prev.includes(day) ? prev.filter((item) => item !== day) : [...prev, day]
+    );
   }
 
   function handleAddQuickMealToDay(meal: QuickMeal, date: string, time: string) {
@@ -294,6 +306,26 @@ export function HomePageClient() {
       },
       ...prev
     ]);
+
+    if (analysisIsDailyMeal) {
+      const now = new Date().toISOString();
+      setQuickMeals((prev) => [
+        {
+          id: crypto.randomUUID(),
+          title: pendingMealMeta.text,
+          calories: analysisResult.totals.calories,
+          protein: analysisResult.totals.protein,
+          carbs: analysisResult.totals.carbs,
+          fat: analysisResult.totals.fat,
+          isDailyMeal: true,
+          dailyMealDays: analysisDailyMealDays.length ? analysisDailyMealDays : [...ALL_WEEKDAYS],
+          createdAt: now,
+          updatedAt: now
+        },
+        ...prev
+      ]);
+    }
+
     closeAnalysisModal();
   }
 
@@ -330,6 +362,13 @@ export function HomePageClient() {
         mealTime={mealTimeInput}
         onMealDateChange={setMealDateInput}
         onMealTimeChange={setMealTimeInput}
+        isDailyMeal={analysisIsDailyMeal}
+        dailyMealDays={analysisDailyMealDays}
+        onDailyMealToggle={(checked) => {
+          setAnalysisIsDailyMeal(checked);
+          if (checked && analysisDailyMealDays.length === 0) setAnalysisDailyMealDays([...ALL_WEEKDAYS]);
+        }}
+        onDailyMealDayToggle={toggleAnalysisDailyMealDay}
       />
       <QuickMealsModal
         isOpen={isQuickMealsOpen}
@@ -391,7 +430,7 @@ export function HomePageClient() {
                 <li key={entry.id} className="rounded-xl border border-slate-200 p-4">
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <p className="text-xs uppercase tracking-wide text-slate-400">{entry.sourceType === "daily" ? "Daily meal" : entry.source === "image" ? "Photo meal" : entry.source === "quick_meal" ? "Quick meal" : "Text meal"} · {new Date(entry.createdAt).toLocaleDateString()} {new Date(entry.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</p>
+                      <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-slate-400"><p>{entry.sourceType === "daily" ? "Daily meal" : entry.source === "image" ? "Photo meal" : entry.source === "quick_meal" ? "Quick meal" : "Text meal"} · {new Date(entry.createdAt).toLocaleDateString()} {new Date(entry.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</p>{entry.sourceType === "daily" ? <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">Daily</span> : null}</div>
                       <p className="mt-1 text-sm text-slate-700">{entry.text}</p>
                       <p className="mt-1 text-xs text-slate-500">{entry.result.totals.calories} kcal • {entry.result.totals.protein}g protein • {entry.result.totals.carbs}g carbs • {entry.result.totals.fat}g fat</p>
                     </div>
