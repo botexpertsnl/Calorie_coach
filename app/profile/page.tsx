@@ -56,7 +56,6 @@ export default function ProfilePage() {
   const [profile, setProfile] = useState<ProfileInput>(defaultProfile);
   const [targets, setTargets] = useState<DailyTargets>(defaultTargets);
   const [disabledMacros, setDisabledMacros] = useState<MacroKey[]>([]);
-  const [isCalculating, setIsCalculating] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [mainGoal, setMainGoal] = useState("");
   const [secondaryGoal, setSecondaryGoal] = useState("");
@@ -124,46 +123,6 @@ export default function ProfilePage() {
       writeJson(STORAGE_KEYS.targets, manualTargets);
       window.dispatchEvent(new CustomEvent(TARGETS_UPDATED_EVENT, { detail: manualTargets }));
       setMessage("Profile saved successfully. Manual daily macros were kept.");
-    }
-  }
-
-  async function calculateGoals() {
-    if (!mainGoal.trim() && !secondaryGoal.trim()) {
-      setMessage("Please add at least a Main goal or Secondary goal before calculating.");
-      return;
-    }
-
-    setIsCalculating(true);
-    setMessage(null);
-
-    const profileForCalculation = {
-      ...profile,
-      goalText: builtGoalText
-    };
-
-    try {
-      const response = await fetch("/api/targets", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ profile: profileForCalculation })
-      });
-      const payload = (await response.json()) as { data?: DailyTargets; error?: string };
-
-      if (!response.ok || !payload.data) throw new Error(payload.error ?? "Could not calculate goals.");
-
-      const nextTargets = { ...payload.data, disabledMacros };
-      setTargets(nextTargets);
-      writeJson(STORAGE_KEYS.targets, nextTargets);
-      window.dispatchEvent(new CustomEvent(TARGETS_UPDATED_EVENT, { detail: nextTargets }));
-      setMessage("Macro targets calculated.");
-    } catch {
-      const fallback = { ...calculateDailyTargets(profileForCalculation), disabledMacros };
-      setTargets(fallback);
-      writeJson(STORAGE_KEYS.targets, fallback);
-      window.dispatchEvent(new CustomEvent(TARGETS_UPDATED_EVENT, { detail: fallback }));
-      setMessage("Macro targets calculated.");
-    } finally {
-      setIsCalculating(false);
     }
   }
 
@@ -247,23 +206,13 @@ export default function ProfilePage() {
                 }
               }}
             />
-            <span className="font-medium text-slate-800">Input mocro&apos;s manual</span>
+            <span className="font-medium text-slate-800">input manual</span>
           </label>
         </div>
 
         <p className="mb-4 text-sm text-slate-500">
           Daily macros are calculated from your body profile, goals, and today&apos;s planned workout load. They are recalculated when you save your profile.
         </p>
-
-        <div className="mb-4">
-          <button
-            onClick={calculateGoals}
-            disabled={isCalculating}
-            className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
-          >
-            {isCalculating ? "Calculating..." : "Calculate Macro Targets"}
-          </button>
-        </div>
 
         <div className="grid gap-3 md:grid-cols-4">
           {macroConfig
