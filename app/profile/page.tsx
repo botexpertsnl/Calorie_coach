@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { AppHeaderNav } from "@/components/AppHeaderNav";
 import { STORAGE_KEYS, readJson, writeJson } from "@/lib/local-data";
+import { TARGETS_UPDATED_EVENT, recalculateAndPersistTodayTargets } from "@/lib/daily-targets";
 import { calculateDailyTargets } from "@/lib/nutrition";
 import { DailyTargets, MacroKey, ProfileInput } from "@/lib/types";
 
@@ -59,11 +60,13 @@ export default function ProfilePage() {
   const [message, setMessage] = useState<string | null>(null);
   const [mainGoal, setMainGoal] = useState("");
   const [secondaryGoal, setSecondaryGoal] = useState("");
+  const [isManualMode, setIsManualMode] = useState(false);
 
   useEffect(() => {
     const savedProfile = readJson<ProfileInput>(STORAGE_KEYS.profile);
     const savedTargets = readJson<DailyTargets>(STORAGE_KEYS.targets);
     const savedDisabled = readJson<MacroKey[]>(STORAGE_KEYS.disabledMacros);
+    const savedManualMode = readJson<boolean>(STORAGE_KEYS.macroManualMode);
 
     if (savedProfile) {
       setProfile(savedProfile);
@@ -74,6 +77,7 @@ export default function ProfilePage() {
 
     if (savedTargets) setTargets(savedTargets);
     if (savedDisabled) setDisabledMacros(savedDisabled);
+    if (typeof savedManualMode === "boolean") setIsManualMode(savedManualMode);
   }, []);
 
   const builtGoalText = useMemo(() => composeGoalText(mainGoal.trim(), secondaryGoal.trim()), [mainGoal, secondaryGoal]);
@@ -110,6 +114,18 @@ export default function ProfilePage() {
     writeJson(STORAGE_KEYS.profile, profileToSave);
     writeJson(STORAGE_KEYS.targets, { ...targets, disabledMacros });
     writeJson(STORAGE_KEYS.disabledMacros, disabledMacros);
+    writeJson(STORAGE_KEYS.macroManualMode, isManualMode);
+
+    if (!isManualMode) {
+      const nextTargets = recalculateAndPersistTodayTargets({
+        profile: profileToSave,
+        disabledMacros
+      });
+      if (nextTargets) setTargets(nextTargets);
+    } else {
+      window.dispatchEvent(new CustomEvent(TARGETS_UPDATED_EVENT, { detail: { ...targets, disabledMacros } }));
+    }
+
     setMessage("Profile saved successfully.");
   }
 
@@ -137,11 +153,16 @@ export default function ProfilePage() {
 
       if (!response.ok || !payload.data) throw new Error(payload.error ?? "Could not calculate goals.");
 
-      setTargets({ ...payload.data, disabledMacros });
+      const nextTargets = { ...payload.data, disabledMacros };
+      setTargets(nextTargets);
+      writeJson(STORAGE_KEYS.targets, nextTargets);
+      window.dispatchEvent(new CustomEvent(TARGETS_UPDATED_EVENT, { detail: nextTargets }));
       setMessage("Macro targets calculated.");
     } catch {
-      const fallback = calculateDailyTargets(profileForCalculation);
-      setTargets({ ...fallback, disabledMacros });
+      const fallback = { ...calculateDailyTargets(profileForCalculation), disabledMacros };
+      setTargets(fallback);
+      writeJson(STORAGE_KEYS.targets, fallback);
+      window.dispatchEvent(new CustomEvent(TARGETS_UPDATED_EVENT, { detail: fallback }));
       setMessage("Macro targets calculated.");
     } finally {
       setIsCalculating(false);
@@ -221,6 +242,29 @@ export default function ProfilePage() {
           >
             {isCalculating ? "Calculating..." : "Calculate Macro Targets"}
           </button>
+        </div>
+
+        <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
+          <label className="flex cursor-pointer items-start gap-3 text-sm text-slate-700">
+            <input
+              type="checkbox"
+              className="mt-0.5"
+              checked={isManualMode}
+              onChange={(e) => {
+                const next = e.target.checked;
+                setIsManualMode(next);
+                writeJson(STORAGE_KEYS.macroManualMode, next);
+                if (!next) {
+                  const recalculated = recalculateAndPersistTodayTargets({ profile, disabledMacros });
+                  if (recalculated) setTargets(recalculated);
+                }
+              }}
+            />
+            <span>
+              <span className="font-medium text-slate-800">Manual macro mode</span>
+              <span className="mt-0.5 block text-xs text-slate-500">When enabled, automatic recalculation from profile/workout updates is paused.</span>
+            </span>
+          </label>
         </div>
 
         <div className="grid gap-3 md:grid-cols-4">

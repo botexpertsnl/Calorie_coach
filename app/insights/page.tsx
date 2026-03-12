@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { AppHeaderNav } from "@/components/AppHeaderNav";
 import { InsightsLineChart } from "@/components/InsightsLineChart";
 import { STORAGE_KEYS, readJson } from "@/lib/local-data";
+import { TARGETS_UPDATED_EVENT } from "@/lib/daily-targets";
 import { buildWorkoutAdjustedSummary, deriveWeeklyWorkoutTargets, getCurrentWeekDateKeys, getDateKeysInRange } from "@/lib/workout-execution";
 import { DailyTargets, MacroKey, MacroTotals, StoredMealLog, WorkoutException, WorkoutWeekPlan } from "@/lib/types";
 
@@ -27,16 +28,54 @@ export default function InsightsPage() {
   const [customEnd, setCustomEnd] = useState("");
   const [disabledMacros, setDisabledMacros] = useState<MacroKey[]>([]);
 
-  const meals = useMemo(() => readJson<StoredMealLog[]>(STORAGE_KEYS.meals) ?? [], []);
-  const workouts = useMemo(() => readJson<WorkoutWeekPlan>(STORAGE_KEYS.workouts), []);
-  const workoutExceptions = useMemo(() => readJson<WorkoutException[]>(STORAGE_KEYS.workoutExceptions) ?? [], []);
+  const [meals, setMeals] = useState<StoredMealLog[]>([]);
+  const [workouts, setWorkouts] = useState<WorkoutWeekPlan | null>(null);
+  const [workoutExceptions, setWorkoutExceptions] = useState<WorkoutException[]>([]);
+  const [nutritionTargets, setNutritionTargets] = useState<DailyTargets | null>(null);
+  const [workoutTargets, setWorkoutTargets] = useState(() => deriveWeeklyWorkoutTargets(readJson(STORAGE_KEYS.profile)));
   const weekDateKeys = useMemo(() => getCurrentWeekDateKeys(), []);
-  const workoutTargets = useMemo(() => deriveWeeklyWorkoutTargets(readJson(STORAGE_KEYS.profile)), []);
-  const nutritionTargets = useMemo(() => readJson<DailyTargets>(STORAGE_KEYS.targets), []);
 
   useEffect(() => {
-    const savedDisabled = readJson<MacroKey[]>(STORAGE_KEYS.disabledMacros) ?? [];
-    setDisabledMacros(savedDisabled);
+    const sync = () => {
+      setMeals(readJson<StoredMealLog[]>(STORAGE_KEYS.meals) ?? []);
+      setWorkouts(readJson<WorkoutWeekPlan>(STORAGE_KEYS.workouts));
+      setWorkoutExceptions(readJson<WorkoutException[]>(STORAGE_KEYS.workoutExceptions) ?? []);
+      setNutritionTargets(readJson<DailyTargets>(STORAGE_KEYS.targets));
+      setWorkoutTargets(deriveWeeklyWorkoutTargets(readJson(STORAGE_KEYS.profile)));
+      setDisabledMacros(readJson<MacroKey[]>(STORAGE_KEYS.disabledMacros) ?? []);
+    };
+
+    const onStorage = (event: StorageEvent) => {
+      if (!event.key) {
+        sync();
+        return;
+      }
+
+      const watchKeys = new Set<string>([
+        STORAGE_KEYS.meals,
+        STORAGE_KEYS.workouts,
+        STORAGE_KEYS.workoutExceptions,
+        STORAGE_KEYS.targets,
+        STORAGE_KEYS.profile,
+        STORAGE_KEYS.disabledMacros
+      ]);
+
+      if (watchKeys.has(event.key)) sync();
+    };
+
+    const onTargetsUpdated = (event: Event) => {
+      const custom = event as CustomEvent<DailyTargets>;
+      if (custom.detail) setNutritionTargets(custom.detail);
+    };
+
+    sync();
+    window.addEventListener("storage", onStorage);
+    window.addEventListener(TARGETS_UPDATED_EVENT, onTargetsUpdated as EventListener);
+
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener(TARGETS_UPDATED_EVENT, onTargetsUpdated as EventListener);
+    };
   }, []);
 
   const availableMetrics = useMemo(
