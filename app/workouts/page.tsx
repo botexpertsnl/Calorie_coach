@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { AppHeaderNav } from "@/components/AppHeaderNav";
 import { STORAGE_KEYS, readJson, writeJson } from "@/lib/local-data";
+import { recalculateAndPersistTodayTargets } from "@/lib/daily-targets";
 import { calculateTrainingVolume, estimateCaloriesForType } from "@/lib/workouts";
 import { buildWorkoutAdjustedSummary, calculateWorkoutPoints, deriveWeeklyWorkoutTargets, getCurrentWeekDateKeys, withStoredWorkoutPoints } from "@/lib/workout-execution";
 import {
@@ -182,6 +183,7 @@ export default function WorkoutsPage() {
   const [exceptionReps, setExceptionReps] = useState(10);
   const [exceptionWeight, setExceptionWeight] = useState(20);
   const [exceptionIntensity, setExceptionIntensity] = useState<WorkoutIntensity>("moderate");
+  const [hasLoadedInitialData, setHasLoadedInitialData] = useState(false);
 
   useEffect(() => {
     const savedPlan = readJson<WorkoutWeekPlan>(STORAGE_KEYS.workouts);
@@ -193,6 +195,7 @@ export default function WorkoutsPage() {
     if (savedProfile?.weightKg) setProfileWeight(savedProfile.weightKg);
     if (savedProfile) setProfile(savedProfile);
     setExceptions(savedExceptions);
+    setHasLoadedInitialData(true);
   }, []);
 
   useEffect(() => {
@@ -202,6 +205,15 @@ export default function WorkoutsPage() {
   useEffect(() => {
     writeJson(STORAGE_KEYS.workoutExceptions, exceptions);
   }, [exceptions]);
+
+  useEffect(() => {
+    if (!hasLoadedInitialData) return;
+    recalculateAndPersistTodayTargets({
+      profile,
+      workouts: plan,
+      exceptions
+    });
+  }, [exceptions, hasLoadedInitialData, plan, profile]);
 
   function resetDraft(type: WorkoutExerciseType = "fitness") {
     setDraft({ ...defaultDraft, type });

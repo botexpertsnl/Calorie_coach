@@ -6,6 +6,7 @@ import { NutritionAnalysisModal } from "@/components/NutritionAnalysisModal";
 import { QuickMealsModal } from "@/components/QuickMealsModal";
 import { Spinner } from "@/components/Spinner";
 import { STORAGE_KEYS, readJson, writeJson } from "@/lib/local-data";
+import { TARGETS_UPDATED_EVENT } from "@/lib/daily-targets";
 import { ALL_WEEKDAYS, applyDailyMealsForDate, getLocalDateKey, getMealsForDate, toCalorieResponseFromQuickMeal } from "@/lib/meals";
 import { CalorieResponse, DailyTargets, MacroKey, MealSourceType, MealWeekday, QuickMeal, StoredMealLog } from "@/lib/types";
 
@@ -133,6 +134,41 @@ export function HomePageClient() {
 
     return () => window.clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    const syncTargets = () => {
+      const savedTargets = readJson<DailyTargets>(STORAGE_KEYS.targets);
+      const savedDisabled = readJson<MacroKey[]>(STORAGE_KEYS.disabledMacros) ?? [];
+      if (savedTargets) setDailyTargets(savedTargets);
+      setDisabledMacros(savedDisabled);
+    };
+
+    const onTargetsUpdated = (event: Event) => {
+      const custom = event as CustomEvent<DailyTargets>;
+      if (custom.detail) setDailyTargets(custom.detail);
+      const savedDisabled = readJson<MacroKey[]>(STORAGE_KEYS.disabledMacros) ?? [];
+      setDisabledMacros(savedDisabled);
+    };
+
+    const onStorage = (event: StorageEvent) => {
+      if (!event.key) {
+        syncTargets();
+        return;
+      }
+
+      const watchKeys = new Set<string>([STORAGE_KEYS.targets, STORAGE_KEYS.disabledMacros]);
+      if (watchKeys.has(event.key)) syncTargets();
+    };
+
+    window.addEventListener(TARGETS_UPDATED_EVENT, onTargetsUpdated as EventListener);
+    window.addEventListener("storage", onStorage);
+
+    return () => {
+      window.removeEventListener(TARGETS_UPDATED_EVENT, onTargetsUpdated as EventListener);
+      window.removeEventListener("storage", onStorage);
+    };
+  }, []);
+
 
   useEffect(() => {
     setHistory((prev) => {
