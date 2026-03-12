@@ -7,6 +7,7 @@ type QuickMealFormValues = {
   protein: string;
   carbs: string;
   fat: string;
+  isDailyMeal: boolean;
 };
 
 type QuickMealFormProps = {
@@ -21,7 +22,8 @@ function toValues(meal?: QuickMeal | null): QuickMealFormValues {
     calories: meal ? String(meal.calories) : "",
     protein: meal ? String(meal.protein) : "",
     carbs: meal ? String(meal.carbs) : "",
-    fat: meal ? String(meal.fat) : ""
+    fat: meal ? String(meal.fat) : "",
+    isDailyMeal: meal?.isDailyMeal ?? false
   };
 }
 
@@ -59,7 +61,8 @@ export function QuickMealForm({ initialMeal, onCancel, onSave }: QuickMealFormPr
         calories: Math.round(parsed.calories),
         protein: Math.round(parsed.protein),
         carbs: Math.round(parsed.carbs),
-        fat: Math.round(parsed.fat)
+        fat: Math.round(parsed.fat),
+        isDailyMeal: values.isDailyMeal
       },
       initialMeal?.id
     );
@@ -100,6 +103,19 @@ export function QuickMealForm({ initialMeal, onCancel, onSave }: QuickMealFormPr
           </label>
         ))}
       </div>
+
+      <label className="flex items-start gap-3 rounded-xl border border-slate-200 p-3 text-sm text-slate-700">
+        <input
+          type="checkbox"
+          checked={values.isDailyMeal}
+          onChange={(event) => updateField("isDailyMeal", event.target.checked)}
+          className="mt-0.5 h-4 w-4 rounded border-slate-300 text-emerald-500 focus:ring-emerald-400"
+        />
+        <span>
+          <span className="font-medium text-slate-800">Daily Meal</span>
+          <span className="mt-1 block text-xs text-slate-500">Daily meals are automatically added to each new day.</span>
+        </span>
+      </label>
 
       {error ? <p className="text-sm text-rose-600">{error}</p> : null}
 

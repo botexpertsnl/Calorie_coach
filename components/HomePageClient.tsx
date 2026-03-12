@@ -6,7 +6,8 @@ import { NutritionAnalysisModal } from "@/components/NutritionAnalysisModal";
 import { QuickMealsModal } from "@/components/QuickMealsModal";
 import { Spinner } from "@/components/Spinner";
 import { STORAGE_KEYS, readJson, writeJson } from "@/lib/local-data";
-import { CalorieResponse, DailyTargets, MacroKey, QuickMeal, StoredMealLog } from "@/lib/types";
+import { applyDailyMealsForDate, getLocalDateKey, getMealsForDate, toCalorieResponseFromQuickMeal } from "@/lib/meals";
+import { CalorieResponse, DailyTargets, MacroKey, MealSourceType, QuickMeal, StoredMealLog } from "@/lib/types";
 
 type MacroRowProps = {
   label: string;
@@ -40,6 +41,26 @@ function CameraIcon() {
   return <span>📷</span>;
 }
 
+function normalizeSourceType(source: StoredMealLog["source"]): MealSourceType {
+  if (source === "quick_meal") return "quick";
+  return "ai";
+}
+
+function normalizeHistoryEntry(entry: StoredMealLog): StoredMealLog {
+  return {
+    ...entry,
+    sourceType: entry.sourceType ?? normalizeSourceType(entry.source),
+    mealDate: entry.mealDate ?? entry.createdAt.slice(0, 10)
+  };
+}
+
+function normalizeQuickMeal(meal: QuickMeal): QuickMeal {
+  return {
+    ...meal,
+    isDailyMeal: meal.isDailyMeal ?? false
+  };
+}
+
 export function HomePageClient() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -52,6 +73,7 @@ export function HomePageClient() {
   const [history, setHistory] = useState<StoredMealLog[]>([]);
   const [quickMeals, setQuickMeals] = useState<QuickMeal[]>([]);
   const [isQuickMealsOpen, setIsQuickMealsOpen] = useState(false);
+  const [todayKey, setTodayKey] = useState(getLocalDateKey());
 
   const [isAnalysisModalOpen, setIsAnalysisModalOpen] = useState(false);
   const [analysisStatus, setAnalysisStatus] = useState<"loading" | "success" | "error">("loading");
@@ -65,9 +87,13 @@ export function HomePageClient() {
     const savedQuickMeals = readJson<QuickMeal[]>(STORAGE_KEYS.quickMeals);
     const savedDisabledMacros = readJson<MacroKey[]>(STORAGE_KEYS.disabledMacros);
 
-    if (savedMeals) setHistory(savedMeals);
+    if (savedMeals) {
+      setHistory(savedMeals.map(normalizeHistoryEntry));
+    }
     if (savedTargets) setDailyTargets(savedTargets);
-    if (savedQuickMeals) setQuickMeals(savedQuickMeals);
+    if (savedQuickMeals) {
+      setQuickMeals(savedQuickMeals.map(normalizeQuickMeal));
+    }
     if (savedDisabledMacros) setDisabledMacros(savedDisabledMacros);
   }, []);
 
@@ -79,9 +105,27 @@ export function HomePageClient() {
     writeJson(STORAGE_KEYS.quickMeals, quickMeals);
   }, [quickMeals]);
 
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      const nextKey = getLocalDateKey();
+      setTodayKey((prev) => (prev === nextKey ? prev : nextKey));
+    }, 30_000);
+
+    return () => window.clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    setHistory((prev) => {
+      const next = applyDailyMealsForDate(prev, quickMeals, todayKey);
+      return next.length === prev.length ? prev : next;
+    });
+  }, [quickMeals, todayKey]);
+
+  const todayMeals = useMemo(() => getMealsForDate(history, todayKey), [history, todayKey]);
+
   const consumed = useMemo(
     () =>
-      history.reduce(
+      todayMeals.reduce(
         (sum, meal) => ({
           calories: sum.calories + meal.result.totals.calories,
           protein: sum.protein + meal.result.totals.protein,
@@ -90,7 +134,7 @@ export function HomePageClient() {
         }),
         { calories: 0, protein: 0, carbs: 0, fat: 0 }
       ),
-    [history]
+    [todayMeals]
   );
 
   async function runAnalysis(requestFn: () => Promise<{ data?: CalorieResponse; error?: string; ok: boolean }>, meta: { text: string; source: "text" | "image" }) {
@@ -148,37 +192,20 @@ export function HomePageClient() {
   }
 
   function handleAddQuickMealToDay(meal: QuickMeal) {
-    const quickMealResult: CalorieResponse = {
-      items: [
-        {
-          food: meal.title,
-          quantity: "Saved quick meal",
-          calories: meal.calories,
-          protein: meal.protein,
-          carbs: meal.carbs,
-          fat: meal.fat
-        }
-      ],
-      totals: {
-        calories: meal.calories,
-        protein: meal.protein,
-        carbs: meal.carbs,
-        fat: meal.fat
-      },
-      notes: "Added from Quick Add."
-    };
-
     setHistory((prev) => [
       {
         id: crypto.randomUUID(),
+        title: meal.title,
         text: meal.title,
         source: "quick_meal",
-        createdAt: new Date().toISOString(),
-        result: quickMealResult
+        sourceType: "quick",
+        quickMealId: meal.id,
+        mealDate: todayKey,
+        result: toCalorieResponseFromQuickMeal(meal),
+        createdAt: new Date().toISOString()
       },
       ...prev
     ]);
-
     setIsQuickMealsOpen(false);
   }
 
@@ -215,7 +242,19 @@ export function HomePageClient() {
 
   function handleAddMeal() {
     if (!analysisResult || !pendingMealMeta) return;
-    setHistory((prev) => [{ id: crypto.randomUUID(), createdAt: new Date().toISOString(), ...pendingMealMeta, result: analysisResult }, ...prev]);
+    setHistory((prev) => [
+      {
+        id: crypto.randomUUID(),
+        title: pendingMealMeta.text,
+        text: pendingMealMeta.text,
+        source: pendingMealMeta.source,
+        sourceType: "ai",
+        mealDate: todayKey,
+        result: analysisResult,
+        createdAt: new Date().toISOString()
+      },
+      ...prev
+    ]);
     setIsAnalysisModalOpen(false);
     setAnalysisResult(null);
     setPendingMealMeta(null);
@@ -278,12 +317,12 @@ export function HomePageClient() {
         </section>
 
         <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
-          <h2 className="text-xl font-semibold text-slate-900">Meal History</h2>
-          {history.length === 0 ? <div className="mt-8 rounded-xl border border-dashed border-slate-200 py-10 text-center text-slate-500">No meals logged yet.</div> : (
+          <h2 className="text-xl font-semibold text-slate-900">Meals Today</h2>
+          {todayMeals.length === 0 ? <div className="mt-8 rounded-xl border border-dashed border-slate-200 py-10 text-center text-slate-500">No meals logged for today yet.</div> : (
             <ul className="mt-4 space-y-3">
-              {history.map((entry) => (
+              {todayMeals.map((entry) => (
                 <li key={entry.id} className="rounded-xl border border-slate-200 p-4">
-                  <p className="text-xs uppercase tracking-wide text-slate-400">{entry.source === "image" ? "Photo meal" : entry.source === "quick_meal" ? "Quick meal" : "Text meal"} · {new Date(entry.createdAt).toLocaleDateString()}</p>
+                  <p className="text-xs uppercase tracking-wide text-slate-400">{entry.sourceType === "daily" ? "Daily meal" : entry.source === "image" ? "Photo meal" : entry.source === "quick_meal" ? "Quick meal" : "Text meal"} · {new Date(entry.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</p>
                   <p className="mt-1 text-sm text-slate-700">{entry.text}</p>
                   <p className="mt-1 text-xs text-slate-500">{entry.result.totals.calories} kcal • {entry.result.totals.protein}g protein • {entry.result.totals.carbs}g carbs • {entry.result.totals.fat}g fat</p>
                 </li>

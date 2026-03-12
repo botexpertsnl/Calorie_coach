@@ -73,7 +73,10 @@ export function QuickMealsModal({
                   <li key={meal.id} className="rounded-xl border border-slate-200 p-4">
                     <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                       <div>
-                        <p className="font-semibold text-slate-900">{meal.title}</p>
+                        <div className="flex items-center gap-2">
+                          <p className="font-semibold text-slate-900">{meal.title}</p>
+                          {meal.isDailyMeal ? <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-700">Daily</span> : null}
+                        </div>
                         <p className="mt-1 text-xs text-slate-500">{meal.calories} kcal • {meal.protein}g protein • {meal.carbs}g carbs • {meal.fat}g fat</p>
                       </div>
 

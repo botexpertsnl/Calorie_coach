@@ -65,10 +65,16 @@ export type DailyTargets = {
 };
 
 
+export type MealSourceType = "manual" | "ai" | "quick" | "daily";
+
 export type StoredMealLog = {
   id: string;
+  title?: string;
   text: string;
   source: "text" | "image" | "quick_meal";
+  sourceType: MealSourceType;
+  quickMealId?: string;
+  mealDate: string;
   result: CalorieResponse;
   createdAt: string;
 };
@@ -81,6 +87,7 @@ export type QuickMeal = {
   protein: number;
   carbs: number;
   fat: number;
+  isDailyMeal: boolean;
   createdAt: string;
   updatedAt: string;
 };
