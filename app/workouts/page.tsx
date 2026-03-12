@@ -8,7 +8,6 @@ import {
   FitnessExercise,
   ProfileInput,
   WorkoutDay,
-  WorkoutDayLog,
   WorkoutExercise,
   WorkoutProgressEntry,
   WorkoutWeekPlan
@@ -85,7 +84,8 @@ function toProgressEntry(exercise: WorkoutExercise): WorkoutProgressEntry {
       recordedAt: new Date().toISOString(),
       durationMin: exercise.durationMin,
       intensity: exercise.intensity,
-      caloriesBurned: exercise.caloriesBurned
+      caloriesBurned: exercise.caloriesBurned,
+      notes: exercise.notes
     };
   }
 
@@ -94,7 +94,8 @@ function toProgressEntry(exercise: WorkoutExercise): WorkoutProgressEntry {
     sets: exercise.sets,
     reps: exercise.reps,
     weightKg: exercise.weightKg,
-    trainingVolume: exercise.trainingVolume
+    trainingVolume: exercise.trainingVolume,
+    notes: exercise.notes
   };
 }
 
@@ -104,12 +105,14 @@ export default function WorkoutsPage() {
   const [exerciseType, setExerciseType] = useState<ExerciseType>("cardio");
   const [cardioDraft, setCardioDraft] = useState<CardioDraft>(defaultCardioDraft);
   const [fitnessDraft, setFitnessDraft] = useState<FitnessDraft>(defaultFitnessDraft);
+  const [exerciseNotes, setExerciseNotes] = useState("");
   const [profileWeight, setProfileWeight] = useState(70);
   const [message, setMessage] = useState<string | null>(null);
 
   const [progressExerciseId, setProgressExerciseId] = useState<string | null>(null);
   const [progressCardioDraft, setProgressCardioDraft] = useState<CardioDraft>(defaultCardioDraft);
   const [progressFitnessDraft, setProgressFitnessDraft] = useState<FitnessDraft>(defaultFitnessDraft);
+  const [progressNotes, setProgressNotes] = useState("");
   const [deleteExerciseId, setDeleteExerciseId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -171,6 +174,7 @@ export default function WorkoutsPage() {
   function resetForm() {
     setCardioDraft(defaultCardioDraft);
     setFitnessDraft(defaultFitnessDraft);
+    setExerciseNotes("");
     setExerciseType("cardio");
   }
 
@@ -191,6 +195,7 @@ export default function WorkoutsPage() {
         durationMin: cardioDraft.durationMin,
         intensity: cardioDraft.intensity,
         caloriesBurned,
+        notes: exerciseNotes.trim(),
         progressHistory: [],
         isPaused: false
       };
@@ -221,6 +226,7 @@ export default function WorkoutsPage() {
       reps: fitnessDraft.reps,
       weightKg: fitnessDraft.weightKg,
       trainingVolume: volume,
+      notes: exerciseNotes.trim(),
       progressHistory: [],
       isPaused: false
     };
@@ -251,12 +257,9 @@ export default function WorkoutsPage() {
     setMessage("Exercise deleted.");
   }
 
-  function updateDayMeta(day: WorkoutDay, patch: Partial<WorkoutDayLog>) {
-    setPlan((prev) => ({ ...prev, [day]: { ...prev[day], ...patch } }));
-  }
-
   function openProgressModal(exercise: WorkoutExercise) {
     setProgressExerciseId(exercise.id);
+    setProgressNotes(exercise.notes ?? "");
     if (exercise.type === "cardio") {
       setProgressCardioDraft({
         name: exercise.name,
@@ -294,6 +297,7 @@ export default function WorkoutsPage() {
               progressCardioDraft.durationMin,
               progressCardioDraft.intensity
             ),
+            notes: progressNotes.trim(),
             progressHistory: [...exercise.progressHistory, toProgressEntry(exercise)]
           };
         }
@@ -306,6 +310,7 @@ export default function WorkoutsPage() {
           reps: progressFitnessDraft.reps,
           weightKg: progressFitnessDraft.weightKg,
           trainingVolume: volume,
+          notes: progressNotes.trim(),
           progressHistory: [...exercise.progressHistory, toProgressEntry(exercise)]
         };
       });
@@ -365,6 +370,7 @@ export default function WorkoutsPage() {
             ) : (
               <p className="mt-1 text-xs text-slate-500">No previous values yet.</p>
             )}
+            <p className="mt-1 text-xs text-slate-500">Previous notes: {previousProgress?.notes || "—"}</p>
 
             {progressExercise.type === "cardio" ? (
               <div className="mt-4 space-y-3">
@@ -412,6 +418,15 @@ export default function WorkoutsPage() {
                 </div>
               </div>
             )}
+
+            <label className="mt-4 block text-sm text-slate-700">Notes
+              <textarea
+                className="mt-1 min-h-20 w-full rounded-xl border border-slate-200 px-3 py-2"
+                value={progressNotes}
+                onChange={(event) => setProgressNotes(event.target.value)}
+                placeholder="Workout notes"
+              />
+            </label>
 
             <div className="mt-5 flex justify-end gap-2">
               <button
@@ -472,16 +487,6 @@ export default function WorkoutsPage() {
           <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
             <h2 className="text-xl font-semibold text-slate-900">{dayLabels[selectedDay]} setup</h2>
 
-            <label className="mt-3 block text-sm text-slate-700">
-              Notes
-              <textarea
-                className="mt-1 min-h-24 w-full rounded-xl border border-slate-200 px-3 py-2"
-                value={activeDay.notes}
-                onChange={(event) => updateDayMeta(selectedDay, { notes: event.target.value })}
-                placeholder="Optional notes for this day..."
-              />
-            </label>
-
             <form onSubmit={saveExercise} className="mt-6 space-y-4">
               <div>
                 <p className="mb-2 text-sm font-semibold text-slate-800">Exercise type</p>
@@ -516,9 +521,6 @@ export default function WorkoutsPage() {
                     </select>
                   </label>
 
-                  <p className="rounded-xl bg-slate-50 p-3 text-sm text-slate-600">
-                    Estimated calories (weight {profileWeight}kg): {calculateCardioCalories(profileWeight, cardioDraft.name, cardioDraft.durationMin, cardioDraft.intensity)} kcal
-                  </p>
                 </>
               ) : (
                 <>
@@ -551,11 +553,18 @@ export default function WorkoutsPage() {
                     </label>
                   </div>
 
-                  <p className="rounded-xl bg-slate-50 p-3 text-sm text-slate-600">
-                    Training volume estimate: {Math.round(fitnessDraft.sets * fitnessDraft.reps * fitnessDraft.weightKg)}
-                  </p>
                 </>
               )}
+
+              <label className="block text-sm text-slate-700">
+                Notes
+                <textarea
+                  className="mt-1 min-h-20 w-full rounded-xl border border-slate-200 px-3 py-2"
+                  value={exerciseNotes}
+                  onChange={(event) => setExerciseNotes(event.target.value)}
+                  placeholder="Add notes for this exercise"
+                />
+              </label>
 
               <div className="flex gap-2">
                 <button type="submit" className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-400">
@@ -583,6 +592,7 @@ export default function WorkoutsPage() {
                         ) : (
                           <p className="mt-1 text-sm text-slate-600">Fitness • {exercise.sets} sets × {exercise.reps} reps @ {exercise.weightKg}kg • Volume {exercise.trainingVolume}</p>
                         )}
+                        {exercise.notes ? <p className="mt-1 text-xs text-slate-500">Notes: {exercise.notes}</p> : null}
                       </div>
 
                       <div className="flex gap-2">
