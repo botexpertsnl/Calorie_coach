@@ -7,7 +7,7 @@ Users set a personal profile and goal, get personalized daily calorie/macro targ
 
 - Profile setup: age, gender, height, weight, waist, activity level, and open goal text.
 - Personalized daily targets: calories, protein, carbs, fat.
-- Profile & Goals modal to configure body stats and instantly calculate macro targets.
+- Dedicated Profile page to configure body stats, manage daily macro goals, and run the macro target calculator popup.
 - Goal-aware targeting for fat loss, muscle gain, maintenance, or recomposition.
 - Natural-language meal parsing through OpenAI server route.
 - Photo capture/upload flow with image preview and server-side AI image analysis route.

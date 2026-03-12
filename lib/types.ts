@@ -5,6 +5,8 @@ export type MacroTotals = {
   fat: number;
 };
 
+export type MacroKey = keyof MacroTotals;
+
 export type MealItem = {
   food: string;
   quantity: string;
@@ -57,6 +59,7 @@ export type DailyTargets = {
   protein: number;
   carbs: number;
   fat: number;
+  disabledMacros?: MacroKey[];
   explanation: string;
   macroReasoning: string;
 };

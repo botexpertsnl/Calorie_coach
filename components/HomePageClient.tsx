@@ -6,7 +6,7 @@ import { NutritionAnalysisModal } from "@/components/NutritionAnalysisModal";
 import { QuickMealsModal } from "@/components/QuickMealsModal";
 import { Spinner } from "@/components/Spinner";
 import { STORAGE_KEYS, readJson, writeJson } from "@/lib/local-data";
-import { CalorieResponse, DailyTargets, QuickMeal, StoredMealLog } from "@/lib/types";
+import { CalorieResponse, DailyTargets, MacroKey, QuickMeal, StoredMealLog } from "@/lib/types";
 
 type MacroRowProps = {
   label: string;
@@ -44,6 +44,7 @@ export function HomePageClient() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const [dailyTargets, setDailyTargets] = useState<DailyTargets | null>(null);
+  const [disabledMacros, setDisabledMacros] = useState<MacroKey[]>([]);
   const [mealDescription, setMealDescription] = useState("");
   const [isTextLoading, setIsTextLoading] = useState(false);
   const [isImageLoading, setIsImageLoading] = useState(false);
@@ -62,10 +63,12 @@ export function HomePageClient() {
     const savedMeals = readJson<StoredMealLog[]>(STORAGE_KEYS.meals);
     const savedTargets = readJson<DailyTargets>(STORAGE_KEYS.targets);
     const savedQuickMeals = readJson<QuickMeal[]>(STORAGE_KEYS.quickMeals);
+    const savedDisabledMacros = readJson<MacroKey[]>(STORAGE_KEYS.disabledMacros);
 
     if (savedMeals) setHistory(savedMeals);
     if (savedTargets) setDailyTargets(savedTargets);
     if (savedQuickMeals) setQuickMeals(savedQuickMeals);
+    if (savedDisabledMacros) setDisabledMacros(savedDisabledMacros);
   }, []);
 
   useEffect(() => {
@@ -162,7 +165,7 @@ export function HomePageClient() {
         carbs: meal.carbs,
         fat: meal.fat
       },
-      notes: "Added from Quick Meals."
+      notes: "Added from Quick Add."
     };
 
     setHistory((prev) => [
@@ -236,10 +239,10 @@ export function HomePageClient() {
 
         <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
           <div className="grid gap-4 md:grid-cols-2">
-            <MacroProgressRow label="Calories" unit="kcal" value={consumed.calories} target={dailyTargets?.calories} accent="bg-slate-700" />
-            <MacroProgressRow label="Protein" unit="g" value={consumed.protein} target={dailyTargets?.protein} accent="bg-emerald-500" />
-            <MacroProgressRow label="Carbs" unit="g" value={consumed.carbs} target={dailyTargets?.carbs} accent="bg-amber-500" />
-            <MacroProgressRow label="Fat" unit="g" value={consumed.fat} target={dailyTargets?.fat} accent="bg-rose-500" />
+            {!disabledMacros.includes("calories") ? <MacroProgressRow label="Calories" unit="kcal" value={consumed.calories} target={dailyTargets?.calories} accent="bg-slate-700" /> : null}
+            {!disabledMacros.includes("protein") ? <MacroProgressRow label="Protein" unit="g" value={consumed.protein} target={dailyTargets?.protein} accent="bg-emerald-500" /> : null}
+            {!disabledMacros.includes("carbs") ? <MacroProgressRow label="Carbs" unit="g" value={consumed.carbs} target={dailyTargets?.carbs} accent="bg-amber-500" /> : null}
+            {!disabledMacros.includes("fat") ? <MacroProgressRow label="Fat" unit="g" value={consumed.fat} target={dailyTargets?.fat} accent="bg-rose-500" /> : null}
           </div>
         </section>
 
@@ -263,7 +266,7 @@ export function HomePageClient() {
                   onClick={() => setIsQuickMealsOpen(true)}
                   className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
                 >
-                  Quick Meals
+                  Quick Add
                 </button>
                 <button type="submit" disabled={isTextLoading} className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-500 px-5 py-3 text-sm font-semibold text-white hover:bg-emerald-400 disabled:opacity-60">{isTextLoading ? <Spinner /> : <BoltIcon />}Analyze Meal</button>
               </div>

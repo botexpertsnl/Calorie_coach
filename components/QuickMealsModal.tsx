@@ -36,7 +36,7 @@ export function QuickMealsModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
       <div className="w-full max-w-3xl rounded-2xl bg-white p-6 shadow-xl">
         <div className="mb-5 flex items-center justify-between">
-          <h2 className="text-2xl font-semibold text-slate-900">Quick Meals</h2>
+          <h2 className="text-2xl font-semibold text-slate-900">Quick Add</h2>
           <button type="button" onClick={onClose} className="rounded-lg p-2 text-slate-400 hover:bg-slate-100">✕</button>
         </div>
 
@@ -61,12 +61,12 @@ export function QuickMealsModal({
                 onClick={() => setIsCreating(true)}
                 className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-400"
               >
-                New Quick Meal
+                New Quick Add
               </button>
             </div>
 
             {quickMeals.length === 0 ? (
-              <p className="rounded-xl border border-dashed border-slate-200 p-6 text-center text-sm text-slate-500">No quick meals saved yet.</p>
+              <p className="rounded-xl border border-dashed border-slate-200 p-6 text-center text-sm text-slate-500">No quick add meals saved yet.</p>
             ) : (
               <ul className="space-y-3">
                 {quickMeals.map((meal) => (
@@ -86,7 +86,7 @@ export function QuickMealsModal({
 
                     {confirmDeleteId === meal.id ? (
                       <div className="mt-3 flex items-center gap-2 rounded-lg bg-rose-50 p-2 text-xs">
-                        <p className="text-rose-700">Delete this quick meal?</p>
+                        <p className="text-rose-700">Delete this quick add meal?</p>
                         <button type="button" onClick={() => { onDeleteQuickMeal(meal.id); setConfirmDeleteId(null); }} className="rounded bg-rose-600 px-2 py-1 text-white">Confirm</button>
                         <button type="button" onClick={() => setConfirmDeleteId(null)} className="rounded border border-slate-200 px-2 py-1">Cancel</button>
                       </div>

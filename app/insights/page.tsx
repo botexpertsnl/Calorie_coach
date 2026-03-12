@@ -1,10 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AppHeaderNav } from "@/components/AppHeaderNav";
 import { InsightsLineChart } from "@/components/InsightsLineChart";
 import { STORAGE_KEYS, readJson } from "@/lib/local-data";
-import { MacroTotals, StoredMealLog } from "@/lib/types";
+import { MacroKey, MacroTotals, StoredMealLog } from "@/lib/types";
 
 type RangePreset = "7d" | "1m" | "3m" | "6m" | "custom";
 
@@ -24,8 +24,24 @@ export default function InsightsPage() {
   const [metric, setMetric] = useState<keyof MacroTotals>("calories");
   const [customStart, setCustomStart] = useState("");
   const [customEnd, setCustomEnd] = useState("");
+  const [disabledMacros, setDisabledMacros] = useState<MacroKey[]>([]);
 
   const meals = useMemo(() => readJson<StoredMealLog[]>(STORAGE_KEYS.meals) ?? [], []);
+
+  useEffect(() => {
+    const savedDisabled = readJson<MacroKey[]>(STORAGE_KEYS.disabledMacros) ?? [];
+    setDisabledMacros(savedDisabled);
+  }, []);
+
+  const availableMetrics = useMemo(
+    () => (["calories", "protein", "carbs", "fat"] as const).filter((item) => !disabledMacros.includes(item)),
+    [disabledMacros]
+  );
+
+  useEffect(() => {
+    if (!availableMetrics.length) return;
+    if (!availableMetrics.includes(metric)) setMetric(availableMetrics[0]);
+  }, [availableMetrics, metric]);
 
   const filteredMeals = useMemo(() => {
     const now = new Date();
@@ -127,7 +143,7 @@ export default function InsightsPage() {
         ) : null}
 
         <div className="mt-4 flex flex-wrap gap-2">
-          {(["calories", "protein", "carbs", "fat"] as const).map((key) => (
+          {availableMetrics.map((key) => (
             <button
               key={key}
               type="button"
@@ -141,14 +157,14 @@ export default function InsightsPage() {
       </section>
 
       <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
-        <InsightsLineChart points={points} metric={metric} />
+        {availableMetrics.length ? <InsightsLineChart points={points} metric={metric} /> : <p className="text-sm text-slate-500">All macros are disabled in Profile. Re-enable at least one macro to show insights.</p>}
       </section>
 
       <section className="grid gap-4 md:grid-cols-4">
-        <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200"><p className="text-xs text-slate-500">Avg Calories</p><p className="text-2xl font-semibold text-slate-900">{summary.averages.calories}</p></div>
-        <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200"><p className="text-xs text-slate-500">Avg Protein</p><p className="text-2xl font-semibold text-slate-900">{summary.averages.protein}g</p></div>
-        <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200"><p className="text-xs text-slate-500">Avg Carbs</p><p className="text-2xl font-semibold text-slate-900">{summary.averages.carbs}g</p></div>
-        <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200"><p className="text-xs text-slate-500">Avg Fat</p><p className="text-2xl font-semibold text-slate-900">{summary.averages.fat}g</p></div>
+        {!disabledMacros.includes("calories") ? <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200"><p className="text-xs text-slate-500">Avg Calories</p><p className="text-2xl font-semibold text-slate-900">{summary.averages.calories}</p></div> : null}
+        {!disabledMacros.includes("protein") ? <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200"><p className="text-xs text-slate-500">Avg Protein</p><p className="text-2xl font-semibold text-slate-900">{summary.averages.protein}g</p></div> : null}
+        {!disabledMacros.includes("carbs") ? <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200"><p className="text-xs text-slate-500">Avg Carbs</p><p className="text-2xl font-semibold text-slate-900">{summary.averages.carbs}g</p></div> : null}
+        {!disabledMacros.includes("fat") ? <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200"><p className="text-xs text-slate-500">Avg Fat</p><p className="text-2xl font-semibold text-slate-900">{summary.averages.fat}g</p></div> : null}
       </section>
     </main>
   );
