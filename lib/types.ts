@@ -114,6 +114,8 @@ export type CardioExercise = {
   intensity?: WorkoutIntensity;
   trainingVolume: number;
   estimatedCalories: number;
+  strengthPoints: number;
+  cardioPoints: number;
   notes: string;
   progressHistory: WorkoutProgressEntry[];
   createdAt: string;
@@ -131,6 +133,8 @@ export type FitnessExercise = {
   weight: number;
   trainingVolume: number;
   estimatedCalories: number;
+  strengthPoints: number;
+  cardioPoints: number;
   notes: string;
   progressHistory: WorkoutProgressEntry[];
   createdAt: string;
@@ -150,6 +154,8 @@ export type CrossfitExercise = {
   reps?: number;
   trainingVolume: number;
   estimatedCalories: number;
+  strengthPoints: number;
+  cardioPoints: number;
   notes: string;
   intensity?: WorkoutIntensity;
   progressHistory: WorkoutProgressEntry[];

@@ -13,6 +13,11 @@ const dayIndex: Record<WorkoutDay, number> = {
   sunday: 6
 };
 
+export type WorkoutPointTotals = {
+  strengthPoints: number;
+  cardioPoints: number;
+};
+
 export type WorkoutAdjustedSummary = {
   plannedSessions: number;
   adjustedSessions: number;
@@ -28,6 +33,8 @@ export type WorkoutAdjustedSummary = {
   cardioSessions: number;
   fitnessSessions: number;
   crossfitSessions: number;
+  strengthPoints: number;
+  cardioPoints: number;
 };
 
 export type EffectiveWorkoutInstance = {
@@ -37,11 +44,68 @@ export type EffectiveWorkoutInstance = {
 };
 
 export type WorkoutWeeklyTargets = {
-  strengthSessions: number;
-  cardioSessions: number;
-  crossfitSessions: number;
-  totalWorkoutMinutes: number;
+  strengthPoints: number;
+  cardioPoints: number;
 };
+
+function clampPoints(value: number) {
+  return Math.max(1, Math.min(20, Math.round(value)));
+}
+
+function intensityMultiplier(exercise: WorkoutExercise) {
+  if (exercise.intensity === "low") return 0.85;
+  if (exercise.intensity === "high") return 1.2;
+  return 1;
+}
+
+export function calculateWorkoutPoints(exercise: WorkoutExercise): WorkoutPointTotals {
+  const intensity = intensityMultiplier(exercise);
+
+  if (exercise.type === "fitness") {
+    const base = exercise.trainingVolume / 240 + exercise.weight / 20 + (exercise.sets * exercise.reps) / 30;
+    return {
+      strengthPoints: clampPoints(base * intensity),
+      cardioPoints: 1
+    };
+  }
+
+  if (exercise.type === "cardio") {
+    const base = exercise.durationMinutes / 5 + exercise.estimatedCalories / 130;
+    return {
+      strengthPoints: 1,
+      cardioPoints: clampPoints(base * intensity)
+    };
+  }
+
+  const volume = exercise.trainingVolume / 260;
+  const duration = exercise.durationMinutes / 6;
+  const calories = exercise.estimatedCalories / 160;
+
+  return {
+    strengthPoints: clampPoints((volume + (exercise.weight ?? 0) / 24 + (exercise.sets ?? 0) / 2.5) * intensity),
+    cardioPoints: clampPoints((duration + calories + (exercise.reps ?? 0) / 35) * intensity)
+  };
+}
+
+export function withStoredWorkoutPoints<T extends WorkoutExercise>(exercise: T): T {
+  const fallback = calculateWorkoutPoints(exercise);
+  return {
+    ...exercise,
+    strengthPoints: Number.isFinite(exercise.strengthPoints) ? exercise.strengthPoints : fallback.strengthPoints,
+    cardioPoints: Number.isFinite(exercise.cardioPoints) ? exercise.cardioPoints : fallback.cardioPoints
+  };
+}
+
+export function getExercisePointSplit(exercise: WorkoutExercise): WorkoutPointTotals {
+  if (Number.isFinite(exercise.strengthPoints) && Number.isFinite(exercise.cardioPoints)) {
+    return {
+      strengthPoints: exercise.strengthPoints,
+      cardioPoints: exercise.cardioPoints
+    };
+  }
+
+  return calculateWorkoutPoints(exercise);
+}
 
 export function toDateKey(date: Date) {
   return date.toISOString().slice(0, 10);
@@ -108,7 +172,7 @@ function estimateMinutes(exercise: WorkoutExercise) {
 
 function getPlannedExercisesForDay(plan: WorkoutWeekPlan, dateKey: string) {
   const day = weekdayFromDateKey(dateKey);
-  return (plan[day]?.exercises ?? []).filter((exercise) => !exercise.isPaused);
+  return (plan[day]?.exercises ?? []).filter((exercise) => !exercise.isPaused).map(withStoredWorkoutPoints);
 }
 
 export function buildEffectiveWorkoutInstances(plan: WorkoutWeekPlan | null, exceptions: WorkoutException[], dateKeys: string[]) {
@@ -127,7 +191,7 @@ export function buildEffectiveWorkoutInstances(plan: WorkoutWeekPlan | null, exc
     const replacedMap = new Map(
       todaysExceptions
         .filter((item) => item.exceptionType === "replaced" && item.originalWorkoutId && item.replacementWorkoutData)
-        .map((item) => [item.originalWorkoutId as string, item.replacementWorkoutData as WorkoutExercise])
+        .map((item) => [item.originalWorkoutId as string, withStoredWorkoutPoints(item.replacementWorkoutData as WorkoutExercise)])
     );
 
     const movedOutIds = new Set(
@@ -152,7 +216,7 @@ export function buildEffectiveWorkoutInstances(plan: WorkoutWeekPlan | null, exc
           ({
             date: dateKey,
             source: "extra",
-            exercise: item.extraWorkoutData as WorkoutExercise
+            exercise: withStoredWorkoutPoints(item.extraWorkoutData as WorkoutExercise)
           }) as EffectiveWorkoutInstance
       );
 
@@ -192,7 +256,9 @@ export function buildWorkoutAdjustedSummary(plan: WorkoutWeekPlan | null, except
       totalMinutes: 0,
       cardioSessions: 0,
       fitnessSessions: 0,
-      crossfitSessions: 0
+      crossfitSessions: 0,
+      strengthPoints: 0,
+      cardioPoints: 0
     };
   }
 
@@ -211,12 +277,17 @@ export function buildWorkoutAdjustedSummary(plan: WorkoutWeekPlan | null, except
   let cardioSessions = 0;
   let fitnessSessions = 0;
   let crossfitSessions = 0;
+  let strengthPoints = 0;
+  let cardioPoints = 0;
 
   for (const item of effective) {
     const exercise = item.exercise;
+    const points = getExercisePointSplit(exercise);
     totalCalories += exercise.estimatedCalories;
     totalFitnessVolume += exercise.trainingVolume;
     totalMinutes += estimateMinutes(exercise);
+    strengthPoints += points.strengthPoints;
+    cardioPoints += points.cardioPoints;
 
     if (exercise.type === "cardio") cardioSessions += 1;
     if (exercise.type === "fitness") fitnessSessions += 1;
@@ -237,17 +308,17 @@ export function buildWorkoutAdjustedSummary(plan: WorkoutWeekPlan | null, except
     totalMinutes: Math.round(totalMinutes),
     cardioSessions,
     fitnessSessions,
-    crossfitSessions
+    crossfitSessions,
+    strengthPoints: Math.round(strengthPoints),
+    cardioPoints: Math.round(cardioPoints)
   };
 }
 
 export function deriveWeeklyWorkoutTargets(profile: ProfileInput | null): WorkoutWeeklyTargets {
   if (!profile) {
     return {
-      strengthSessions: 3,
-      cardioSessions: 2,
-      crossfitSessions: 1,
-      totalWorkoutMinutes: 180
+      strengthPoints: 60,
+      cardioPoints: 50
     };
   }
 
@@ -255,36 +326,28 @@ export function deriveWeeklyWorkoutTargets(profile: ProfileInput | null): Workou
 
   if (goal === "fat_loss") {
     return {
-      strengthSessions: 3,
-      cardioSessions: profile.activityLevel === "sedentary" ? 4 : 3,
-      crossfitSessions: 0,
-      totalWorkoutMinutes: 220
+      strengthPoints: profile.activityLevel === "sedentary" ? 34 : 40,
+      cardioPoints: profile.activityLevel === "sedentary" ? 80 : 70
     };
   }
 
   if (goal === "muscle_gain") {
     return {
-      strengthSessions: 4,
-      cardioSessions: 1,
-      crossfitSessions: 0,
-      totalWorkoutMinutes: 210
+      strengthPoints: 85,
+      cardioPoints: 20
     };
   }
 
   if (goal === "recomposition") {
     return {
-      strengthSessions: 3,
-      cardioSessions: 2,
-      crossfitSessions: 1,
-      totalWorkoutMinutes: 200
+      strengthPoints: 65,
+      cardioPoints: 50
     };
   }
 
   return {
-    strengthSessions: 2,
-    cardioSessions: 2,
-    crossfitSessions: 1,
-    totalWorkoutMinutes: 180
+    strengthPoints: 45,
+    cardioPoints: 60
   };
 }
 
