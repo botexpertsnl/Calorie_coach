@@ -56,7 +56,6 @@ export default function ProfilePage() {
   const [profile, setProfile] = useState<ProfileInput>(defaultProfile);
   const [targets, setTargets] = useState<DailyTargets>(defaultTargets);
   const [disabledMacros, setDisabledMacros] = useState<MacroKey[]>([]);
-  const [isCalculating, setIsCalculating] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [mainGoal, setMainGoal] = useState("");
   const [secondaryGoal, setSecondaryGoal] = useState("");
@@ -112,60 +111,18 @@ export default function ProfilePage() {
 
     setProfile(profileToSave);
     writeJson(STORAGE_KEYS.profile, profileToSave);
-    writeJson(STORAGE_KEYS.targets, { ...targets, disabledMacros });
     writeJson(STORAGE_KEYS.disabledMacros, disabledMacros);
     writeJson(STORAGE_KEYS.macroManualMode, isManualMode);
 
     if (!isManualMode) {
-      const nextTargets = recalculateAndPersistTodayTargets({
-        profile: profileToSave,
-        disabledMacros
-      });
+      const nextTargets = recalculateAndPersistTodayTargets({ profile: profileToSave, disabledMacros, force: true });
       if (nextTargets) setTargets(nextTargets);
+      setMessage("Profile saved successfully. Daily macros were recalculated from your profile and today's workout plan.");
     } else {
-      window.dispatchEvent(new CustomEvent(TARGETS_UPDATED_EVENT, { detail: { ...targets, disabledMacros } }));
-    }
-
-    setMessage("Profile saved successfully.");
-  }
-
-  async function calculateGoals() {
-    if (!mainGoal.trim() && !secondaryGoal.trim()) {
-      setMessage("Please add at least a Main goal or Secondary goal before calculating.");
-      return;
-    }
-
-    setIsCalculating(true);
-    setMessage(null);
-
-    const profileForCalculation = {
-      ...profile,
-      goalText: builtGoalText
-    };
-
-    try {
-      const response = await fetch("/api/targets", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ profile: profileForCalculation })
-      });
-      const payload = (await response.json()) as { data?: DailyTargets; error?: string };
-
-      if (!response.ok || !payload.data) throw new Error(payload.error ?? "Could not calculate goals.");
-
-      const nextTargets = { ...payload.data, disabledMacros };
-      setTargets(nextTargets);
-      writeJson(STORAGE_KEYS.targets, nextTargets);
-      window.dispatchEvent(new CustomEvent(TARGETS_UPDATED_EVENT, { detail: nextTargets }));
-      setMessage("Macro targets calculated.");
-    } catch {
-      const fallback = { ...calculateDailyTargets(profileForCalculation), disabledMacros };
-      setTargets(fallback);
-      writeJson(STORAGE_KEYS.targets, fallback);
-      window.dispatchEvent(new CustomEvent(TARGETS_UPDATED_EVENT, { detail: fallback }));
-      setMessage("Macro targets calculated.");
-    } finally {
-      setIsCalculating(false);
+      const manualTargets = { ...targets, disabledMacros };
+      writeJson(STORAGE_KEYS.targets, manualTargets);
+      window.dispatchEvent(new CustomEvent(TARGETS_UPDATED_EVENT, { detail: manualTargets }));
+      setMessage("Profile saved successfully. Manual daily macros were kept.");
     }
   }
 
@@ -235,37 +192,27 @@ export default function ProfilePage() {
       <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-2xl font-semibold text-slate-900">Daily Macro Goals</h2>
-          <button
-            onClick={calculateGoals}
-            disabled={isCalculating}
-            className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
-          >
-            {isCalculating ? "Calculating..." : "Calculate Macro Targets"}
-          </button>
-        </div>
-
-        <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
-          <label className="flex cursor-pointer items-start gap-3 text-sm text-slate-700">
+          <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
             <input
               type="checkbox"
-              className="mt-0.5"
               checked={isManualMode}
               onChange={(e) => {
                 const next = e.target.checked;
                 setIsManualMode(next);
                 writeJson(STORAGE_KEYS.macroManualMode, next);
                 if (!next) {
-                  const recalculated = recalculateAndPersistTodayTargets({ profile, disabledMacros });
+                  const recalculated = recalculateAndPersistTodayTargets({ profile, disabledMacros, force: true });
                   if (recalculated) setTargets(recalculated);
                 }
               }}
             />
-            <span>
-              <span className="font-medium text-slate-800">Manual macro mode</span>
-              <span className="mt-0.5 block text-xs text-slate-500">When enabled, automatic recalculation from profile/workout updates is paused.</span>
-            </span>
+            <span className="font-medium text-slate-800">input manual</span>
           </label>
         </div>
+
+        <p className="mb-4 text-sm text-slate-500">
+          Daily macros are calculated from your body profile, goals, and today&apos;s planned workout load. They are recalculated when you save your profile.
+        </p>
 
         <div className="grid gap-3 md:grid-cols-4">
           {macroConfig
@@ -283,7 +230,14 @@ export default function ProfilePage() {
                     ✕
                   </button>
                 </span>
-                <input type="number" min={0} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={targets[key]} onChange={(e) => updateTarget(key, Number(e.target.value))} />
+                <input
+                  type="number"
+                  min={0}
+                  disabled={!isManualMode}
+                  className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
+                  value={targets[key]}
+                  onChange={(e) => updateTarget(key, Number(e.target.value))}
+                />
                 <p className="mt-1 text-xs text-slate-500">{unit}</p>
               </label>
             ))}
