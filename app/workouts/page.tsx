@@ -134,27 +134,6 @@ export default function WorkoutsPage() {
     return history.slice(-2).reverse();
   }, [progressExercise]);
 
-  const weeklySummary = useMemo(() => {
-    let totalExercises = 0;
-    let plannedSessions = 0;
-    let totalCalories = 0;
-    let totalFitnessVolume = 0;
-
-    dayOrder.forEach((day) => {
-      const hasExercises = plan[day].exercises.some((exercise) => !exercise.isPaused);
-      if (hasExercises) plannedSessions += 1;
-
-      plan[day].exercises.forEach((exercise) => {
-        if (exercise.isPaused) return;
-        totalExercises += 1;
-        totalCalories += exercise.estimatedCalories;
-        totalFitnessVolume += exercise.trainingVolume;
-      });
-    });
-
-    return { plannedSessions, totalExercises, totalCalories, totalFitnessVolume };
-  }, [plan]);
-
   function setDraftField<K extends keyof PlannerDraft>(key: K, value: PlannerDraft[K]) {
     setDraft((prev) => ({ ...prev, [key]: value }));
   }
@@ -299,7 +278,14 @@ export default function WorkoutsPage() {
       return { ...prev, [selectedDay]: { ...dayLog, exercises } };
     });
 
+    const wasProgressSave = Boolean(progressExerciseId);
     setMessage(editingExerciseId ? "Exercise updated." : "Exercise saved.");
+
+    if (wasProgressSave) {
+      closeProgress();
+      return;
+    }
+
     resetDraft(draft.type);
   }
 
@@ -500,25 +486,6 @@ export default function WorkoutsPage() {
       <main className="mx-auto w-full max-w-6xl space-y-6 px-4 py-8 md:px-8">
         <AppHeaderNav />
 
-        <section className="grid gap-4 md:grid-cols-4">
-          <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
-            <p className="text-xs text-slate-500">Planned sessions</p>
-            <p className="mt-1 text-2xl font-semibold text-slate-900">{weeklySummary.plannedSessions}</p>
-          </div>
-          <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
-            <p className="text-xs text-slate-500">Total exercises</p>
-            <p className="mt-1 text-2xl font-semibold text-slate-900">{weeklySummary.totalExercises}</p>
-          </div>
-          <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
-            <p className="text-xs text-slate-500">Total calories</p>
-            <p className="mt-1 text-2xl font-semibold text-slate-900">{weeklySummary.totalCalories}</p>
-          </div>
-          <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
-            <p className="text-xs text-slate-500">Total fitness volume</p>
-            <p className="mt-1 text-2xl font-semibold text-slate-900">{weeklySummary.totalFitnessVolume}</p>
-          </div>
-        </section>
-
         <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
           <h1 className="text-3xl font-semibold text-slate-900">Workouts Planner</h1>
           <p className="mt-2 text-sm text-slate-500">Schedule workouts across the week and manage exercises by day.</p>
@@ -562,7 +529,7 @@ export default function WorkoutsPage() {
               ) : null}
 
               {draft.type === "crossfit" ? (
-                <div className="rounded-xl border border-slate-200 p-3 space-y-3">
+                <div className="space-y-3">
                   <p className="text-sm font-semibold text-slate-800">CrossFit fields</p>
 
                   <label className={`block rounded-lg border p-3 text-sm ${draft.crossfitUseDuration ? "border-emerald-200 bg-emerald-50/40 text-slate-700" : "border-slate-200 bg-slate-50 text-slate-500"}`}>
