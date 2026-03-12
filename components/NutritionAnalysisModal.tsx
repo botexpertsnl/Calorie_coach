@@ -9,6 +9,10 @@ type NutritionAnalysisModalProps = {
   onClose: () => void;
   onAddMeal: () => void;
   isAddingMeal?: boolean;
+  mealDate: string;
+  mealTime: string;
+  onMealDateChange: (value: string) => void;
+  onMealTimeChange: (value: string) => void;
 };
 
 function Badge({ children }: { children: React.ReactNode }) {
@@ -26,7 +30,11 @@ export function NutritionAnalysisModal({
   errorMessage,
   onClose,
   onAddMeal,
-  isAddingMeal = false
+  isAddingMeal = false,
+  mealDate,
+  mealTime,
+  onMealDateChange,
+  onMealTimeChange
 }: NutritionAnalysisModalProps) {
   if (!isOpen) return null;
 
@@ -66,6 +74,27 @@ export function NutritionAnalysisModal({
 
           {status === "success" && result ? (
             <div className="space-y-4">
+              <div className="grid gap-3 rounded-2xl border border-slate-200 p-4 md:grid-cols-2">
+                <label className="text-sm text-slate-700">
+                  Meal date
+                  <input
+                    type="date"
+                    value={mealDate}
+                    onChange={(event) => onMealDateChange(event.target.value)}
+                    className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2"
+                  />
+                </label>
+                <label className="text-sm text-slate-700">
+                  Meal time
+                  <input
+                    type="time"
+                    value={mealTime}
+                    onChange={(event) => onMealTimeChange(event.target.value)}
+                    className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2"
+                  />
+                </label>
+              </div>
+
               <div className="flex flex-wrap gap-2">
                 <Badge>{result.totals.calories} kcal</Badge>
                 <Badge>{result.totals.protein}g Protein</Badge>

@@ -61,6 +61,20 @@ function normalizeQuickMeal(meal: QuickMeal): QuickMeal {
   };
 }
 
+function getNowDateTimeInputValues() {
+  const now = new Date();
+  const date = now.toISOString().slice(0, 10);
+  const time = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+  return { date, time };
+}
+
+function toIsoFromDateTime(date: string, time: string) {
+  const safeDate = date || getNowDateTimeInputValues().date;
+  const safeTime = time || getNowDateTimeInputValues().time;
+  const localDateTime = new Date(`${safeDate}T${safeTime}:00`);
+  return Number.isNaN(localDateTime.getTime()) ? new Date().toISOString() : localDateTime.toISOString();
+}
+
 export function HomePageClient() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -74,12 +88,15 @@ export function HomePageClient() {
   const [quickMeals, setQuickMeals] = useState<QuickMeal[]>([]);
   const [isQuickMealsOpen, setIsQuickMealsOpen] = useState(false);
   const [todayKey, setTodayKey] = useState(getLocalDateKey());
+  const [deleteMealId, setDeleteMealId] = useState<string | null>(null);
 
   const [isAnalysisModalOpen, setIsAnalysisModalOpen] = useState(false);
   const [analysisStatus, setAnalysisStatus] = useState<"loading" | "success" | "error">("loading");
   const [analysisResult, setAnalysisResult] = useState<CalorieResponse | null>(null);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [pendingMealMeta, setPendingMealMeta] = useState<{ text: string; source: "text" | "image" } | null>(null);
+  const [mealDateInput, setMealDateInput] = useState(getNowDateTimeInputValues().date);
+  const [mealTimeInput, setMealTimeInput] = useState(getNowDateTimeInputValues().time);
 
   useEffect(() => {
     const savedMeals = readJson<StoredMealLog[]>(STORAGE_KEYS.meals);
@@ -122,6 +139,7 @@ export function HomePageClient() {
   }, [quickMeals, todayKey]);
 
   const todayMeals = useMemo(() => getMealsForDate(history, todayKey), [history, todayKey]);
+  const mealPendingDelete = useMemo(() => todayMeals.find((meal) => meal.id === deleteMealId) ?? null, [todayMeals, deleteMealId]);
 
   const consumed = useMemo(
     () =>
@@ -142,6 +160,9 @@ export function HomePageClient() {
     setAnalysisResult(null);
     setAnalysisError(null);
     setPendingMealMeta(meta);
+    const now = getNowDateTimeInputValues();
+    setMealDateInput(now.date);
+    setMealTimeInput(now.time);
     setAnalysisStatus("loading");
     setIsAnalysisModalOpen(true);
 
@@ -191,7 +212,20 @@ export function HomePageClient() {
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
-  function handleAddQuickMealToDay(meal: QuickMeal) {
+  function closeAnalysisModal() {
+    setIsAnalysisModalOpen(false);
+    setPendingMealMeta(null);
+    setAnalysisResult(null);
+    setAnalysisError(null);
+    const now = getNowDateTimeInputValues();
+    setMealDateInput(now.date);
+    setMealTimeInput(now.time);
+  }
+
+  function handleAddQuickMealToDay(meal: QuickMeal, date: string, time: string) {
+    const createdAt = toIsoFromDateTime(date, time);
+    const mealDate = createdAt.slice(0, 10);
+
     setHistory((prev) => [
       {
         id: crypto.randomUUID(),
@@ -200,9 +234,9 @@ export function HomePageClient() {
         source: "quick_meal",
         sourceType: "quick",
         quickMealId: meal.id,
-        mealDate: todayKey,
+        mealDate,
         result: toCalorieResponseFromQuickMeal(meal),
-        createdAt: new Date().toISOString()
+        createdAt
       },
       ...prev
     ]);
@@ -242,6 +276,10 @@ export function HomePageClient() {
 
   function handleAddMeal() {
     if (!analysisResult || !pendingMealMeta) return;
+
+    const createdAt = toIsoFromDateTime(mealDateInput, mealTimeInput);
+    const mealDate = createdAt.slice(0, 10);
+
     setHistory((prev) => [
       {
         id: crypto.randomUUID(),
@@ -249,21 +287,49 @@ export function HomePageClient() {
         text: pendingMealMeta.text,
         source: pendingMealMeta.source,
         sourceType: "ai",
-        mealDate: todayKey,
+        mealDate,
         result: analysisResult,
-        createdAt: new Date().toISOString()
+        createdAt
       },
       ...prev
     ]);
-    setIsAnalysisModalOpen(false);
-    setAnalysisResult(null);
-    setPendingMealMeta(null);
-    setAnalysisError(null);
+    closeAnalysisModal();
+  }
+
+  function confirmDeleteMeal() {
+    if (!deleteMealId) return;
+    setHistory((prev) => prev.filter((entry) => entry.id !== deleteMealId));
+    setDeleteMealId(null);
   }
 
   return (
     <>
-      <NutritionAnalysisModal isOpen={isAnalysisModalOpen} status={analysisStatus} result={analysisResult} errorMessage={analysisError} onClose={() => setIsAnalysisModalOpen(false)} onAddMeal={handleAddMeal} />
+      {deleteMealId ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+            <h3 className="text-lg font-semibold text-slate-900">Delete meal?</h3>
+            <p className="mt-2 text-sm text-slate-600">Are you sure you want to delete this meal?</p>
+            {mealPendingDelete ? <p className="mt-2 text-xs text-slate-500">{mealPendingDelete.text}</p> : null}
+            <div className="mt-5 flex justify-end gap-2">
+              <button type="button" onClick={() => setDeleteMealId(null)} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700">Cancel</button>
+              <button type="button" onClick={confirmDeleteMeal} className="rounded-xl bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-500">Delete</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      <NutritionAnalysisModal
+        isOpen={isAnalysisModalOpen}
+        status={analysisStatus}
+        result={analysisResult}
+        errorMessage={analysisError}
+        onClose={closeAnalysisModal}
+        onAddMeal={handleAddMeal}
+        mealDate={mealDateInput}
+        mealTime={mealTimeInput}
+        onMealDateChange={setMealDateInput}
+        onMealTimeChange={setMealTimeInput}
+      />
       <QuickMealsModal
         isOpen={isQuickMealsOpen}
         quickMeals={quickMeals}
@@ -322,9 +388,21 @@ export function HomePageClient() {
             <ul className="mt-4 space-y-3">
               {todayMeals.map((entry) => (
                 <li key={entry.id} className="rounded-xl border border-slate-200 p-4">
-                  <p className="text-xs uppercase tracking-wide text-slate-400">{entry.sourceType === "daily" ? "Daily meal" : entry.source === "image" ? "Photo meal" : entry.source === "quick_meal" ? "Quick meal" : "Text meal"} · {new Date(entry.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</p>
-                  <p className="mt-1 text-sm text-slate-700">{entry.text}</p>
-                  <p className="mt-1 text-xs text-slate-500">{entry.result.totals.calories} kcal • {entry.result.totals.protein}g protein • {entry.result.totals.carbs}g carbs • {entry.result.totals.fat}g fat</p>
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-xs uppercase tracking-wide text-slate-400">{entry.sourceType === "daily" ? "Daily meal" : entry.source === "image" ? "Photo meal" : entry.source === "quick_meal" ? "Quick meal" : "Text meal"} · {new Date(entry.createdAt).toLocaleDateString()} {new Date(entry.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</p>
+                      <p className="mt-1 text-sm text-slate-700">{entry.text}</p>
+                      <p className="mt-1 text-xs text-slate-500">{entry.result.totals.calories} kcal • {entry.result.totals.protein}g protein • {entry.result.totals.carbs}g carbs • {entry.result.totals.fat}g fat</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setDeleteMealId(entry.id)}
+                      className="rounded-lg border border-rose-200 px-2 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-50"
+                      aria-label={`Delete meal ${entry.text}`}
+                    >
+                      Delete
+                    </button>
+                  </div>
                 </li>
               ))}
             </ul>

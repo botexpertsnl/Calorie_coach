@@ -106,13 +106,53 @@ function getHistory(exercise: WorkoutExercise) {
     : [];
 }
 
-function normalizePlan(plan: WorkoutWeekPlan): WorkoutWeekPlan {
+function ensureCalories(exercise: WorkoutExercise, weightKg: number) {
+  if (exercise.estimatedCalories > 0) return Math.round(exercise.estimatedCalories);
+
+  if (exercise.type === "cardio") {
+    return estimateCaloriesForType({
+      type: "cardio",
+      weightKg,
+      name: exercise.name,
+      durationMinutes: Math.max(1, exercise.durationMinutes),
+      intensity: exercise.intensity
+    });
+  }
+
+  if (exercise.type === "fitness") {
+    return estimateCaloriesForType({
+      type: "fitness",
+      weightKg,
+      name: exercise.name,
+      sets: Math.max(1, exercise.sets),
+      reps: Math.max(1, exercise.reps),
+      weight: Math.max(0, exercise.weight),
+      intensity: exercise.intensity
+    });
+  }
+
+  return estimateCaloriesForType({
+    type: "crossfit",
+    weightKg,
+    name: exercise.name,
+    durationMinutes: Math.max(1, exercise.durationMinutes),
+    intensity: exercise.intensity
+  });
+}
+
+function normalizePlanWithMetrics(plan: WorkoutWeekPlan, weightKg: number): WorkoutWeekPlan {
   const normalized = { ...plan };
 
   for (const day of dayOrder) {
     normalized[day] = {
       ...plan[day],
-      exercises: (plan[day]?.exercises ?? []).map((exercise) => withStoredWorkoutPoints(exercise))
+      exercises: (plan[day]?.exercises ?? []).map((exercise) => {
+        const withPoints = withStoredWorkoutPoints(exercise);
+        return {
+          ...withPoints,
+          estimatedCalories: ensureCalories(withPoints, weightKg)
+        };
+      })
     };
   }
 
@@ -148,7 +188,8 @@ export default function WorkoutsPage() {
     const savedProfile = readJson<ProfileInput>(STORAGE_KEYS.profile);
     const savedExceptions = readJson<WorkoutException[]>(STORAGE_KEYS.workoutExceptions) ?? [];
 
-    if (savedPlan) setPlan(normalizePlan(savedPlan));
+    const profileWeightKg = savedProfile?.weightKg ?? 70;
+    if (savedPlan) setPlan(normalizePlanWithMetrics(savedPlan, profileWeightKg));
     if (savedProfile?.weightKg) setProfileWeight(savedProfile.weightKg);
     if (savedProfile) setProfile(savedProfile);
     setExceptions(savedExceptions);
@@ -182,6 +223,17 @@ export default function WorkoutsPage() {
     const history = getHistory(progressExercise);
     return history.slice(-2).reverse();
   }, [progressExercise]);
+
+  const selectedDaySummary = useMemo(() => {
+    return selectedExercises.reduce(
+      (sum, exercise) => ({
+        strengthPoints: sum.strengthPoints + exercise.strengthPoints,
+        cardioPoints: sum.cardioPoints + exercise.cardioPoints,
+        calories: sum.calories + ensureCalories(exercise, profileWeight)
+      }),
+      { strengthPoints: 0, cardioPoints: 0, calories: 0 }
+    );
+  }, [profileWeight, selectedExercises]);
 
   const weekDateKeys = useMemo(() => getCurrentWeekDateKeys(), []);
 
@@ -813,12 +865,12 @@ export default function WorkoutsPage() {
           <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
             <p className="text-xs text-slate-500">Strength Progress</p>
             <p className="text-lg font-semibold text-slate-900">{adjustedSummary.strengthPoints} / {weeklyTargets.strengthPoints} points</p>
-            <div className="mt-2 h-2 rounded-full bg-slate-100"><div className="h-full rounded-full bg-emerald-500" style={{ width: `${Math.min(100, (adjustedSummary.strengthPoints / Math.max(weeklyTargets.strengthPoints, 1)) * 100)}%` }} /></div>
+            <div className="mt-2 h-1.5 rounded-full bg-slate-200"><div className="h-1.5 rounded-full bg-emerald-500" style={{ width: `${Math.min(100, (adjustedSummary.strengthPoints / Math.max(weeklyTargets.strengthPoints, 1)) * 100)}%` }} /></div>
           </div>
           <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
             <p className="text-xs text-slate-500">Cardio Progress</p>
             <p className="text-lg font-semibold text-slate-900">{adjustedSummary.cardioPoints} / {weeklyTargets.cardioPoints} points</p>
-            <div className="mt-2 h-2 rounded-full bg-slate-100"><div className="h-full rounded-full bg-sky-500" style={{ width: `${Math.min(100, (adjustedSummary.cardioPoints / Math.max(weeklyTargets.cardioPoints, 1)) * 100)}%` }} /></div>
+            <div className="mt-2 h-1.5 rounded-full bg-slate-200"><div className="h-1.5 rounded-full bg-sky-500" style={{ width: `${Math.min(100, (adjustedSummary.cardioPoints / Math.max(weeklyTargets.cardioPoints, 1)) * 100)}%` }} /></div>
           </div>
         </section>
 
@@ -983,6 +1035,15 @@ export default function WorkoutsPage() {
                 ))}
               </ul>
             )}
+
+            <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <h3 className="text-sm font-semibold text-slate-900">Workout Summary</h3>
+              <div className="mt-2 grid gap-2 sm:grid-cols-3">
+                <p className="text-sm text-slate-600">Strength Points: <span className="font-semibold text-slate-900">{selectedDaySummary.strengthPoints}</span></p>
+                <p className="text-sm text-slate-600">Cardio Points: <span className="font-semibold text-slate-900">{selectedDaySummary.cardioPoints}</span></p>
+                <p className="text-sm text-slate-600">Calories Burned: <span className="font-semibold text-slate-900">{selectedDaySummary.calories} kcal</span></p>
+              </div>
+            </div>
           </div>
         </section>
       </main>

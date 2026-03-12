@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { QuickMeal } from "@/lib/types";
 import { QuickMealForm } from "@/components/QuickMealForm";
 
@@ -6,10 +6,17 @@ type QuickMealsModalProps = {
   isOpen: boolean;
   quickMeals: QuickMeal[];
   onClose: () => void;
-  onAddQuickMealToDay: (meal: QuickMeal) => void;
+  onAddQuickMealToDay: (meal: QuickMeal, date: string, time: string) => void;
   onCreateOrUpdateQuickMeal: (meal: Omit<QuickMeal, "id" | "createdAt" | "updatedAt">, mealId?: string) => void;
   onDeleteQuickMeal: (mealId: string) => void;
 };
+
+function getNowDateTimeInputValues() {
+  const now = new Date();
+  const date = now.toISOString().slice(0, 10);
+  const time = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+  return { date, time };
+}
 
 export function QuickMealsModal({
   isOpen,
@@ -22,11 +29,23 @@ export function QuickMealsModal({
   const [editingMealId, setEditingMealId] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [{ date, time }, setDateTime] = useState(getNowDateTimeInputValues());
 
   const editingMeal = useMemo(
     () => quickMeals.find((meal) => meal.id === editingMealId) ?? null,
     [editingMealId, quickMeals]
   );
+
+  useEffect(() => {
+    if (isOpen) {
+      setDateTime(getNowDateTimeInputValues());
+      return;
+    }
+
+    setIsCreating(false);
+    setEditingMealId(null);
+    setConfirmDeleteId(null);
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -55,6 +74,15 @@ export function QuickMealsModal({
           />
         ) : (
           <div className="space-y-3">
+            <div className="grid gap-3 rounded-xl border border-slate-200 p-3 md:grid-cols-2">
+              <label className="text-sm text-slate-700">Meal date
+                <input type="date" value={date} onChange={(event) => setDateTime((prev) => ({ ...prev, date: event.target.value }))} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" />
+              </label>
+              <label className="text-sm text-slate-700">Meal time
+                <input type="time" value={time} onChange={(event) => setDateTime((prev) => ({ ...prev, time: event.target.value }))} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" />
+              </label>
+            </div>
+
             <div className="flex justify-end">
               <button
                 type="button"
@@ -81,7 +109,7 @@ export function QuickMealsModal({
                       </div>
 
                       <div className="flex flex-wrap gap-2">
-                        <button type="button" onClick={() => onAddQuickMealToDay(meal)} className="rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-400">Add</button>
+                        <button type="button" onClick={() => onAddQuickMealToDay(meal, date, time)} className="rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-400">Add</button>
                         <button type="button" onClick={() => setEditingMealId(meal.id)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700">Edit</button>
                         <button type="button" onClick={() => setConfirmDeleteId(meal.id)} className="rounded-lg border border-rose-200 px-3 py-1.5 text-xs font-semibold text-rose-700">Delete</button>
                       </div>
