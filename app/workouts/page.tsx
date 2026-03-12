@@ -10,18 +10,11 @@ import {
   WorkoutDay,
   WorkoutDayLog,
   WorkoutExercise,
+  WorkoutProgressEntry,
   WorkoutWeekPlan
 } from "@/lib/types";
 
-const dayOrder: WorkoutDay[] = [
-  "monday",
-  "tuesday",
-  "wednesday",
-  "thursday",
-  "friday",
-  "saturday",
-  "sunday"
-];
+const dayOrder: WorkoutDay[] = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
 
 const dayLabels: Record<WorkoutDay, string> = {
   monday: "Monday",
@@ -35,22 +28,24 @@ const dayLabels: Record<WorkoutDay, string> = {
 
 function createDefaultPlan(): WorkoutWeekPlan {
   return {
-    monday: { notes: "", completed: false, exercises: [] },
-    tuesday: { notes: "", completed: false, exercises: [] },
-    wednesday: { notes: "", completed: false, exercises: [] },
-    thursday: { notes: "", completed: false, exercises: [] },
-    friday: { notes: "", completed: false, exercises: [] },
-    saturday: { notes: "", completed: false, exercises: [] },
-    sunday: { notes: "", completed: false, exercises: [] }
+    monday: { notes: "", exercises: [] },
+    tuesday: { notes: "", exercises: [] },
+    wednesday: { notes: "", exercises: [] },
+    thursday: { notes: "", exercises: [] },
+    friday: { notes: "", exercises: [] },
+    saturday: { notes: "", exercises: [] },
+    sunday: { notes: "", exercises: [] }
   };
 }
 
 type ExerciseType = "cardio" | "fitness";
 
+type Intensity = "low" | "moderate" | "high";
+
 type CardioDraft = {
   name: string;
   durationMin: number;
-  intensity: "low" | "moderate" | "high";
+  intensity: Intensity;
 };
 
 type FitnessDraft = {
@@ -60,29 +55,47 @@ type FitnessDraft = {
   weightKg: number;
 };
 
-const defaultCardioDraft: CardioDraft = {
-  name: "",
-  durationMin: 30,
-  intensity: "moderate"
-};
+const defaultCardioDraft: CardioDraft = { name: "", durationMin: 30, intensity: "moderate" };
+const defaultFitnessDraft: FitnessDraft = { name: "", sets: 3, reps: 10, weightKg: 20 };
 
-const defaultFitnessDraft: FitnessDraft = {
-  name: "",
-  sets: 3,
-  reps: 10,
-  weightKg: 20
-};
+function inferMetFromDescription(description: string, intensity: Intensity) {
+  const normalized = description.toLowerCase();
+  let met = 6.5;
 
-function getMETByIntensity(intensity: CardioDraft["intensity"]) {
-  if (intensity === "low") return 5;
-  if (intensity === "high") return 9;
-  return 7;
+  if (/walk|hike/.test(normalized)) met = 4.5;
+  if (/jog|run|sprint/.test(normalized)) met = 8.5;
+  if (/bike|cycling|cycle/.test(normalized)) met = 7;
+  if (/swim|rowing|elliptical|crossfit|hiit/.test(normalized)) met = 8.5;
+
+  if (intensity === "low") met -= 1;
+  if (intensity === "high") met += 1.5;
+
+  return Math.max(3, met);
 }
 
-function calculateCardioCalories(weightKg: number, durationMin: number, intensity: CardioDraft["intensity"]) {
-  const met = getMETByIntensity(intensity);
+function calculateCardioCalories(weightKg: number, description: string, durationMin: number, intensity: Intensity) {
+  const met = inferMetFromDescription(description, intensity);
   const calories = (met * weightKg * 3.5) / 200 * durationMin;
   return Math.max(0, Math.round(calories));
+}
+
+function toProgressEntry(exercise: WorkoutExercise): WorkoutProgressEntry {
+  if (exercise.type === "cardio") {
+    return {
+      recordedAt: new Date().toISOString(),
+      durationMin: exercise.durationMin,
+      intensity: exercise.intensity,
+      caloriesBurned: exercise.caloriesBurned
+    };
+  }
+
+  return {
+    recordedAt: new Date().toISOString(),
+    sets: exercise.sets,
+    reps: exercise.reps,
+    weightKg: exercise.weightKg,
+    trainingVolume: exercise.trainingVolume
+  };
 }
 
 export default function WorkoutsPage() {
@@ -94,6 +107,10 @@ export default function WorkoutsPage() {
   const [editingExerciseId, setEditingExerciseId] = useState<string | null>(null);
   const [profileWeight, setProfileWeight] = useState(70);
   const [message, setMessage] = useState<string | null>(null);
+
+  const [progressExerciseId, setProgressExerciseId] = useState<string | null>(null);
+  const [progressCardioDraft, setProgressCardioDraft] = useState<CardioDraft>(defaultCardioDraft);
+  const [progressFitnessDraft, setProgressFitnessDraft] = useState<FitnessDraft>(defaultFitnessDraft);
 
   useEffect(() => {
     const savedPlan = readJson<WorkoutWeekPlan>(STORAGE_KEYS.workouts);
@@ -107,7 +124,22 @@ export default function WorkoutsPage() {
     writeJson(STORAGE_KEYS.workouts, plan);
   }, [plan]);
 
+  useEffect(() => {
+    resetForm();
+    setMessage(null);
+  }, [selectedDay]);
+
   const activeDay = plan[selectedDay];
+
+  const progressExercise = useMemo(
+    () => activeDay.exercises.find((exercise) => exercise.id === progressExerciseId) ?? null,
+    [activeDay.exercises, progressExerciseId]
+  );
+
+  const previousProgress = useMemo(() => {
+    if (!progressExercise || !progressExercise.progressHistory.length) return null;
+    return progressExercise.progressHistory[progressExercise.progressHistory.length - 1];
+  }, [progressExercise]);
 
   const weeklySummary = useMemo(() => {
     let totalExercises = 0;
@@ -122,12 +154,7 @@ export default function WorkoutsPage() {
       });
     });
 
-    return {
-      totalExercises,
-      totalCardioCalories,
-      totalVolume,
-      completedDays: dayOrder.filter((day) => plan[day].completed).length
-    };
+    return { totalExercises, totalCardioCalories, totalVolume };
   }, [plan]);
 
   function resetForm() {
@@ -146,28 +173,27 @@ export default function WorkoutsPage() {
         return;
       }
 
+      const caloriesBurned = calculateCardioCalories(profileWeight, cardioDraft.name, cardioDraft.durationMin, cardioDraft.intensity);
       const nextExercise: CardioExercise = {
         id: editingExerciseId ?? crypto.randomUUID(),
         type: "cardio",
         name: cardioDraft.name.trim(),
         durationMin: cardioDraft.durationMin,
         intensity: cardioDraft.intensity,
-        caloriesBurned: calculateCardioCalories(profileWeight, cardioDraft.durationMin, cardioDraft.intensity)
+        caloriesBurned,
+        progressHistory: []
       };
 
       setPlan((prev) => {
         const dayLog = prev[selectedDay];
+        const existing = dayLog.exercises.find((exercise) => exercise.id === editingExerciseId);
+        if (existing?.type === "cardio") nextExercise.progressHistory = [...existing.progressHistory, toProgressEntry(existing)];
+
         const exercises = editingExerciseId
           ? dayLog.exercises.map((exercise) => (exercise.id === editingExerciseId ? nextExercise : exercise))
           : [nextExercise, ...dayLog.exercises];
 
-        return {
-          ...prev,
-          [selectedDay]: {
-            ...dayLog,
-            exercises
-          }
-        };
+        return { ...prev, [selectedDay]: { ...dayLog, exercises } };
       });
 
       setMessage("Cardio exercise saved.");
@@ -180,7 +206,7 @@ export default function WorkoutsPage() {
       return;
     }
 
-    const volume = fitnessDraft.sets * fitnessDraft.reps * fitnessDraft.weightKg;
+    const volume = Math.round(fitnessDraft.sets * fitnessDraft.reps * fitnessDraft.weightKg);
     const nextExercise: FitnessExercise = {
       id: editingExerciseId ?? crypto.randomUUID(),
       type: "fitness",
@@ -188,22 +214,20 @@ export default function WorkoutsPage() {
       sets: fitnessDraft.sets,
       reps: fitnessDraft.reps,
       weightKg: fitnessDraft.weightKg,
-      trainingVolume: Math.round(volume)
+      trainingVolume: volume,
+      progressHistory: []
     };
 
     setPlan((prev) => {
       const dayLog = prev[selectedDay];
+      const existing = dayLog.exercises.find((exercise) => exercise.id === editingExerciseId);
+      if (existing?.type === "fitness") nextExercise.progressHistory = [...existing.progressHistory, toProgressEntry(existing)];
+
       const exercises = editingExerciseId
         ? dayLog.exercises.map((exercise) => (exercise.id === editingExerciseId ? nextExercise : exercise))
         : [nextExercise, ...dayLog.exercises];
 
-      return {
-        ...prev,
-        [selectedDay]: {
-          ...dayLog,
-          exercises
-        }
-      };
+      return { ...prev, [selectedDay]: { ...dayLog, exercises } };
     });
 
     setMessage("Fitness exercise saved.");
@@ -223,7 +247,36 @@ export default function WorkoutsPage() {
       return;
     }
 
-    setFitnessDraft({
+    setFitnessDraft({ name: exercise.name, sets: exercise.sets, reps: exercise.reps, weightKg: exercise.weightKg });
+  }
+
+  function deleteExercise(exerciseId: string) {
+    setPlan((prev) => {
+      const dayLog = prev[selectedDay];
+      return { ...prev, [selectedDay]: { ...dayLog, exercises: dayLog.exercises.filter((exercise) => exercise.id !== exerciseId) } };
+    });
+
+    if (editingExerciseId === exerciseId) resetForm();
+    if (progressExerciseId === exerciseId) setProgressExerciseId(null);
+    setMessage("Exercise deleted.");
+  }
+
+  function updateDayMeta(day: WorkoutDay, patch: Partial<WorkoutDayLog>) {
+    setPlan((prev) => ({ ...prev, [day]: { ...prev[day], ...patch } }));
+  }
+
+  function openProgressModal(exercise: WorkoutExercise) {
+    setProgressExerciseId(exercise.id);
+    if (exercise.type === "cardio") {
+      setProgressCardioDraft({
+        name: exercise.name,
+        durationMin: exercise.durationMin,
+        intensity: exercise.intensity ?? "moderate"
+      });
+      return;
+    }
+
+    setProgressFitnessDraft({
       name: exercise.name,
       sets: exercise.sets,
       reps: exercise.reps,
@@ -231,241 +284,288 @@ export default function WorkoutsPage() {
     });
   }
 
-  function deleteExercise(exerciseId: string) {
+  function saveProgressUpdate() {
+    if (!progressExercise) return;
+
     setPlan((prev) => {
       const dayLog = prev[selectedDay];
-      return {
-        ...prev,
-        [selectedDay]: {
-          ...dayLog,
-          exercises: dayLog.exercises.filter((exercise) => exercise.id !== exerciseId)
+      const exercises = dayLog.exercises.map((exercise) => {
+        if (exercise.id !== progressExercise.id) return exercise;
+
+        if (exercise.type === "cardio") {
+          return {
+            ...exercise,
+            name: progressCardioDraft.name.trim() || exercise.name,
+            durationMin: progressCardioDraft.durationMin,
+            intensity: progressCardioDraft.intensity,
+            caloriesBurned: calculateCardioCalories(
+              profileWeight,
+              progressCardioDraft.name.trim() || exercise.name,
+              progressCardioDraft.durationMin,
+              progressCardioDraft.intensity
+            ),
+            progressHistory: [...exercise.progressHistory, toProgressEntry(exercise)]
+          };
         }
-      };
+
+        const volume = Math.round(progressFitnessDraft.sets * progressFitnessDraft.reps * progressFitnessDraft.weightKg);
+        return {
+          ...exercise,
+          name: progressFitnessDraft.name.trim() || exercise.name,
+          sets: progressFitnessDraft.sets,
+          reps: progressFitnessDraft.reps,
+          weightKg: progressFitnessDraft.weightKg,
+          trainingVolume: volume,
+          progressHistory: [...exercise.progressHistory, toProgressEntry(exercise)]
+        };
+      });
+
+      return { ...prev, [selectedDay]: { ...dayLog, exercises } };
     });
 
-    if (editingExerciseId === exerciseId) resetForm();
-    setMessage("Exercise deleted.");
-  }
-
-  function updateDayMeta(day: WorkoutDay, patch: Partial<WorkoutDayLog>) {
-    setPlan((prev) => ({
-      ...prev,
-      [day]: {
-        ...prev[day],
-        ...patch
-      }
-    }));
+    setProgressExerciseId(null);
+    setMessage("Workout progress updated.");
   }
 
   return (
-    <main className="mx-auto w-full max-w-6xl space-y-6 px-4 py-8 md:px-8">
-      <AppHeaderNav />
-
-      <section className="grid gap-4 md:grid-cols-4">
-        <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
-          <p className="text-xs text-slate-500">Exercises this week</p>
-          <p className="mt-1 text-2xl font-semibold text-slate-900">{weeklySummary.totalExercises}</p>
-        </div>
-        <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
-          <p className="text-xs text-slate-500">Cardio calories (est.)</p>
-          <p className="mt-1 text-2xl font-semibold text-slate-900">{weeklySummary.totalCardioCalories}</p>
-        </div>
-        <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
-          <p className="text-xs text-slate-500">Fitness volume</p>
-          <p className="mt-1 text-2xl font-semibold text-slate-900">{weeklySummary.totalVolume}</p>
-        </div>
-        <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
-          <p className="text-xs text-slate-500">Completed days</p>
-          <p className="mt-1 text-2xl font-semibold text-slate-900">{weeklySummary.completedDays} / 7</p>
-        </div>
-      </section>
-
-      <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
-        <h1 className="text-3xl font-semibold text-slate-900">Workouts</h1>
-        <p className="mt-2 text-sm text-slate-500">Plan your week, add cardio or fitness exercises, and keep everything saved after refresh.</p>
-
-        <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-7">
-          {dayOrder.map((day) => {
-            const dayLog = plan[day];
-            const selected = day === selectedDay;
-            return (
-              <button
-                key={day}
-                type="button"
-                onClick={() => setSelectedDay(day)}
-                className={`rounded-xl border px-3 py-2 text-left text-sm ${selected ? "border-emerald-500 bg-emerald-50 text-emerald-700" : "border-slate-200 text-slate-700 hover:bg-slate-50"}`}
-              >
-                <p className="font-semibold">{dayLabels[day]}</p>
-                <p className="text-xs">{dayLog.exercises.length} exercise(s)</p>
-              </button>
-            );
-          })}
-        </div>
-      </section>
-
-      <section className="grid gap-6 lg:grid-cols-[1.1fr,1.4fr]">
-        <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-xl font-semibold text-slate-900">{dayLabels[selectedDay]} setup</h2>
-            <label className="inline-flex items-center gap-2 text-sm text-slate-600">
-              <input
-                type="checkbox"
-                checked={activeDay.completed}
-                onChange={(event) => updateDayMeta(selectedDay, { completed: event.target.checked })}
-              />
-              Completed
-            </label>
-          </div>
-
-          <label className="text-sm text-slate-700">
-            Notes
-            <textarea
-              className="mt-1 min-h-24 w-full rounded-xl border border-slate-200 px-3 py-2"
-              value={activeDay.notes}
-              onChange={(event) => updateDayMeta(selectedDay, { notes: event.target.value })}
-              placeholder="Optional notes for this day..."
-            />
-          </label>
-
-          <form onSubmit={saveExercise} className="mt-6 space-y-4">
-            <div>
-              <p className="mb-2 text-sm font-semibold text-slate-800">Exercise type</p>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => setExerciseType("cardio")}
-                  className={`rounded-xl border px-3 py-2 text-sm ${exerciseType === "cardio" ? "border-emerald-500 bg-emerald-50 text-emerald-700" : "border-slate-200 text-slate-700"}`}
-                >
-                  Cardio
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setExerciseType("fitness")}
-                  className={`rounded-xl border px-3 py-2 text-sm ${exerciseType === "fitness" ? "border-emerald-500 bg-emerald-50 text-emerald-700" : "border-slate-200 text-slate-700"}`}
-                >
-                  Fitness
-                </button>
-              </div>
+    <>
+      {progressExercise ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45 p-4">
+          <div className="w-full max-w-xl rounded-2xl bg-white p-6 shadow-xl ring-1 ring-slate-200">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xl font-semibold text-slate-900">Workout Progress</h3>
+              <button type="button" onClick={() => setProgressExerciseId(null)} className="rounded-md p-1 text-slate-400 hover:bg-slate-100">✕</button>
             </div>
 
-            {exerciseType === "cardio" ? (
-              <>
-                <label className="block text-sm text-slate-700">
-                  Exercise name / description
-                  <input
-                    className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2"
-                    value={cardioDraft.name}
-                    onChange={(event) => setCardioDraft((prev) => ({ ...prev, name: event.target.value }))}
-                    placeholder="e.g., Treadmill intervals"
-                  />
-                </label>
+            <p className="mt-2 text-sm font-medium text-slate-800">{progressExercise.name}</p>
+            {previousProgress ? (
+              <p className="mt-1 text-xs text-slate-500">
+                Previous: {progressExercise.type === "cardio"
+                  ? `${previousProgress.durationMin ?? "-"} min • ${previousProgress.intensity ?? "-"} • ${previousProgress.caloriesBurned ?? "-"} kcal`
+                  : `${previousProgress.sets ?? "-"} sets • ${previousProgress.reps ?? "-"} reps • ${previousProgress.weightKg ?? "-"}kg`}
+              </p>
+            ) : (
+              <p className="mt-1 text-xs text-slate-500">No previous values yet.</p>
+            )}
 
-                <label className="block text-sm text-slate-700">
-                  Duration (minutes)
-                  <input
-                    type="number"
-                    min={1}
-                    className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2"
-                    value={cardioDraft.durationMin}
-                    onChange={(event) => setCardioDraft((prev) => ({ ...prev, durationMin: Number(event.target.value) }))}
-                  />
+            {progressExercise.type === "cardio" ? (
+              <div className="mt-4 space-y-3">
+                <label className="block text-sm text-slate-700">Exercise
+                  <input className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={progressCardioDraft.name} onChange={(e) => setProgressCardioDraft((p) => ({ ...p, name: e.target.value }))} />
                 </label>
-
-                <label className="block text-sm text-slate-700">
-                  Intensity (optional)
-                  <select
-                    className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2"
-                    value={cardioDraft.intensity}
-                    onChange={(event) => setCardioDraft((prev) => ({ ...prev, intensity: event.target.value as CardioDraft["intensity"] }))}
-                  >
+                <label className="block text-sm text-slate-700">Duration (min)
+                  <input type="number" min={1} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={progressCardioDraft.durationMin} onChange={(e) => setProgressCardioDraft((p) => ({ ...p, durationMin: Number(e.target.value) }))} />
+                </label>
+                <label className="block text-sm text-slate-700">Intensity
+                  <select className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={progressCardioDraft.intensity} onChange={(e) => setProgressCardioDraft((p) => ({ ...p, intensity: e.target.value as Intensity }))}>
                     <option value="low">Low</option>
                     <option value="moderate">Moderate</option>
                     <option value="high">High</option>
                   </select>
                 </label>
-
-                <p className="rounded-xl bg-slate-50 p-3 text-sm text-slate-600">
-                  Estimated calories (weight {profileWeight}kg): {calculateCardioCalories(profileWeight, cardioDraft.durationMin, cardioDraft.intensity)} kcal
-                </p>
-              </>
+              </div>
             ) : (
-              <>
-                <label className="block text-sm text-slate-700">
-                  Exercise name / description
-                  <input
-                    className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2"
-                    value={fitnessDraft.name}
-                    onChange={(event) => setFitnessDraft((prev) => ({ ...prev, name: event.target.value }))}
-                    placeholder="e.g., Barbell squat"
-                  />
+              <div className="mt-4 space-y-3">
+                <label className="block text-sm text-slate-700">Exercise
+                  <input className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={progressFitnessDraft.name} onChange={(e) => setProgressFitnessDraft((p) => ({ ...p, name: e.target.value }))} />
                 </label>
-
-                <div className="grid gap-3 sm:grid-cols-3">
-                  <label className="block text-sm text-slate-700">Sets
-                    <input type="number" min={1} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={fitnessDraft.sets} onChange={(event) => setFitnessDraft((prev) => ({ ...prev, sets: Number(event.target.value) }))} />
+                <div className="grid gap-3 grid-cols-3">
+                  <label className="text-sm text-slate-700">Sets
+                    <div className="mt-1 flex rounded-xl border border-slate-200">
+                      <button type="button" onClick={() => setProgressFitnessDraft((p) => ({ ...p, sets: Math.max(1, p.sets - 1) }))} className="px-3">-</button>
+                      <input type="number" min={1} className="w-full border-x border-slate-200 px-2 py-2" value={progressFitnessDraft.sets} onChange={(e) => setProgressFitnessDraft((p) => ({ ...p, sets: Number(e.target.value) }))} />
+                      <button type="button" onClick={() => setProgressFitnessDraft((p) => ({ ...p, sets: p.sets + 1 }))} className="px-3">+</button>
+                    </div>
                   </label>
-                  <label className="block text-sm text-slate-700">Reps
-                    <input type="number" min={1} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={fitnessDraft.reps} onChange={(event) => setFitnessDraft((prev) => ({ ...prev, reps: Number(event.target.value) }))} />
+                  <label className="text-sm text-slate-700">Reps
+                    <div className="mt-1 flex rounded-xl border border-slate-200">
+                      <button type="button" onClick={() => setProgressFitnessDraft((p) => ({ ...p, reps: Math.max(1, p.reps - 1) }))} className="px-3">-</button>
+                      <input type="number" min={1} className="w-full border-x border-slate-200 px-2 py-2" value={progressFitnessDraft.reps} onChange={(e) => setProgressFitnessDraft((p) => ({ ...p, reps: Number(e.target.value) }))} />
+                      <button type="button" onClick={() => setProgressFitnessDraft((p) => ({ ...p, reps: p.reps + 1 }))} className="px-3">+</button>
+                    </div>
                   </label>
-                  <label className="block text-sm text-slate-700">Weight (kg)
-                    <input type="number" min={0} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={fitnessDraft.weightKg} onChange={(event) => setFitnessDraft((prev) => ({ ...prev, weightKg: Number(event.target.value) }))} />
+                  <label className="text-sm text-slate-700">Weight (kg)
+                    <div className="mt-1 flex rounded-xl border border-slate-200">
+                      <button type="button" onClick={() => setProgressFitnessDraft((p) => ({ ...p, weightKg: Math.max(0, p.weightKg - 2.5) }))} className="px-3">-</button>
+                      <input type="number" min={0} step="0.5" className="w-full border-x border-slate-200 px-2 py-2" value={progressFitnessDraft.weightKg} onChange={(e) => setProgressFitnessDraft((p) => ({ ...p, weightKg: Number(e.target.value) }))} />
+                      <button type="button" onClick={() => setProgressFitnessDraft((p) => ({ ...p, weightKg: p.weightKg + 2.5 }))} className="px-3">+</button>
+                    </div>
                   </label>
                 </div>
-
-                <p className="rounded-xl bg-slate-50 p-3 text-sm text-slate-600">
-                  Training volume estimate: {Math.round(fitnessDraft.sets * fitnessDraft.reps * fitnessDraft.weightKg)}
-                </p>
-              </>
+              </div>
             )}
 
-            <div className="flex gap-2">
-              <button type="submit" className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-400">
-                {editingExerciseId ? "Save Changes" : "Save Exercise"}
-              </button>
-              {editingExerciseId ? (
-                <button type="button" onClick={resetForm} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
-                  Cancel Edit
-                </button>
-              ) : null}
+            <div className="mt-5 flex justify-end gap-2">
+              <button type="button" onClick={() => setProgressExerciseId(null)} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700">Close</button>
+              <button type="button" onClick={saveProgressUpdate} className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-400">Save Progress</button>
             </div>
-          </form>
-
-          {message ? <p className="mt-3 text-sm text-slate-600">{message}</p> : null}
+          </div>
         </div>
+      ) : null}
 
-        <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
-          <h2 className="text-xl font-semibold text-slate-900">{dayLabels[selectedDay]} exercises</h2>
-          {activeDay.exercises.length === 0 ? (
-            <p className="mt-4 rounded-xl border border-dashed border-slate-200 p-8 text-center text-sm text-slate-500">No exercises yet for this day.</p>
-          ) : (
-            <ul className="mt-4 space-y-3">
-              {activeDay.exercises.map((exercise) => (
-                <li key={exercise.id} className="rounded-xl border border-slate-200 p-4">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                      <p className="font-semibold text-slate-900">{exercise.name}</p>
-                      {exercise.type === "cardio" ? (
-                        <p className="mt-1 text-sm text-slate-600">
-                          Cardio • {exercise.durationMin} min • {exercise.intensity ?? "moderate"} intensity • {exercise.caloriesBurned} kcal burned
-                        </p>
-                      ) : (
-                        <p className="mt-1 text-sm text-slate-600">
-                          Fitness • {exercise.sets} sets × {exercise.reps} reps @ {exercise.weightKg}kg • Volume {exercise.trainingVolume}
-                        </p>
-                      )}
-                    </div>
+      <main className="mx-auto w-full max-w-6xl space-y-6 px-4 py-8 md:px-8">
+        <AppHeaderNav />
 
-                    <div className="flex gap-2">
-                      <button type="button" onClick={() => startEdit(exercise)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">Edit</button>
-                      <button type="button" onClick={() => deleteExercise(exercise.id)} className="rounded-lg border border-rose-200 px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50">Delete</button>
-                    </div>
+        <section className="grid gap-4 md:grid-cols-3">
+          <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
+            <p className="text-xs text-slate-500">Exercises this week</p>
+            <p className="mt-1 text-2xl font-semibold text-slate-900">{weeklySummary.totalExercises}</p>
+          </div>
+          <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
+            <p className="text-xs text-slate-500">Cardio calories (est.)</p>
+            <p className="mt-1 text-2xl font-semibold text-slate-900">{weeklySummary.totalCardioCalories}</p>
+          </div>
+          <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
+            <p className="text-xs text-slate-500">Fitness volume</p>
+            <p className="mt-1 text-2xl font-semibold text-slate-900">{weeklySummary.totalVolume}</p>
+          </div>
+        </section>
+
+        <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
+          <h1 className="text-3xl font-semibold text-slate-900">Workouts</h1>
+          <p className="mt-2 text-sm text-slate-500">Plan your week, add cardio or fitness exercises, and keep everything saved after refresh.</p>
+
+          <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-7">
+            {dayOrder.map((day) => {
+              const selected = day === selectedDay;
+              return (
+                <button
+                  key={day}
+                  type="button"
+                  onClick={() => setSelectedDay(day)}
+                  className={`rounded-xl border px-3 py-2 text-left text-sm ${selected ? "border-emerald-500 bg-emerald-50 text-emerald-700" : "border-slate-200 text-slate-700 hover:bg-slate-50"}`}
+                >
+                  <p className="font-semibold">{dayLabels[day]}</p>
+                  <p className="text-xs">{plan[day].exercises.length} exercise(s)</p>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+
+        <section className="grid gap-6 lg:grid-cols-[1.1fr,1.4fr]">
+          <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
+            <h2 className="text-xl font-semibold text-slate-900">{dayLabels[selectedDay]} setup</h2>
+
+            <label className="mt-3 block text-sm text-slate-700">
+              Notes
+              <textarea
+                className="mt-1 min-h-24 w-full rounded-xl border border-slate-200 px-3 py-2"
+                value={activeDay.notes}
+                onChange={(event) => updateDayMeta(selectedDay, { notes: event.target.value })}
+                placeholder="Optional notes for this day..."
+              />
+            </label>
+
+            <form onSubmit={saveExercise} className="mt-6 space-y-4">
+              <div>
+                <p className="mb-2 text-sm font-semibold text-slate-800">Exercise type</p>
+                <div className="flex gap-2">
+                  <button type="button" onClick={() => setExerciseType("cardio")} className={`rounded-xl border px-3 py-2 text-sm ${exerciseType === "cardio" ? "border-emerald-500 bg-emerald-50 text-emerald-700" : "border-slate-200 text-slate-700"}`}>
+                    Cardio
+                  </button>
+                  <button type="button" onClick={() => setExerciseType("fitness")} className={`rounded-xl border px-3 py-2 text-sm ${exerciseType === "fitness" ? "border-emerald-500 bg-emerald-50 text-emerald-700" : "border-slate-200 text-slate-700"}`}>
+                    Fitness
+                  </button>
+                </div>
+              </div>
+
+              {exerciseType === "cardio" ? (
+                <>
+                  <label className="block text-sm text-slate-700">
+                    Exercise name / description
+                    <input className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={cardioDraft.name} onChange={(event) => setCardioDraft((prev) => ({ ...prev, name: event.target.value }))} placeholder="e.g., Treadmill intervals" />
+                  </label>
+
+                  <label className="block text-sm text-slate-700">
+                    Duration (minutes)
+                    <input type="number" min={1} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={cardioDraft.durationMin} onChange={(event) => setCardioDraft((prev) => ({ ...prev, durationMin: Number(event.target.value) }))} />
+                  </label>
+
+                  <label className="block text-sm text-slate-700">
+                    Intensity (optional)
+                    <select className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={cardioDraft.intensity} onChange={(event) => setCardioDraft((prev) => ({ ...prev, intensity: event.target.value as Intensity }))}>
+                      <option value="low">Low</option>
+                      <option value="moderate">Moderate</option>
+                      <option value="high">High</option>
+                    </select>
+                  </label>
+
+                  <p className="rounded-xl bg-slate-50 p-3 text-sm text-slate-600">
+                    Estimated calories (weight {profileWeight}kg): {calculateCardioCalories(profileWeight, cardioDraft.name, cardioDraft.durationMin, cardioDraft.intensity)} kcal
+                  </p>
+                </>
+              ) : (
+                <>
+                  <label className="block text-sm text-slate-700">
+                    Exercise name / description
+                    <input className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={fitnessDraft.name} onChange={(event) => setFitnessDraft((prev) => ({ ...prev, name: event.target.value }))} placeholder="e.g., Barbell squat" />
+                  </label>
+
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <label className="block text-sm text-slate-700">Sets
+                      <input type="number" min={1} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={fitnessDraft.sets} onChange={(event) => setFitnessDraft((prev) => ({ ...prev, sets: Number(event.target.value) }))} />
+                    </label>
+                    <label className="block text-sm text-slate-700">Reps
+                      <input type="number" min={1} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={fitnessDraft.reps} onChange={(event) => setFitnessDraft((prev) => ({ ...prev, reps: Number(event.target.value) }))} />
+                    </label>
+                    <label className="block text-sm text-slate-700">Weight (kg)
+                      <input type="number" min={0} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={fitnessDraft.weightKg} onChange={(event) => setFitnessDraft((prev) => ({ ...prev, weightKg: Number(event.target.value) }))} />
+                    </label>
                   </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      </section>
-    </main>
+
+                  <p className="rounded-xl bg-slate-50 p-3 text-sm text-slate-600">
+                    Training volume estimate: {Math.round(fitnessDraft.sets * fitnessDraft.reps * fitnessDraft.weightKg)}
+                  </p>
+                </>
+              )}
+
+              <div className="flex gap-2">
+                <button type="submit" className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-400">
+                  {editingExerciseId ? "Save Changes" : "Save Exercise"}
+                </button>
+                {editingExerciseId ? (
+                  <button type="button" onClick={resetForm} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+                    Cancel Edit
+                  </button>
+                ) : null}
+              </div>
+            </form>
+
+            {message ? <p className="mt-3 text-sm text-slate-600">{message}</p> : null}
+          </div>
+
+          <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
+            <h2 className="text-xl font-semibold text-slate-900">{dayLabels[selectedDay]} exercises</h2>
+            {activeDay.exercises.length === 0 ? (
+              <p className="mt-4 rounded-xl border border-dashed border-slate-200 p-8 text-center text-sm text-slate-500">No exercises yet for this day.</p>
+            ) : (
+              <ul className="mt-4 space-y-3">
+                {activeDay.exercises.map((exercise) => (
+                  <li key={exercise.id} className="rounded-xl border border-slate-200 p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="font-semibold text-slate-900">{exercise.name}</p>
+                        {exercise.type === "cardio" ? (
+                          <p className="mt-1 text-sm text-slate-600">Cardio • {exercise.durationMin} min • {exercise.intensity ?? "moderate"} • {exercise.caloriesBurned} kcal burned</p>
+                        ) : (
+                          <p className="mt-1 text-sm text-slate-600">Fitness • {exercise.sets} sets × {exercise.reps} reps @ {exercise.weightKg}kg • Volume {exercise.trainingVolume}</p>
+                        )}
+                      </div>
+
+                      <div className="flex gap-2">
+                        <button type="button" onClick={() => openProgressModal(exercise)} className="rounded-lg border border-emerald-200 px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-50">Progress</button>
+                        <button type="button" onClick={() => startEdit(exercise)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">Edit</button>
+                        <button type="button" onClick={() => deleteExercise(exercise.id)} className="rounded-lg border border-rose-200 px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50">Delete</button>
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </section>
+      </main>
+    </>
   );
 }
