@@ -31,13 +31,21 @@ export type ActivityLevel =
 
 export type Gender = "female" | "male" | "other";
 
+export type TrainingExperience = "beginner" | "intermediate" | "advanced";
+
+export type DailyStepsRange = "1-5000" | "5000-10000" | "10000+";
+
 export type ProfileInput = {
   age: number;
   gender: Gender;
   heightCm: number;
   weightKg: number;
   waistCm: number;
-  activityLevel: ActivityLevel;
+  trainingExperience: TrainingExperience;
+  averageDailySteps: DailyStepsRange;
+  primaryGoal?: string;
+  secondaryGoal?: string;
+  goalDescription?: string;
   goalText: string;
 };
 
@@ -108,6 +116,21 @@ export type WorkoutExerciseType = "cardio" | "fitness" | "crossfit";
 
 export type WorkoutIntensity = "low" | "moderate" | "high";
 
+export type MuscleGroup =
+  | "chest"
+  | "back"
+  | "shoulders"
+  | "biceps"
+  | "triceps"
+  | "quads"
+  | "hamstrings"
+  | "glutes"
+  | "calves"
+  | "core"
+  | "full_body";
+
+export type MovementType = "powerlifting" | "gymnastics" | "conditioning" | "functional";
+
 export type CardioExercise = {
   id: string;
   type: "cardio";
@@ -124,6 +147,10 @@ export type CardioExercise = {
   createdAt: string;
   updatedAt: string;
   isPaused: boolean;
+  sourceType?: "user" | "system";
+  systemTag?: "daily_steps";
+  muscleGroup?: MuscleGroup;
+  movementType?: MovementType;
 };
 
 export type FitnessExercise = {
@@ -144,6 +171,10 @@ export type FitnessExercise = {
   updatedAt: string;
   intensity?: WorkoutIntensity;
   isPaused: boolean;
+  sourceType?: "user" | "system";
+  systemTag?: "daily_steps";
+  muscleGroup?: MuscleGroup;
+  movementType?: MovementType;
 };
 
 export type CrossfitExercise = {
@@ -165,6 +196,10 @@ export type CrossfitExercise = {
   createdAt: string;
   updatedAt: string;
   isPaused: boolean;
+  sourceType?: "user" | "system";
+  systemTag?: "daily_steps";
+  muscleGroup?: MuscleGroup;
+  movementType?: MovementType;
 };
 
 export type WorkoutProgressEntry = {

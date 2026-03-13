@@ -1,11 +1,15 @@
-import { ActivityLevel, DailyTargets, GoalType, ProfileInput } from "@/lib/types";
+import { DailyStepsRange, DailyTargets, GoalType, ProfileInput, TrainingExperience } from "@/lib/types";
 
-const activityMultipliers: Record<ActivityLevel, number> = {
-  sedentary: 1.2,
-  light: 1.375,
-  moderate: 1.55,
-  very_active: 1.725,
-  athlete: 1.9
+const stepActivityMultipliers: Record<DailyStepsRange, number> = {
+  "1-5000": 1.3,
+  "5000-10000": 1.45,
+  "10000+": 1.6
+};
+
+const experienceProteinBump: Record<TrainingExperience, number> = {
+  beginner: 0,
+  intermediate: 0.1,
+  advanced: 0.2
 };
 
 export function inferGoalCategoryFromText(goalText: string): GoalType {
@@ -47,12 +51,10 @@ function waistRiskSignal(profile: ProfileInput): "low" | "moderate" | "high" {
   return "low";
 }
 
-function floorCarbsPerKg(activityLevel: ActivityLevel): number {
-  if (activityLevel === "sedentary") return 1.5;
-  if (activityLevel === "light") return 2;
-  if (activityLevel === "moderate") return 2.5;
-  if (activityLevel === "very_active") return 3;
-  return 3.5;
+function floorCarbsPerKg(steps: DailyStepsRange, experience: TrainingExperience): number {
+  const stepFloor = steps === "1-5000" ? 1.7 : steps === "5000-10000" ? 2.4 : 3.1;
+  const expBump = experience === "advanced" ? 0.35 : experience === "intermediate" ? 0.2 : 0;
+  return stepFloor + expBump;
 }
 
 export function calculateDailyTargets(
@@ -63,7 +65,7 @@ export function calculateDailyTargets(
   const goalCategory = preferredGoalCategory ?? inferGoalCategoryFromText(profile.goalText);
 
   const bmr = bmrMifflinStJeor(profile);
-  const activityFactor = activityMultipliers[profile.activityLevel];
+  const activityFactor = stepActivityMultipliers[profile.averageDailySteps];
   const tdee = bmr * activityFactor;
   const waistSignal = waistRiskSignal(profile);
 
@@ -78,7 +80,7 @@ export function calculateDailyTargets(
     proteinPerKg = 2.2;
     fatPerKg = 0.8;
   } else if (goalCategory === "muscle_gain") {
-    calorieMultiplier = profile.activityLevel === "athlete" ? 1.12 : 1.08;
+    calorieMultiplier = profile.trainingExperience === "advanced" ? 1.12 : 1.08;
     calorieStrategy = `${Math.round((calorieMultiplier - 1) * 100)}% surplus`;
     proteinPerKg = 1.9;
     fatPerKg = 0.9;
@@ -88,6 +90,8 @@ export function calculateDailyTargets(
     proteinPerKg = 2.2;
     fatPerKg = 0.85;
   }
+
+  proteinPerKg += experienceProteinBump[profile.trainingExperience];
 
   const targetCalories = Math.round(tdee * calorieMultiplier);
   const targetProtein = Math.round(profile.weightKg * proteinPerKg);
@@ -102,7 +106,7 @@ export function calculateDailyTargets(
     profile.weightKg *
       Math.max(
         1.2,
-        floorCarbsPerKg(profile.activityLevel) +
+        floorCarbsPerKg(profile.averageDailySteps, profile.trainingExperience) +
           (goalCategory === "muscle_gain" ? 0.3 : goalCategory === "fat_loss" ? -0.3 : 0)
       )
   );

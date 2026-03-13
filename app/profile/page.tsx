@@ -5,7 +5,8 @@ import { AppHeaderNav } from "@/components/AppHeaderNav";
 import { STORAGE_KEYS, readJson, writeJson } from "@/lib/local-data";
 import { TARGETS_UPDATED_EVENT, recalculateAndPersistTodayTargets } from "@/lib/daily-targets";
 import { calculateDailyTargets } from "@/lib/nutrition";
-import { DailyTargets, MacroKey, ProfileInput } from "@/lib/types";
+import { applySystemDailyStepsToPlan } from "@/lib/workouts";
+import { DailyTargets, MacroKey, ProfileInput, WorkoutWeekPlan } from "@/lib/types";
 
 const defaultProfile: ProfileInput = {
   heightCm: 170,
@@ -13,7 +14,8 @@ const defaultProfile: ProfileInput = {
   waistCm: 80,
   age: 30,
   gender: "female",
-  activityLevel: "moderate",
+  trainingExperience: "beginner",
+  averageDailySteps: "5000-10000",
   goalText: "I want to improve body composition and feel more energetic."
 };
 
@@ -85,7 +87,7 @@ export default function ProfilePage() {
     const savedManualMode = readJson<boolean>(STORAGE_KEYS.macroManualMode);
 
     if (savedProfile) {
-      setProfile(savedProfile);
+      setProfile({ ...defaultProfile, ...savedProfile });
       const parsedGoals = parseGoalsFromText(savedProfile.goalText ?? "");
       setMainGoal(parsedGoals.mainGoal);
       setSecondaryGoal(parsedGoals.secondaryGoal);
@@ -139,11 +141,19 @@ export default function ProfilePage() {
 
     const profileToSave = {
       ...profile,
+      primaryGoal: mainGoal,
+      secondaryGoal,
+      goalDescription,
       goalText: builtGoalText
     };
 
     setProfile(profileToSave);
     writeJson(STORAGE_KEYS.profile, profileToSave);
+    const savedPlan = readJson<WorkoutWeekPlan>(STORAGE_KEYS.workouts);
+    const planWithSteps = applySystemDailyStepsToPlan(savedPlan, profileToSave);
+    if (planWithSteps) {
+      writeJson(STORAGE_KEYS.workouts, planWithSteps);
+    }
     writeJson(STORAGE_KEYS.disabledMacros, disabledMacros);
     writeJson(STORAGE_KEYS.macroManualMode, isManualMode);
 
@@ -185,14 +195,21 @@ export default function ProfilePage() {
               <option value="other">other</option>
             </select>
           </label>
-          <label className="text-sm text-slate-700">Activity Level
-            <select className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={profile.activityLevel} onChange={(e) => updateProfile("activityLevel", e.target.value as ProfileInput["activityLevel"])}>
-              <option value="sedentary">Sedentary</option>
-              <option value="light">Light</option>
-              <option value="moderate">Moderate</option>
-              <option value="very_active">Active</option>
-              <option value="athlete">Very Active</option>
+          <label className="text-sm text-slate-700">Training Experience
+            <select className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={profile.trainingExperience} onChange={(e) => updateProfile("trainingExperience", e.target.value as ProfileInput["trainingExperience"])}>
+              <option value="beginner">Beginner (0-1 year)</option>
+              <option value="intermediate">Intermediate (1-3 years)</option>
+              <option value="advanced">Advanced (3+ years)</option>
             </select>
+            <p className="mt-1 text-xs text-slate-500">Used to personalize workout load, recovery, and strength targets.</p>
+          </label>
+          <label className="text-sm text-slate-700">Average Daily Steps
+            <select className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={profile.averageDailySteps} onChange={(e) => updateProfile("averageDailySteps", e.target.value as ProfileInput["averageDailySteps"])}>
+              <option value="1-5000">1-5.000</option>
+              <option value="5000-10000">5.000-10.000</option>
+              <option value="10000+">10.000+</option>
+            </select>
+            <p className="mt-1 text-xs text-slate-500">Used to improve calorie calculations and movement insights.</p>
           </label>
         </div>
       </section>

@@ -4,13 +4,15 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { AppHeaderNav } from "@/components/AppHeaderNav";
 import { STORAGE_KEYS, readJson, writeJson } from "@/lib/local-data";
 import { recalculateAndPersistTodayTargets } from "@/lib/daily-targets";
-import { calculateTrainingVolume, estimateCaloriesForType } from "@/lib/workouts";
+import { applySystemDailyStepsToPlan, calculateTrainingVolume, estimateCaloriesForType } from "@/lib/workouts";
 import { buildWorkoutAdjustedSummary, calculateWorkoutPoints, deriveWeeklyWorkoutTargets, getCurrentWeekDateKeys, withStoredWorkoutPoints } from "@/lib/workout-execution";
 import {
   CardioExercise,
   CrossfitExercise,
   FitnessExercise,
   ProfileInput,
+  MovementType,
+  MuscleGroup,
   WorkoutDay,
   WorkoutExercise,
   WorkoutExerciseType,
@@ -31,6 +33,48 @@ const dayLabels: Record<WorkoutDay, string> = {
   friday: "Friday",
   saturday: "Saturday",
   sunday: "Sunday"
+};
+
+const muscleGroupOptions: Array<{ value: MuscleGroup; label: string }> = [
+  { value: "chest", label: "Chest" },
+  { value: "back", label: "Back" },
+  { value: "shoulders", label: "Shoulders" },
+  { value: "biceps", label: "Biceps" },
+  { value: "triceps", label: "Triceps" },
+  { value: "quads", label: "Quads" },
+  { value: "hamstrings", label: "Hamstrings" },
+  { value: "glutes", label: "Glutes" },
+  { value: "calves", label: "Calves" },
+  { value: "core", label: "Core" },
+  { value: "full_body", label: "Full Body" }
+];
+
+const movementTypeOptions: Array<{ value: MovementType; label: string }> = [
+  { value: "powerlifting", label: "Powerlifting" },
+  { value: "gymnastics", label: "Gymnastics" },
+  { value: "conditioning", label: "Conditioning" },
+  { value: "functional", label: "Functional" }
+];
+
+const movementTypeLabels: Record<MovementType, string> = {
+  powerlifting: "Powerlifting",
+  gymnastics: "Gymnastics",
+  conditioning: "Conditioning",
+  functional: "Functional"
+};
+
+const muscleGroupLabels: Record<MuscleGroup, string> = {
+  chest: "Chest",
+  back: "Back",
+  shoulders: "Shoulders",
+  biceps: "Biceps",
+  triceps: "Triceps",
+  quads: "Quads",
+  hamstrings: "Hamstrings",
+  glutes: "Glutes",
+  calves: "Calves",
+  core: "Core",
+  full_body: "Full Body"
 };
 
 function getAmsterdamToday(): WorkoutDay {
@@ -66,6 +110,8 @@ type PlannerDraft = {
   weight: number;
   intensity: WorkoutIntensity;
   notes: string;
+  muscleGroup: MuscleGroup;
+  movementType: MovementType;
   crossfitUseDuration: boolean;
   crossfitUseSets: boolean;
   crossfitUseReps: boolean;
@@ -81,6 +127,8 @@ const defaultDraft: PlannerDraft = {
   weight: 20,
   intensity: "moderate",
   notes: "",
+  muscleGroup: "full_body",
+  movementType: "conditioning",
   crossfitUseDuration: true,
   crossfitUseSets: false,
   crossfitUseReps: false,
@@ -149,8 +197,13 @@ function normalizePlanWithMetrics(plan: WorkoutWeekPlan, weightKg: number): Work
       ...plan[day],
       exercises: (plan[day]?.exercises ?? []).map((exercise) => {
         const withPoints = withStoredWorkoutPoints(exercise);
+        const normalizedLabels = {
+          muscleGroup: withPoints.muscleGroup ?? "full_body",
+          movementType: withPoints.type === "cardio" ? "conditioning" : withPoints.movementType
+        };
         return {
           ...withPoints,
+          ...normalizedLabels,
           estimatedCalories: ensureCalories(withPoints, weightKg)
         };
       })
@@ -183,6 +236,8 @@ export default function WorkoutsPage() {
   const [exceptionReps, setExceptionReps] = useState(10);
   const [exceptionWeight, setExceptionWeight] = useState(20);
   const [exceptionIntensity, setExceptionIntensity] = useState<WorkoutIntensity>("moderate");
+  const [muscleGroupFilter, setMuscleGroupFilter] = useState<MuscleGroup | "all">("all");
+  const [movementTypeFilter, setMovementTypeFilter] = useState<MovementType | "all">("all");
   const [hasLoadedInitialData, setHasLoadedInitialData] = useState(false);
 
   useEffect(() => {
@@ -191,7 +246,10 @@ export default function WorkoutsPage() {
     const savedExceptions = readJson<WorkoutException[]>(STORAGE_KEYS.workoutExceptions) ?? [];
 
     const profileWeightKg = savedProfile?.weightKg ?? 70;
-    if (savedPlan) setPlan(normalizePlanWithMetrics(savedPlan, profileWeightKg));
+    if (savedPlan) {
+      const normalized = normalizePlanWithMetrics(savedPlan, profileWeightKg);
+      setPlan(applySystemDailyStepsToPlan(normalized, savedProfile) ?? normalized);
+    }
     if (savedProfile?.weightKg) setProfileWeight(savedProfile.weightKg);
     if (savedProfile) setProfile(savedProfile);
     setExceptions(savedExceptions);
@@ -215,6 +273,11 @@ export default function WorkoutsPage() {
     });
   }, [exceptions, hasLoadedInitialData, plan, profile]);
 
+  useEffect(() => {
+    if (!profile) return;
+    setPlan((prev) => applySystemDailyStepsToPlan(prev, profile) ?? prev);
+  }, [profile]);
+
   function resetDraft(type: WorkoutExerciseType = "fitness") {
     setDraft({ ...defaultDraft, type });
     setEditingExerciseId(null);
@@ -223,6 +286,16 @@ export default function WorkoutsPage() {
   const selectedExercises = useMemo(
     () => plan[selectedDay].exercises.filter((exercise) => !exercise.isPaused),
     [plan, selectedDay]
+  );
+
+  const filteredExercises = useMemo(
+    () =>
+      selectedExercises.filter((exercise) => {
+        const byMuscle = muscleGroupFilter === "all" || exercise.muscleGroup === muscleGroupFilter;
+        const byMovement = movementTypeFilter === "all" || exercise.movementType === movementTypeFilter;
+        return byMuscle && byMovement;
+      }),
+    [muscleGroupFilter, movementTypeFilter, selectedExercises]
   );
 
   const progressExercise = useMemo(
@@ -302,6 +375,8 @@ export default function WorkoutsPage() {
       name: draft.name.trim(),
       notes: draft.notes.trim(),
       intensity: draft.intensity,
+      muscleGroup: draft.muscleGroup,
+      movementType: draft.type === "cardio" ? "conditioning" : draft.type === "crossfit" ? draft.movementType : undefined,
       workoutDayId: selectedDay,
       updatedAt: now,
       isPaused: false
@@ -475,6 +550,8 @@ export default function WorkoutsPage() {
       weight: "weight" in exercise && typeof exercise.weight === "number" ? exercise.weight : 0,
       intensity: exercise.intensity ?? "moderate",
       notes: exercise.notes ?? "",
+      muscleGroup: exercise.muscleGroup ?? "full_body",
+      movementType: exercise.movementType ?? "conditioning",
       crossfitUseDuration: exercise.type === "crossfit" ? exercise.durationMinutes > 0 : true,
       crossfitUseSets: exercise.type === "crossfit" ? typeof exercise.sets === "number" : false,
       crossfitUseReps: exercise.type === "crossfit" ? typeof exercise.reps === "number" : false,
@@ -532,6 +609,8 @@ export default function WorkoutsPage() {
         strengthPoints: 0,
         cardioPoints: 0,
         notes: "",
+        muscleGroup: "full_body",
+        movementType: "conditioning",
         progressHistory: [],
         createdAt: now,
         updatedAt: now,
@@ -568,6 +647,8 @@ export default function WorkoutsPage() {
         strengthPoints: 0,
         cardioPoints: 0,
         notes: "",
+        muscleGroup: "full_body",
+        movementType: "functional",
         intensity: exceptionIntensity,
         progressHistory: [],
         createdAt: now,
@@ -600,6 +681,8 @@ export default function WorkoutsPage() {
       strengthPoints: 0,
       cardioPoints: 0,
       notes: "",
+      muscleGroup: "full_body",
+      movementType: undefined,
       intensity: exceptionIntensity,
       progressHistory: [],
       createdAt: now,
@@ -927,6 +1010,24 @@ export default function WorkoutsPage() {
                 <input className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={draft.name} onChange={(event) => setDraftField("name", event.target.value)} placeholder="e.g., Bench Press" />
               </label>
 
+              <label className="block text-sm text-slate-700">Muscle Group
+                <select className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={draft.muscleGroup} onChange={(event) => setDraftField("muscleGroup", event.target.value as MuscleGroup)}>
+                  {muscleGroupOptions.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+              </label>
+
+              {draft.type === "crossfit" ? (
+                <label className="block text-sm text-slate-700">Movement Type
+                  <select className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={draft.movementType} onChange={(event) => setDraftField("movementType", event.target.value as MovementType)}>
+                    {movementTypeOptions.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
+
               {draft.type === "cardio" ? (
                 <label className="block text-sm text-slate-700">Duration (minutes)
                   <input type="number" min={1} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={draft.durationMinutes} onChange={(event) => setDraftField("durationMinutes", Number(event.target.value))} />
@@ -1022,16 +1123,58 @@ export default function WorkoutsPage() {
 
           <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
             <h2 className="text-xl font-semibold text-slate-900">{dayLabels[selectedDay]} planned exercises</h2>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <select
+                className="rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                value={muscleGroupFilter}
+                onChange={(event) => setMuscleGroupFilter(event.target.value as MuscleGroup | "all")}
+              >
+                <option value="all">All Muscle Groups</option>
+                {muscleGroupOptions.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+
+              <select
+                className="rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                value={movementTypeFilter}
+                onChange={(event) => setMovementTypeFilter(event.target.value as MovementType | "all")}
+              >
+                <option value="all">All Movement Types</option>
+                {movementTypeOptions.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setMuscleGroupFilter("all");
+                  setMovementTypeFilter("all");
+                }}
+                className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
+              >
+                Clear filters
+              </button>
+            </div>
+
             {selectedExercises.length === 0 ? (
               <p className="mt-4 rounded-xl border border-dashed border-slate-200 p-8 text-center text-sm text-slate-500">No planned exercises yet.</p>
+            ) : filteredExercises.length === 0 ? (
+              <p className="mt-4 rounded-xl border border-dashed border-slate-200 p-8 text-center text-sm text-slate-500">No exercises match the selected filters.</p>
             ) : (
               <ul className="mt-4 space-y-3">
-                {selectedExercises.map((exercise) => (
+                {filteredExercises.map((exercise) => (
                   <li key={exercise.id} className="rounded-xl border border-slate-200 p-4 cursor-pointer hover:bg-slate-50" onClick={() => openProgress(exercise)}>
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div>
                         <p className="font-semibold text-slate-900">{exercise.name}</p>
+                        {exercise.sourceType === "system" ? <p className="mt-1 inline-block rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-blue-700">Auto-generated</p> : null}
                         <p className="mt-1 text-xs uppercase tracking-wide text-slate-500">Type: {exercise.type}</p>
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          {exercise.muscleGroup ? <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-slate-700">{muscleGroupLabels[exercise.muscleGroup]}</span> : null}
+                          {exercise.movementType ? <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold uppercase text-emerald-700">{movementTypeLabels[exercise.movementType]}</span> : null}
+                        </div>
                         {exercise.type === "cardio" ? <p className="mt-1 text-sm text-slate-600">Duration: {exercise.durationMinutes} minutes</p> : null}
                         {exercise.type === "fitness" ? <><p className="mt-1 text-sm text-slate-600">{exercise.sets} sets × {exercise.reps} reps × {exercise.weight} kg</p><p className="text-xs text-slate-500">Training Volume: {exercise.trainingVolume}</p></> : null}
                         {exercise.type === "crossfit" ? <><p className="mt-1 text-sm text-slate-600">Duration: {exercise.durationMinutes} minutes</p>{exercise.weight ? <p className="text-sm text-slate-600">Weight: {exercise.weight} kg</p> : null}{exercise.sets && exercise.reps ? <p className="text-sm text-slate-600">{exercise.sets} sets × {exercise.reps} reps</p> : null}</> : null}
@@ -1039,8 +1182,8 @@ export default function WorkoutsPage() {
                       </div>
 
                       <div className="flex gap-2">
-                        <button type="button" onClick={(event) => { event.stopPropagation(); openProgress(exercise); }} className="rounded-lg border border-emerald-200 px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-50">Progress</button>
-                        <button type="button" onClick={(event) => { event.stopPropagation(); setDeleteExerciseId(exercise.id); }} className="rounded-lg border border-rose-200 px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50">Delete</button>
+                        {exercise.sourceType !== "system" ? <button type="button" onClick={(event) => { event.stopPropagation(); openProgress(exercise); }} className="rounded-lg border border-emerald-200 px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-50">Progress</button> : null}
+                        {exercise.sourceType !== "system" ? <button type="button" onClick={(event) => { event.stopPropagation(); setDeleteExerciseId(exercise.id); }} className="rounded-lg border border-rose-200 px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50">Delete</button> : null}
                       </div>
                     </div>
                   </li>

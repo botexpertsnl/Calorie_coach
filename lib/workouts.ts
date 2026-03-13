@@ -1,4 +1,6 @@
-import { WorkoutExerciseType, WorkoutIntensity } from "@/lib/types";
+import { CardioExercise, DailyStepsRange, ProfileInput, WorkoutDay, WorkoutExerciseType, WorkoutIntensity, WorkoutWeekPlan } from "@/lib/types";
+
+const dayOrder: WorkoutDay[] = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
 
 export function calculateTrainingVolume(sets?: number, reps?: number, weight?: number) {
   return Math.round((sets ?? 0) * (reps ?? 0) * (weight ?? 0));
@@ -67,4 +69,52 @@ export function estimateCaloriesForType(params: {
     params.weight ?? 0,
     params.intensity
   );
+}
+
+function stepRangeToActivity(range: DailyStepsRange) {
+  if (range === "1-5000") return { durationMinutes: 25, cardioPoints: 3, intensity: "low" as const };
+  if (range === "5000-10000") return { durationMinutes: 45, cardioPoints: 5, intensity: "moderate" as const };
+  return { durationMinutes: 65, cardioPoints: 7, intensity: "moderate" as const };
+}
+
+export function applySystemDailyStepsToPlan(plan: WorkoutWeekPlan | null, profile: ProfileInput | null): WorkoutWeekPlan | null {
+  if (!plan || !profile) return plan;
+
+  const stepsActivity = stepRangeToActivity(profile.averageDailySteps);
+  const nextPlan: WorkoutWeekPlan = { ...plan };
+
+  for (const day of dayOrder) {
+    const dayExercises = nextPlan[day]?.exercises ?? [];
+    const withoutOldSystemSteps = dayExercises.filter((exercise) => exercise.systemTag !== "daily_steps");
+
+    const estimatedCalories = estimateCardioCalories(profile.weightKg, "Daily Steps", stepsActivity.durationMinutes, stepsActivity.intensity);
+    const now = new Date().toISOString();
+
+    const stepsExercise: CardioExercise = {
+      id: `system-daily-steps-${day}`,
+      type: "cardio",
+      workoutDayId: day,
+      name: "Daily Steps",
+      durationMinutes: stepsActivity.durationMinutes,
+      intensity: stepsActivity.intensity,
+      trainingVolume: 0,
+      estimatedCalories,
+      strengthPoints: 1,
+      cardioPoints: stepsActivity.cardioPoints,
+      notes: "Auto-generated from Average Daily Steps profile setting.",
+      progressHistory: [],
+      createdAt: now,
+      updatedAt: now,
+      isPaused: false,
+      sourceType: "system",
+      systemTag: "daily_steps"
+    };
+
+    nextPlan[day] = {
+      ...nextPlan[day],
+      exercises: [stepsExercise, ...withoutOldSystemSteps]
+    };
+  }
+
+  return nextPlan;
 }

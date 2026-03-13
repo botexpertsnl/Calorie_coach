@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ActivityLevel, Gender, ProfileInput } from "@/lib/types";
+import { DailyStepsRange, Gender, ProfileInput, TrainingExperience } from "@/lib/types";
 
 type ProfileGoalsModalProps = {
   isOpen: boolean;
@@ -8,12 +8,16 @@ type ProfileGoalsModalProps = {
   onSave: (profile: ProfileInput) => void | Promise<void>;
 };
 
-const activityOptions: Array<{ value: ActivityLevel; label: string }> = [
-  { value: "sedentary", label: "Sedentary" },
-  { value: "light", label: "Light" },
-  { value: "moderate", label: "Moderate" },
-  { value: "very_active", label: "Very Active" },
-  { value: "athlete", label: "Athlete" }
+const trainingExperienceOptions: Array<{ value: TrainingExperience; label: string }> = [
+  { value: "beginner", label: "Beginner (0-1 year)" },
+  { value: "intermediate", label: "Intermediate (1-3 years)" },
+  { value: "advanced", label: "Advanced (3+ years)" }
+];
+
+const dailyStepOptions: Array<{ value: DailyStepsRange; label: string }> = [
+  { value: "1-5000", label: "1-5.000" },
+  { value: "5000-10000", label: "5.000-10.000" },
+  { value: "10000+", label: "10.000+" }
 ];
 
 const genderOptions: Gender[] = ["female", "male", "other"];
@@ -118,13 +122,28 @@ export function ProfileGoalsModal({ isOpen, initialProfile, onClose, onSave }: P
           </label>
 
           <label className="text-sm text-slate-700">
-            Activity Level
+            Training Experience
             <select
               className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 outline-none focus:border-emerald-400"
-              value={form.activityLevel}
-              onChange={(event) => setField("activityLevel", event.target.value as ActivityLevel)}
+              value={form.trainingExperience}
+              onChange={(event) => setField("trainingExperience", event.target.value as TrainingExperience)}
             >
-              {activityOptions.map((option) => (
+              {trainingExperienceOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="text-sm text-slate-700">
+            Average Daily Steps
+            <select
+              className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 outline-none focus:border-emerald-400"
+              value={form.averageDailySteps}
+              onChange={(event) => setField("averageDailySteps", event.target.value as DailyStepsRange)}
+            >
+              {dailyStepOptions.map((option) => (
                 <option key={option.value} value={option.value}>
                   {option.label}
                 </option>

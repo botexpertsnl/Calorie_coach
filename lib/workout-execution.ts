@@ -323,31 +323,33 @@ export function deriveWeeklyWorkoutTargets(profile: ProfileInput | null): Workou
   }
 
   const goal = inferGoalCategoryFromText(profile.goalText);
+  const experienceFactor = profile.trainingExperience === "advanced" ? 1.2 : profile.trainingExperience === "intermediate" ? 1 : 0.82;
+  const stepsCardioBump = profile.averageDailySteps === "10000+" ? 8 : profile.averageDailySteps === "5000-10000" ? 4 : 0;
 
   if (goal === "fat_loss") {
     return {
-      strengthPoints: profile.activityLevel === "sedentary" ? 34 : 40,
-      cardioPoints: profile.activityLevel === "sedentary" ? 80 : 70
+      strengthPoints: Math.round(36 * experienceFactor),
+      cardioPoints: Math.round((62 + stepsCardioBump) * experienceFactor)
     };
   }
 
   if (goal === "muscle_gain") {
     return {
-      strengthPoints: 85,
-      cardioPoints: 20
+      strengthPoints: Math.round(74 * experienceFactor),
+      cardioPoints: Math.round((18 + Math.round(stepsCardioBump / 2)) * experienceFactor)
     };
   }
 
   if (goal === "recomposition") {
     return {
-      strengthPoints: 65,
-      cardioPoints: 50
+      strengthPoints: Math.round(58 * experienceFactor),
+      cardioPoints: Math.round((44 + stepsCardioBump) * experienceFactor)
     };
   }
 
   return {
-    strengthPoints: 45,
-    cardioPoints: 60
+    strengthPoints: Math.round(42 * experienceFactor),
+    cardioPoints: Math.round((52 + stepsCardioBump) * experienceFactor)
   };
 }
 

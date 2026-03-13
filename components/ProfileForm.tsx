@@ -1,4 +1,4 @@
-import { ActivityLevel, DailyTargets, Gender, ProfileInput } from "@/lib/types";
+import { DailyStepsRange, DailyTargets, Gender, ProfileInput, TrainingExperience } from "@/lib/types";
 
 type ProfileFormProps = {
   profile: ProfileInput;
@@ -6,12 +6,16 @@ type ProfileFormProps = {
   targets: DailyTargets;
 };
 
-const activityOptions: { value: ActivityLevel; label: string }[] = [
-  { value: "sedentary", label: "Sedentary" },
-  { value: "light", label: "Light activity" },
-  { value: "moderate", label: "Moderate activity" },
-  { value: "very_active", label: "Very active" },
-  { value: "athlete", label: "Athlete level" }
+const trainingExperienceOptions: { value: TrainingExperience; label: string }[] = [
+  { value: "beginner", label: "Beginner (0-1 year)" },
+  { value: "intermediate", label: "Intermediate (1-3 years)" },
+  { value: "advanced", label: "Advanced (3+ years)" }
+];
+
+const dailyStepOptions: { value: DailyStepsRange; label: string }[] = [
+  { value: "1-5000", label: "1-5.000" },
+  { value: "5000-10000", label: "5.000-10.000" },
+  { value: "10000+", label: "10.000+" }
 ];
 
 const genders: Gender[] = ["female", "male", "other"];
@@ -49,9 +53,15 @@ export function ProfileForm({ profile, onChange, targets }: ProfileFormProps) {
           <input className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 p-2" type="number" value={profile.waistCm} onChange={(e)=>setField("waistCm", Number(e.target.value))} />
         </label>
 
-        <label className="text-sm text-slate-200">Activity level
-          <select className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 p-2" value={profile.activityLevel} onChange={(e)=>setField("activityLevel", e.target.value as ActivityLevel)}>
-            {activityOptions.map((option)=><option key={option.value} value={option.value}>{option.label}</option>)}
+        <label className="text-sm text-slate-200">Training experience
+          <select className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 p-2" value={profile.trainingExperience} onChange={(e)=>setField("trainingExperience", e.target.value as TrainingExperience)}>
+            {trainingExperienceOptions.map((option)=><option key={option.value} value={option.value}>{option.label}</option>)}
+          </select>
+        </label>
+
+        <label className="text-sm text-slate-200">Average daily steps
+          <select className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 p-2" value={profile.averageDailySteps} onChange={(e)=>setField("averageDailySteps", e.target.value as DailyStepsRange)}>
+            {dailyStepOptions.map((option)=><option key={option.value} value={option.value}>{option.label}</option>)}
           </select>
         </label>
       </div>
