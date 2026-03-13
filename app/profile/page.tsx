@@ -26,29 +26,45 @@ const macroConfig: Array<{ key: MacroKey; label: string; unit: string }> = [
   { key: "fat", label: "Fat", unit: "g" }
 ];
 
-function composeGoalText(mainGoal: string, secondaryGoal: string) {
-  if (mainGoal && secondaryGoal) {
-    return `Main goal: ${mainGoal}. Secondary goal: ${secondaryGoal}.`;
+const primaryGoalOptions = [
+  "Fat Loss",
+  "Muscle Gain",
+  "Strength",
+  "Endurance",
+  "General Health & Longevity"
+] as const;
+
+const secondaryGoalOptionsByPrimary: Record<(typeof primaryGoalOptions)[number], string[]> = {
+  "Fat Loss": ["Improve Energy", "Better Sleep", "Build Healthy Habits", "Maintain Muscle"],
+  "Muscle Gain": ["Strength", "Improve Recovery", "Maintain Leanness", "Improve Energy"],
+  Strength: ["Muscle Gain", "Power", "Injury Prevention", "Mobility"],
+  Endurance: ["Improve Cardiovascular Fitness", "Fat Loss", "Build Consistency", "Recovery"],
+  "General Health & Longevity": ["Improve Energy", "Weight Maintenance", "Mobility", "Stress Management"]
+};
+
+function composeGoalText(mainGoal: string, secondaryGoal: string, goalDescription: string) {
+  const parts: string[] = [];
+
+  if (mainGoal) parts.push(`Main goal: ${mainGoal}.`);
+  if (secondaryGoal) parts.push(`Secondary goal: ${secondaryGoal}.`);
+  if (goalDescription.trim()) parts.push(`Goal details: ${goalDescription.trim()}.`);
+
+  if (!parts.length) {
+    return "I want to improve body composition and feel more energetic.";
   }
 
-  if (mainGoal) {
-    return `Main goal: ${mainGoal}.`;
-  }
-
-  if (secondaryGoal) {
-    return `Secondary goal: ${secondaryGoal}.`;
-  }
-
-  return "I want to improve body composition and feel more energetic.";
+  return parts.join(" ");
 }
 
 function parseGoalsFromText(goalText: string) {
   const mainMatch = goalText.match(/Main goal:\s*([^\.]+)\.?/i);
   const secondaryMatch = goalText.match(/Secondary goal:\s*([^\.]+)\.?/i);
+  const detailsMatch = goalText.match(/Goal details:\s*([^\.]+)\.?/i);
 
   return {
     mainGoal: mainMatch?.[1]?.trim() ?? "",
-    secondaryGoal: secondaryMatch?.[1]?.trim() ?? ""
+    secondaryGoal: secondaryMatch?.[1]?.trim() ?? "",
+    goalDescription: detailsMatch?.[1]?.trim() ?? ""
   };
 }
 
@@ -59,6 +75,7 @@ export default function ProfilePage() {
   const [message, setMessage] = useState<string | null>(null);
   const [mainGoal, setMainGoal] = useState("");
   const [secondaryGoal, setSecondaryGoal] = useState("");
+  const [goalDescription, setGoalDescription] = useState("");
   const [isManualMode, setIsManualMode] = useState(false);
 
   useEffect(() => {
@@ -72,6 +89,7 @@ export default function ProfilePage() {
       const parsedGoals = parseGoalsFromText(savedProfile.goalText ?? "");
       setMainGoal(parsedGoals.mainGoal);
       setSecondaryGoal(parsedGoals.secondaryGoal);
+      setGoalDescription(parsedGoals.goalDescription);
     }
 
     if (savedTargets) setTargets(savedTargets);
@@ -79,7 +97,22 @@ export default function ProfilePage() {
     if (typeof savedManualMode === "boolean") setIsManualMode(savedManualMode);
   }, []);
 
-  const builtGoalText = useMemo(() => composeGoalText(mainGoal.trim(), secondaryGoal.trim()), [mainGoal, secondaryGoal]);
+  const builtGoalText = useMemo(
+    () => composeGoalText(mainGoal.trim(), secondaryGoal.trim(), goalDescription.trim()),
+    [mainGoal, secondaryGoal, goalDescription]
+  );
+
+  const secondaryOptions = useMemo(() => {
+    if (!mainGoal || !primaryGoalOptions.includes(mainGoal as (typeof primaryGoalOptions)[number])) return [];
+    return secondaryGoalOptionsByPrimary[mainGoal as (typeof primaryGoalOptions)[number]];
+  }, [mainGoal]);
+
+  useEffect(() => {
+    if (!secondaryGoal) return;
+    if (secondaryOptions.length && !secondaryOptions.includes(secondaryGoal)) {
+      setSecondaryGoal("");
+    }
+  }, [secondaryGoal, secondaryOptions]);
 
   function updateProfile<K extends keyof ProfileInput>(key: K, value: ProfileInput[K]) {
     setProfile((prev) => ({ ...prev, [key]: value }));
@@ -170,23 +203,44 @@ export default function ProfilePage() {
 
         <div className="mt-4 grid gap-4 md:grid-cols-2">
           <label className="text-sm text-slate-700">Main goal (required if no secondary goal)
-            <input
+            <select
               className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2"
               value={mainGoal}
-              onChange={(e) => setMainGoal(e.target.value)}
-              placeholder="e.g., Lose weight"
-            />
+              onChange={(e) => {
+                setMainGoal(e.target.value);
+                setSecondaryGoal("");
+              }}
+            >
+              <option value="">Select main goal</option>
+              {primaryGoalOptions.map((option) => (
+                <option key={option} value={option}>{option}</option>
+              ))}
+            </select>
           </label>
 
           <label className="text-sm text-slate-700">Secondary goal (optional)
-            <input
+            <select
               className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2"
               value={secondaryGoal}
               onChange={(e) => setSecondaryGoal(e.target.value)}
-              placeholder="e.g., Improve energy"
-            />
+              disabled={!mainGoal}
+            >
+              <option value="">Select secondary goal</option>
+              {secondaryOptions.map((option) => (
+                <option key={option} value={option}>{option}</option>
+              ))}
+            </select>
           </label>
         </div>
+
+        <label className="mt-4 block text-sm text-slate-700">Goal description
+          <textarea
+            className="mt-1 min-h-24 w-full rounded-xl border border-slate-200 px-3 py-2"
+            value={goalDescription}
+            onChange={(e) => setGoalDescription(e.target.value)}
+            placeholder="Describe your specific goal in your own words."
+          />
+        </label>
       </section>
 
       <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
