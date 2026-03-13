@@ -1,9 +1,16 @@
-import { DailyStepsRange, DailyTargets, GoalType, ProfileInput, TrainingExperience } from "@/lib/types";
+import { DailyStepsRange, DailyTargets, GoalType, ProfileInput, TrainingExperience, WorkType } from "@/lib/types";
 
 const stepActivityMultipliers: Record<DailyStepsRange, number> = {
   "1-5000": 1.3,
   "5000-10000": 1.45,
   "10000+": 1.6
+};
+
+const workTypeActivityMultipliers: Record<WorkType, number> = {
+  sedentary: 1.2,
+  light: 1.35,
+  moderate: 1.5,
+  heavy: 1.65
 };
 
 const experienceProteinBump: Record<TrainingExperience, number> = {
@@ -57,6 +64,14 @@ function floorCarbsPerKg(steps: DailyStepsRange, experience: TrainingExperience)
   return stepFloor + expBump;
 }
 
+function getBackgroundActivityFactor(profile: ProfileInput) {
+  const stepsFactor = stepActivityMultipliers[profile.averageDailySteps];
+  const workFactor = workTypeActivityMultipliers[profile.workType];
+
+  // weighted merge to avoid double-counting background movement.
+  return Number((stepsFactor * 0.55 + workFactor * 0.45).toFixed(3));
+}
+
 export function calculateDailyTargets(
   profile: ProfileInput,
   preferredGoalCategory?: GoalType,
@@ -65,7 +80,7 @@ export function calculateDailyTargets(
   const goalCategory = preferredGoalCategory ?? inferGoalCategoryFromText(profile.goalText);
 
   const bmr = bmrMifflinStJeor(profile);
-  const activityFactor = stepActivityMultipliers[profile.averageDailySteps];
+  const activityFactor = getBackgroundActivityFactor(profile);
   const tdee = bmr * activityFactor;
   const waistSignal = waistRiskSignal(profile);
 

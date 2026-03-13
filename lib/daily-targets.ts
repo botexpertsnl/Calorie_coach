@@ -2,7 +2,6 @@ import { STORAGE_KEYS, readJson, writeJson } from "@/lib/local-data";
 import { getLocalDateKey } from "@/lib/meals";
 import { calculateDailyTargets } from "@/lib/nutrition";
 import { buildWorkoutAdjustedSummary } from "@/lib/workout-execution";
-import { applySystemDailyStepsToPlan } from "@/lib/workouts";
 import { DailyTargets, MacroKey, ProfileInput, WorkoutException, WorkoutWeekPlan } from "@/lib/types";
 
 export const TARGETS_UPDATED_EVENT = "ai-calorie-coach:targets-updated";
@@ -70,10 +69,8 @@ export function recalculateAndPersistTodayTargets(input: RecalculateTodayInput =
   const disabledMacros = input.disabledMacros ?? readJson<MacroKey[]>(STORAGE_KEYS.disabledMacros) ?? [];
 
   const todayKey = getLocalDateKey();
-  const workoutsWithSteps = applySystemDailyStepsToPlan(workouts, profile);
-
   const nextTargets = {
-    ...getDailyMacroTargets(todayKey, profile, workoutsWithSteps, exceptions),
+    ...getDailyMacroTargets(todayKey, profile, workouts, exceptions),
     disabledMacros
   };
 

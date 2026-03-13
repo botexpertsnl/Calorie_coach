@@ -325,31 +325,32 @@ export function deriveWeeklyWorkoutTargets(profile: ProfileInput | null): Workou
   const goal = inferGoalCategoryFromText(profile.goalText);
   const experienceFactor = profile.trainingExperience === "advanced" ? 1.2 : profile.trainingExperience === "intermediate" ? 1 : 0.82;
   const stepsCardioBump = profile.averageDailySteps === "10000+" ? 8 : profile.averageDailySteps === "5000-10000" ? 4 : 0;
+  const workTypeRecoveryAdjustment = profile.workType === "heavy" ? 0.9 : profile.workType === "moderate" ? 0.95 : 1;
 
   if (goal === "fat_loss") {
     return {
-      strengthPoints: Math.round(36 * experienceFactor),
-      cardioPoints: Math.round((62 + stepsCardioBump) * experienceFactor)
+      strengthPoints: Math.round(36 * experienceFactor * workTypeRecoveryAdjustment),
+      cardioPoints: Math.round((62 + stepsCardioBump) * experienceFactor * workTypeRecoveryAdjustment)
     };
   }
 
   if (goal === "muscle_gain") {
     return {
-      strengthPoints: Math.round(74 * experienceFactor),
-      cardioPoints: Math.round((18 + Math.round(stepsCardioBump / 2)) * experienceFactor)
+      strengthPoints: Math.round(74 * experienceFactor * workTypeRecoveryAdjustment),
+      cardioPoints: Math.round((18 + Math.round(stepsCardioBump / 2)) * experienceFactor * workTypeRecoveryAdjustment)
     };
   }
 
   if (goal === "recomposition") {
     return {
-      strengthPoints: Math.round(58 * experienceFactor),
-      cardioPoints: Math.round((44 + stepsCardioBump) * experienceFactor)
+      strengthPoints: Math.round(58 * experienceFactor * workTypeRecoveryAdjustment),
+      cardioPoints: Math.round((44 + stepsCardioBump) * experienceFactor * workTypeRecoveryAdjustment)
     };
   }
 
   return {
-    strengthPoints: Math.round(42 * experienceFactor),
-    cardioPoints: Math.round((52 + stepsCardioBump) * experienceFactor)
+    strengthPoints: Math.round(42 * experienceFactor * workTypeRecoveryAdjustment),
+    cardioPoints: Math.round((52 + stepsCardioBump) * experienceFactor * workTypeRecoveryAdjustment)
   };
 }
 

@@ -35,6 +35,8 @@ export type TrainingExperience = "beginner" | "intermediate" | "advanced";
 
 export type DailyStepsRange = "1-5000" | "5000-10000" | "10000+";
 
+export type WorkType = "sedentary" | "light" | "moderate" | "heavy";
+
 export type ProfileInput = {
   age: number;
   gender: Gender;
@@ -43,6 +45,7 @@ export type ProfileInput = {
   waistCm: number;
   trainingExperience: TrainingExperience;
   averageDailySteps: DailyStepsRange;
+  workType: WorkType;
   primaryGoal?: string;
   secondaryGoal?: string;
   goalDescription?: string;

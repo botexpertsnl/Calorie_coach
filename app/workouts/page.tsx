@@ -4,7 +4,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { AppHeaderNav } from "@/components/AppHeaderNav";
 import { STORAGE_KEYS, readJson, writeJson } from "@/lib/local-data";
 import { recalculateAndPersistTodayTargets } from "@/lib/daily-targets";
-import { applySystemDailyStepsToPlan, calculateTrainingVolume, estimateCaloriesForType } from "@/lib/workouts";
+import { calculateTrainingVolume, estimateCaloriesForType } from "@/lib/workouts";
 import { buildWorkoutAdjustedSummary, calculateWorkoutPoints, deriveWeeklyWorkoutTargets, getCurrentWeekDateKeys, withStoredWorkoutPoints } from "@/lib/workout-execution";
 import {
   CardioExercise,
@@ -76,6 +76,48 @@ const muscleGroupLabels: Record<MuscleGroup, string> = {
   core: "Core",
   full_body: "Full Body"
 };
+
+const typeIcons: Record<WorkoutExerciseType, string> = {
+  cardio: "🏃",
+  fitness: "🏋️",
+  crossfit: "🔥"
+};
+
+function inferExerciseDefaults(name: string): Partial<PlannerDraft> {
+  const value = name.toLowerCase().trim();
+  if (!value) return {};
+
+  if (/run|jog|bike|cycle|walk|row|swim|elliptical|stair/.test(value)) {
+    return { type: "cardio", movementType: "conditioning", muscleGroup: "full_body" };
+  }
+
+  if (/burpee|thruster|snatch|clean|jerk|amrap|metcon|wod|wall ball/.test(value)) {
+    return { type: "crossfit", movementType: "conditioning", muscleGroup: "full_body" };
+  }
+
+  if (/bench|push up|fly|chest press/.test(value)) return { type: "fitness", muscleGroup: "chest" };
+  if (/pull|lat|row/.test(value)) return { type: "fitness", muscleGroup: "back" };
+  if (/shoulder|overhead press|lateral raise/.test(value)) return { type: "fitness", muscleGroup: "shoulders" };
+  if (/curl/.test(value)) return { type: "fitness", muscleGroup: "biceps" };
+  if (/tricep|dip|pushdown|skull/.test(value)) return { type: "fitness", muscleGroup: "triceps" };
+  if (/squat|leg press|lunge/.test(value)) return { type: "fitness", muscleGroup: "quads" };
+  if (/hamstring|rdl|deadlift/.test(value)) return { type: "fitness", muscleGroup: "hamstrings" };
+  if (/glute|hip thrust/.test(value)) return { type: "fitness", muscleGroup: "glutes" };
+  if (/calf/.test(value)) return { type: "fitness", muscleGroup: "calves" };
+  if (/plank|crunch|core|ab/.test(value)) return { type: "fitness", muscleGroup: "core" };
+
+  return {};
+}
+
+function formatPercentChange(current: number | undefined, previous: number | undefined) {
+  if (typeof current !== "number" || typeof previous !== "number") return null;
+  if (previous === 0) {
+    if (current === 0) return 0;
+    return 100;
+  }
+
+  return Math.round(((current - previous) / Math.abs(previous)) * 100);
+}
 
 function getAmsterdamToday(): WorkoutDay {
   const weekday = new Intl.DateTimeFormat("en-US", {
@@ -196,6 +238,7 @@ function normalizePlanWithMetrics(plan: WorkoutWeekPlan, weightKg: number): Work
     normalized[day] = {
       ...plan[day],
       exercises: (plan[day]?.exercises ?? []).map((exercise) => {
+        if (exercise.systemTag === "daily_steps") return null;
         const withPoints = withStoredWorkoutPoints(exercise);
         const normalizedLabels = {
           muscleGroup: withPoints.muscleGroup ?? "full_body",
@@ -206,7 +249,7 @@ function normalizePlanWithMetrics(plan: WorkoutWeekPlan, weightKg: number): Work
           ...normalizedLabels,
           estimatedCalories: ensureCalories(withPoints, weightKg)
         };
-      })
+      }).filter(Boolean) as WorkoutExercise[]
     };
   }
 
@@ -236,8 +279,8 @@ export default function WorkoutsPage() {
   const [exceptionReps, setExceptionReps] = useState(10);
   const [exceptionWeight, setExceptionWeight] = useState(20);
   const [exceptionIntensity, setExceptionIntensity] = useState<WorkoutIntensity>("moderate");
-  const [muscleGroupFilter, setMuscleGroupFilter] = useState<MuscleGroup | "all">("all");
-  const [movementTypeFilter, setMovementTypeFilter] = useState<MovementType | "all">("all");
+  const [typeFilter, setTypeFilter] = useState<"all" | "fitness" | "cardio" | "crossfit">("all");
+  const [subFilter, setSubFilter] = useState<string>("all");
   const [hasLoadedInitialData, setHasLoadedInitialData] = useState(false);
 
   useEffect(() => {
@@ -246,10 +289,7 @@ export default function WorkoutsPage() {
     const savedExceptions = readJson<WorkoutException[]>(STORAGE_KEYS.workoutExceptions) ?? [];
 
     const profileWeightKg = savedProfile?.weightKg ?? 70;
-    if (savedPlan) {
-      const normalized = normalizePlanWithMetrics(savedPlan, profileWeightKg);
-      setPlan(applySystemDailyStepsToPlan(normalized, savedProfile) ?? normalized);
-    }
+    if (savedPlan) setPlan(normalizePlanWithMetrics(savedPlan, profileWeightKg));
     if (savedProfile?.weightKg) setProfileWeight(savedProfile.weightKg);
     if (savedProfile) setProfile(savedProfile);
     setExceptions(savedExceptions);
@@ -273,13 +313,12 @@ export default function WorkoutsPage() {
     });
   }, [exceptions, hasLoadedInitialData, plan, profile]);
 
-  useEffect(() => {
-    if (!profile) return;
-    setPlan((prev) => applySystemDailyStepsToPlan(prev, profile) ?? prev);
-  }, [profile]);
-
   function resetDraft(type: WorkoutExerciseType = "fitness") {
-    setDraft({ ...defaultDraft, type });
+    if (type === "crossfit") {
+      setDraft({ ...defaultDraft, type, durationMinutes: 0, sets: 0, reps: 0, weight: 0, movementType: "conditioning" });
+    } else {
+      setDraft({ ...defaultDraft, type });
+    }
     setEditingExerciseId(null);
   }
 
@@ -288,14 +327,43 @@ export default function WorkoutsPage() {
     [plan, selectedDay]
   );
 
+  const availableTypeFilters = useMemo(() => {
+    const available: Array<"fitness" | "cardio" | "crossfit"> = [];
+    if (selectedExercises.some((exercise) => exercise.type === "fitness")) available.push("fitness");
+    if (selectedExercises.some((exercise) => exercise.type === "cardio" || (exercise.type === "crossfit" && exercise.movementType === "conditioning"))) available.push("cardio");
+    if (selectedExercises.some((exercise) => exercise.type === "crossfit")) available.push("crossfit");
+    return available;
+  }, [selectedExercises]);
+
+  const availableSubFilters = useMemo(() => {
+    const values = new Set<string>();
+    for (const exercise of selectedExercises) {
+      if (exercise.muscleGroup) values.add(exercise.muscleGroup);
+      if (exercise.movementType) values.add(exercise.movementType);
+    }
+    return Array.from(values);
+  }, [selectedExercises]);
+
   const filteredExercises = useMemo(
     () =>
       selectedExercises.filter((exercise) => {
-        const byMuscle = muscleGroupFilter === "all" || exercise.muscleGroup === muscleGroupFilter;
-        const byMovement = movementTypeFilter === "all" || exercise.movementType === movementTypeFilter;
-        return byMuscle && byMovement;
+        const matchType =
+          typeFilter === "all"
+            ? true
+            : typeFilter === "fitness"
+              ? exercise.type === "fitness"
+              : typeFilter === "crossfit"
+                ? exercise.type === "crossfit"
+                : exercise.type === "cardio" || (exercise.type === "crossfit" && exercise.movementType === "conditioning");
+
+        const matchSub =
+          subFilter === "all"
+            ? true
+            : exercise.muscleGroup === subFilter || exercise.movementType === subFilter;
+
+        return matchType && matchSub;
       }),
-    [muscleGroupFilter, movementTypeFilter, selectedExercises]
+    [selectedExercises, subFilter, typeFilter]
   );
 
   const progressExercise = useMemo(
@@ -308,6 +376,19 @@ export default function WorkoutsPage() {
     const history = getHistory(progressExercise);
     return history.slice(-2).reverse();
   }, [progressExercise]);
+
+  const latestPreviousProgress = previousProgresses[0];
+
+  const progressComparisons = useMemo(() => {
+    if (!latestPreviousProgress) return [] as Array<{ label: string; value: number | null }>;
+
+    return [
+      { label: "Duration", value: formatPercentChange(draft.durationMinutes, latestPreviousProgress.durationMinutes) },
+      { label: "Sets", value: formatPercentChange(draft.sets, latestPreviousProgress.sets) },
+      { label: "Reps", value: formatPercentChange(draft.reps, latestPreviousProgress.reps) },
+      { label: "Weight", value: formatPercentChange(draft.weight, latestPreviousProgress.weight) }
+    ];
+  }, [draft.durationMinutes, draft.reps, draft.sets, draft.weight, latestPreviousProgress]);
 
   const selectedDaySummary = useMemo(() => {
     return selectedExercises.reduce(
@@ -839,6 +920,28 @@ export default function WorkoutsPage() {
                     ))}
                   </div>
                 ) : null}
+
+                {latestPreviousProgress ? (
+                  <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Growth vs previous entry</p>
+                    <div className="mt-2 grid gap-2 sm:grid-cols-4">
+                      {progressComparisons.map((item) => {
+                        const value = item.value;
+                        const isPositive = (value ?? 0) > 0;
+                        const isNegative = (value ?? 0) < 0;
+
+                        return (
+                          <div key={item.label} className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+                            <p className="text-[11px] uppercase tracking-wide text-slate-500">{item.label}</p>
+                            <p className={`text-sm font-semibold ${isPositive ? "text-emerald-600" : isNegative ? "text-rose-600" : "text-slate-700"}`}>
+                              {value === null ? "n/a" : `${value > 0 ? "+" : ""}${value}%`}
+                            </p>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : null}
               </div>
               <button type="button" onClick={closeProgress} className="rounded-md p-1 text-slate-400 hover:bg-slate-100">✕</button>
             </div>
@@ -998,25 +1101,47 @@ export default function WorkoutsPage() {
             <p className="mt-1 text-sm text-slate-500">{dayLabels[selectedDay]}</p>
 
             <form onSubmit={saveExercise} className="mt-4 space-y-4">
+              <label className="block text-sm text-slate-700">Exercise name / description
+                <input className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={draft.name} onChange={(event) => {
+                  const value = event.target.value;
+                  const inferred = inferExerciseDefaults(value);
+                  setDraft((prev) => {
+                    const nextType = (inferred.type ?? prev.type) as WorkoutExerciseType;
+                    return {
+                      ...prev,
+                      name: value,
+                      ...inferred,
+                      durationMinutes: nextType === "crossfit" ? 0 : prev.durationMinutes,
+                      sets: nextType === "crossfit" ? 0 : prev.sets,
+                      reps: nextType === "crossfit" ? 0 : prev.reps,
+                      weight: nextType === "crossfit" ? 0 : prev.weight
+                    };
+                  });
+                }} placeholder="e.g., Bench Press" />
+              </label>
+
               <label className="block text-sm text-slate-700">Exercise type
-                <select className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={draft.type} onChange={(event) => setDraftField("type", event.target.value as WorkoutExerciseType)}>
+                <select className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={draft.type} onChange={(event) => {
+                  const nextType = event.target.value as WorkoutExerciseType;
+                  if (nextType === "crossfit") {
+                    setDraft((prev) => ({ ...prev, type: nextType, durationMinutes: 0, sets: 0, reps: 0, weight: 0, movementType: "conditioning" }));
+                    return;
+                  }
+                  setDraftField("type", nextType);
+                }}>
                   <option value="cardio">Cardio</option>
                   <option value="fitness">Fitness</option>
                   <option value="crossfit">CrossFit</option>
                 </select>
               </label>
 
-              <label className="block text-sm text-slate-700">Exercise name / description
-                <input className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={draft.name} onChange={(event) => setDraftField("name", event.target.value)} placeholder="e.g., Bench Press" />
-              </label>
-
-              <label className="block text-sm text-slate-700">Muscle Group
+              {draft.type === "fitness" ? <label className="block text-sm text-slate-700">Muscle Group
                 <select className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={draft.muscleGroup} onChange={(event) => setDraftField("muscleGroup", event.target.value as MuscleGroup)}>
                   {muscleGroupOptions.map((option) => (
                     <option key={option.value} value={option.value}>{option.label}</option>
                   ))}
                 </select>
-              </label>
+              </label> : null}
 
               {draft.type === "crossfit" ? (
                 <label className="block text-sm text-slate-700">Movement Type
@@ -1100,14 +1225,6 @@ export default function WorkoutsPage() {
                 </div>
               ) : null}
 
-              <label className="block text-sm text-slate-700">Intensity
-                <select className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={draft.intensity} onChange={(event) => setDraftField("intensity", event.target.value as WorkoutIntensity)}>
-                  <option value="low">Low</option>
-                  <option value="moderate">Moderate</option>
-                  <option value="high">High</option>
-                </select>
-              </label>
-
               <label className="block text-sm text-slate-700">Notes
                 <textarea className="mt-1 min-h-20 w-full rounded-xl border border-slate-200 px-3 py-2" value={draft.notes} onChange={(event) => setDraftField("notes", event.target.value)} placeholder="Optional notes" />
               </label>
@@ -1123,39 +1240,48 @@ export default function WorkoutsPage() {
 
           <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
             <h2 className="text-xl font-semibold text-slate-900">{dayLabels[selectedDay]} planned exercises</h2>
-            <div className="mt-4 flex flex-wrap gap-2">
-              <select
-                className="rounded-xl border border-slate-200 px-3 py-2 text-sm"
-                value={muscleGroupFilter}
-                onChange={(event) => setMuscleGroupFilter(event.target.value as MuscleGroup | "all")}
-              >
-                <option value="all">All Muscle Groups</option>
-                {muscleGroupOptions.map((option) => (
-                  <option key={option.value} value={option.value}>{option.label}</option>
-                ))}
-              </select>
+            <div className="mt-3">
+              <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Main filters</p>
+              <div className="flex flex-wrap gap-2">
+              {availableTypeFilters.map((filterType) => (
+                <button
+                  key={filterType}
+                  type="button"
+                  onClick={() => setTypeFilter((prev) => (prev === filterType ? "all" : filterType))}
+                  className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${typeFilter === filterType ? "border-slate-900 bg-slate-900 text-white shadow-sm" : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"}`}
+                >
+                  {filterType === "crossfit" ? "CrossFit" : filterType === "cardio" ? "Cardio" : "Fitness"}
+                </button>
+              ))}
+              </div>
+            </div>
 
-              <select
-                className="rounded-xl border border-slate-200 px-3 py-2 text-sm"
-                value={movementTypeFilter}
-                onChange={(event) => setMovementTypeFilter(event.target.value as MovementType | "all")}
-              >
-                <option value="all">All Movement Types</option>
-                {movementTypeOptions.map((option) => (
-                  <option key={option.value} value={option.value}>{option.label}</option>
-                ))}
-              </select>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setMuscleGroupFilter("all");
-                  setMovementTypeFilter("all");
-                }}
-                className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
-              >
-                Clear filters
-              </button>
+            <div className="mt-3 rounded-xl border border-dashed border-slate-200 bg-slate-50 p-2.5">
+              <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Sub-filters</p>
+              <div className="flex flex-wrap gap-2">
+              {availableSubFilters.map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setSubFilter((prev) => (prev === value ? "all" : value))}
+                  className={`rounded-full border px-3 py-1 text-xs font-medium ${subFilter === value ? "border-emerald-500 bg-emerald-50 text-emerald-700" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}
+                >
+                  {value in muscleGroupLabels ? muscleGroupLabels[value as MuscleGroup] : movementTypeLabels[value as MovementType]}
+                </button>
+              ))}
+              {(typeFilter !== "all" || subFilter !== "all") ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTypeFilter("all");
+                    setSubFilter("all");
+                  }}
+                  className="rounded-full border border-slate-200 px-3 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50"
+                >
+                  Clear filters
+                </button>
+              ) : null}
+              </div>
             </div>
 
             {selectedExercises.length === 0 ? (
@@ -1168,15 +1294,14 @@ export default function WorkoutsPage() {
                   <li key={exercise.id} className="rounded-xl border border-slate-200 p-4 cursor-pointer hover:bg-slate-50" onClick={() => openProgress(exercise)}>
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div>
-                        <p className="font-semibold text-slate-900">{exercise.name}</p>
+                        <p className="flex items-center gap-2 font-semibold text-slate-900"><span className="inline-flex h-5 w-5 items-center justify-center text-sm">{typeIcons[exercise.type]}</span><span>{exercise.name}</span></p>
                         {exercise.sourceType === "system" ? <p className="mt-1 inline-block rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-blue-700">Auto-generated</p> : null}
-                        <p className="mt-1 text-xs uppercase tracking-wide text-slate-500">Type: {exercise.type}</p>
                         <div className="mt-2 flex flex-wrap gap-1.5">
                           {exercise.muscleGroup ? <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-slate-700">{muscleGroupLabels[exercise.muscleGroup]}</span> : null}
                           {exercise.movementType ? <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold uppercase text-emerald-700">{movementTypeLabels[exercise.movementType]}</span> : null}
                         </div>
                         {exercise.type === "cardio" ? <p className="mt-1 text-sm text-slate-600">Duration: {exercise.durationMinutes} minutes</p> : null}
-                        {exercise.type === "fitness" ? <><p className="mt-1 text-sm text-slate-600">{exercise.sets} sets × {exercise.reps} reps × {exercise.weight} kg</p><p className="text-xs text-slate-500">Training Volume: {exercise.trainingVolume}</p></> : null}
+                        {exercise.type === "fitness" ? <p className="mt-1 text-sm text-slate-600">{exercise.sets} sets × {exercise.reps} reps × {exercise.weight} kg</p> : null}
                         {exercise.type === "crossfit" ? <><p className="mt-1 text-sm text-slate-600">Duration: {exercise.durationMinutes} minutes</p>{exercise.weight ? <p className="text-sm text-slate-600">Weight: {exercise.weight} kg</p> : null}{exercise.sets && exercise.reps ? <p className="text-sm text-slate-600">{exercise.sets} sets × {exercise.reps} reps</p> : null}</> : null}
                         {exercise.notes ? <p className="mt-1 text-xs text-slate-500">Notes: {exercise.notes}</p> : null}
                       </div>

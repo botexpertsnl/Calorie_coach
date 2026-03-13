@@ -5,8 +5,7 @@ import { AppHeaderNav } from "@/components/AppHeaderNav";
 import { STORAGE_KEYS, readJson, writeJson } from "@/lib/local-data";
 import { TARGETS_UPDATED_EVENT, recalculateAndPersistTodayTargets } from "@/lib/daily-targets";
 import { calculateDailyTargets } from "@/lib/nutrition";
-import { applySystemDailyStepsToPlan } from "@/lib/workouts";
-import { DailyTargets, MacroKey, ProfileInput, WorkoutWeekPlan } from "@/lib/types";
+import { DailyTargets, MacroKey, ProfileInput } from "@/lib/types";
 
 const defaultProfile: ProfileInput = {
   heightCm: 170,
@@ -16,6 +15,7 @@ const defaultProfile: ProfileInput = {
   gender: "female",
   trainingExperience: "beginner",
   averageDailySteps: "5000-10000",
+  workType: "sedentary",
   goalText: "I want to improve body composition and feel more energetic."
 };
 
@@ -149,11 +149,6 @@ export default function ProfilePage() {
 
     setProfile(profileToSave);
     writeJson(STORAGE_KEYS.profile, profileToSave);
-    const savedPlan = readJson<WorkoutWeekPlan>(STORAGE_KEYS.workouts);
-    const planWithSteps = applySystemDailyStepsToPlan(savedPlan, profileToSave);
-    if (planWithSteps) {
-      writeJson(STORAGE_KEYS.workouts, planWithSteps);
-    }
     writeJson(STORAGE_KEYS.disabledMacros, disabledMacros);
     writeJson(STORAGE_KEYS.macroManualMode, isManualMode);
 
@@ -167,6 +162,29 @@ export default function ProfilePage() {
       window.dispatchEvent(new CustomEvent(TARGETS_UPDATED_EVENT, { detail: manualTargets }));
       setMessage("Profile saved successfully. Manual daily macros were kept.");
     }
+  }
+
+  function saveDailyActivity() {
+    const profileToSave = {
+      ...profile,
+      primaryGoal: mainGoal,
+      secondaryGoal,
+      goalDescription,
+      goalText: builtGoalText
+    };
+
+    setProfile(profileToSave);
+    writeJson(STORAGE_KEYS.profile, profileToSave);
+    writeJson(STORAGE_KEYS.disabledMacros, disabledMacros);
+
+    if (!isManualMode) {
+      const nextTargets = recalculateAndPersistTodayTargets({ profile: profileToSave, disabledMacros, force: true });
+      if (nextTargets) setTargets(nextTargets);
+      setMessage("Daily Activity saved. Calorie and macro assumptions were recalculated.");
+      return;
+    }
+
+    setMessage("Daily Activity saved. Manual macro mode is active, so targets were not overwritten.");
   }
 
   return (
@@ -203,14 +221,32 @@ export default function ProfilePage() {
             </select>
             <p className="mt-1 text-xs text-slate-500">Used to personalize workout load, recovery, and strength targets.</p>
           </label>
+        </div>
+      </section>
+
+      <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
+        <h2 className="text-2xl font-semibold text-slate-900">Daily Activity</h2>
+        <div className="mt-4 grid gap-4 md:grid-cols-2">
           <label className="text-sm text-slate-700">Average Daily Steps
             <select className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={profile.averageDailySteps} onChange={(e) => updateProfile("averageDailySteps", e.target.value as ProfileInput["averageDailySteps"])}>
               <option value="1-5000">1-5.000</option>
               <option value="5000-10000">5.000-10.000</option>
               <option value="10000+">10.000+</option>
             </select>
-            <p className="mt-1 text-xs text-slate-500">Used to improve calorie calculations and movement insights.</p>
           </label>
+
+          <label className="text-sm text-slate-700">Work Type
+            <select className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={profile.workType} onChange={(e) => updateProfile("workType", e.target.value as ProfileInput["workType"])}>
+              <option value="sedentary">Sedentary (Desk Job)</option>
+              <option value="light">Light Activity (Standing Job)</option>
+              <option value="moderate">Moderate Physical Work</option>
+              <option value="heavy">Heavy Physical Work</option>
+            </select>
+          </label>
+        </div>
+        <p className="mt-3 text-sm text-slate-500">This information helps improve calorie and macro calculations.</p>
+        <div className="mt-4">
+          <button onClick={saveDailyActivity} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Save Daily Activity</button>
         </div>
       </section>
 
