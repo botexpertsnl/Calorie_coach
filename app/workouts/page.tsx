@@ -83,6 +83,19 @@ const typeIcons: Record<WorkoutExerciseType, string> = {
   crossfit: "🔥"
 };
 
+function matchesTypeFilter(exercise: WorkoutExercise, filter: "all" | "fitness" | "cardio" | "crossfit") {
+  if (filter === "all") return true;
+  if (filter === "fitness") return exercise.type === "fitness";
+  if (filter === "crossfit") return exercise.type === "crossfit";
+  return exercise.type === "cardio" || (exercise.type === "crossfit" && exercise.movementType === "conditioning");
+}
+
+function getExerciseMainFilterGroup(exercise: WorkoutExercise): "fitness" | "cardio" | "crossfit" {
+  if (exercise.type === "fitness") return "fitness";
+  if (exercise.type === "crossfit" && exercise.movementType !== "conditioning") return "crossfit";
+  return "cardio";
+}
+
 function inferExerciseDefaults(name: string): Partial<PlannerDraft> {
   const value = name.toLowerCase().trim();
   if (!value) return {};
@@ -338,33 +351,44 @@ export default function WorkoutsPage() {
   const availableSubFilters = useMemo(() => {
     const values = new Set<string>();
     for (const exercise of selectedExercises) {
+      if (!matchesTypeFilter(exercise, typeFilter)) continue;
       if (exercise.muscleGroup) values.add(exercise.muscleGroup);
       if (exercise.movementType) values.add(exercise.movementType);
     }
     return Array.from(values);
-  }, [selectedExercises]);
+  }, [selectedExercises, typeFilter]);
 
-  const filteredExercises = useMemo(
-    () =>
-      selectedExercises.filter((exercise) => {
-        const matchType =
-          typeFilter === "all"
-            ? true
-            : typeFilter === "fitness"
-              ? exercise.type === "fitness"
-              : typeFilter === "crossfit"
-                ? exercise.type === "crossfit"
-                : exercise.type === "cardio" || (exercise.type === "crossfit" && exercise.movementType === "conditioning");
 
-        const matchSub =
-          subFilter === "all"
-            ? true
-            : exercise.muscleGroup === subFilter || exercise.movementType === subFilter;
+  useEffect(() => {
+    if (subFilter === "all") return;
+    if (!availableSubFilters.includes(subFilter)) {
+      setSubFilter("all");
+    }
+  }, [availableSubFilters, subFilter]);
 
+  const filteredExercises = useMemo(() => {
+    const sorted = selectedExercises
+      .filter((exercise) => {
+        const matchType = matchesTypeFilter(exercise, typeFilter);
+        const matchSub = subFilter === "all" ? true : exercise.muscleGroup === subFilter || exercise.movementType === subFilter;
         return matchType && matchSub;
-      }),
-    [selectedExercises, subFilter, typeFilter]
-  );
+      })
+      .sort((a, b) => {
+        const typeOrder: Record<"fitness" | "cardio" | "crossfit", number> = { fitness: 0, cardio: 1, crossfit: 2 };
+        const aType = getExerciseMainFilterGroup(a);
+        const bType = getExerciseMainFilterGroup(b);
+
+        if (aType !== bType) return typeOrder[aType] - typeOrder[bType];
+
+        const aSub = a.muscleGroup ? muscleGroupLabels[a.muscleGroup] : a.movementType ? movementTypeLabels[a.movementType] : "";
+        const bSub = b.muscleGroup ? muscleGroupLabels[b.muscleGroup] : b.movementType ? movementTypeLabels[b.movementType] : "";
+
+        if (aSub !== bSub) return aSub.localeCompare(bSub);
+        return a.name.localeCompare(b.name);
+      });
+
+    return sorted;
+  }, [selectedExercises, subFilter, typeFilter]);
 
   const progressExercise = useMemo(
     () => selectedExercises.find((exercise) => exercise.id === progressExerciseId) ?? null,
@@ -1247,7 +1271,7 @@ export default function WorkoutsPage() {
                   key={filterType}
                   type="button"
                   onClick={() => setTypeFilter((prev) => (prev === filterType ? "all" : filterType))}
-                  className={`rounded-full border px-4 py-2 text-sm font-semibold ${typeFilter === filterType ? "border-slate-900 bg-slate-900 text-white shadow-sm" : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"}`}
+                  className={`min-w-[132px] rounded-full border px-5 py-2.5 text-sm font-semibold ${typeFilter === filterType ? "border-emerald-500 bg-emerald-50 text-emerald-700 shadow-sm" : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"}`}
                 >
                   {filterType === "crossfit" ? "CrossFit" : filterType === "cardio" ? "Cardio" : "Fitness"}
                 </button>
