@@ -110,6 +110,12 @@ export function HomePageClient() {
   const [editAsDailyMeal, setEditAsDailyMeal] = useState(false);
   const [editDailyMealDays, setEditDailyMealDays] = useState<MealWeekday[]>([...ALL_WEEKDAYS]);
   const [confirmation, setConfirmation] = useState<string | null>(null);
+  const [analysisModalOpen, setAnalysisModalOpen] = useState(false);
+  const [analysisMeta, setAnalysisMeta] = useState<{ text: string; source: "text" | "image" } | null>(null);
+  const [analysisResult, setAnalysisResult] = useState<CalorieResponse | null>(null);
+  const [analysisDate, setAnalysisDate] = useState(getNowDateTimeInputValues().date);
+  const [analysisTime, setAnalysisTime] = useState(getNowDateTimeInputValues().time);
+  const [analysisTotals, setAnalysisTotals] = useState({ calories: 0, protein: 0, carbs: 0, fat: 0 });
 
   useEffect(() => {
     const savedMeals = readJson<StoredMealLog[]>(STORAGE_KEYS.meals);
@@ -243,6 +249,42 @@ export function HomePageClient() {
     setConfirmation(confirmationMessage);
   }
 
+
+  function openAnalysisModal(result: CalorieResponse, meta: { text: string; source: "text" | "image" }) {
+    const now = getNowDateTimeInputValues();
+    setAnalysisMeta(meta);
+    setAnalysisResult(result);
+    setAnalysisDate(now.date);
+    setAnalysisTime(now.time);
+    setAnalysisTotals({
+      calories: result.totals.calories,
+      protein: result.totals.protein,
+      carbs: result.totals.carbs,
+      fat: result.totals.fat
+    });
+    setAnalysisModalOpen(true);
+  }
+
+  function addAnalyzedMealFromModal() {
+    if (!analysisResult || !analysisMeta) return;
+
+    const updatedResult: CalorieResponse = {
+      ...analysisResult,
+      totals: {
+        calories: Math.max(0, Number(analysisTotals.calories) || 0),
+        protein: Math.max(0, Number(analysisTotals.protein) || 0),
+        carbs: Math.max(0, Number(analysisTotals.carbs) || 0),
+        fat: Math.max(0, Number(analysisTotals.fat) || 0)
+      }
+    };
+
+    addMealFromAnalysis(updatedResult, analysisMeta, analysisDate, analysisTime);
+    setAnalysisModalOpen(false);
+    setAnalysisMeta(null);
+    setAnalysisResult(null);
+    setMealDescription("");
+  }
+
   async function analyzeMealText(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const trimmed = mealDescription.trim();
@@ -259,9 +301,7 @@ export function HomePageClient() {
       const payload = (await response.json()) as { data?: CalorieResponse; error?: string };
       if (!response.ok || !payload.data) throw new Error(payload.error ?? "Unable to analyze meal right now.");
 
-      const now = getNowDateTimeInputValues();
-      addMealFromAnalysis(payload.data, { text: trimmed, source: "text" }, now.date, now.time);
-      setMealDescription("");
+      openAnalysisModal(payload.data, { text: trimmed, source: "text" });
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Something went wrong.";
       setError(msg);
@@ -281,8 +321,7 @@ export function HomePageClient() {
       const payload = (await response.json()) as { data?: CalorieResponse; error?: string };
       if (!response.ok || !payload.data) throw new Error(payload.error ?? "Unable to analyze meal image right now.");
 
-      const now = getNowDateTimeInputValues();
-      addMealFromAnalysis(payload.data, { text: file.name || "Photo meal", source: "image" }, now.date, now.time);
+      openAnalysisModal(payload.data, { text: file.name || "Photo meal", source: "image" });
       if (fileInputRef.current) fileInputRef.current.value = "";
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Something went wrong.";
@@ -564,6 +603,47 @@ export function HomePageClient() {
             <div className="mt-5 flex justify-end gap-2">
               <button type="button" onClick={() => setEditMealId(null)} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700">Cancel</button>
               <button type="button" onClick={saveEditedMeal} className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-400">Save changes</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+
+      {analysisModalOpen && analysisResult ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
+          <div className="w-full max-w-2xl rounded-2xl bg-white p-6 shadow-xl">
+            <h3 className="text-lg font-semibold text-slate-900">Analyzed meal macros</h3>
+            <p className="mt-1 text-sm text-slate-500">Review and edit macros before adding this meal.</p>
+
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              <label className="text-sm text-slate-700">Meal date
+                <input type="date" value={analysisDate} onChange={(event) => setAnalysisDate(event.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" />
+              </label>
+              <label className="text-sm text-slate-700">Meal time
+                <input type="time" value={analysisTime} onChange={(event) => setAnalysisTime(event.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" />
+              </label>
+            </div>
+
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              <label className="text-sm text-slate-700">Calories
+                <input type="number" min={0} value={analysisTotals.calories} onChange={(event) => setAnalysisTotals((prev) => ({ ...prev, calories: Number(event.target.value) }))} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" />
+              </label>
+              <label className="text-sm text-slate-700">Protein (g)
+                <input type="number" min={0} value={analysisTotals.protein} onChange={(event) => setAnalysisTotals((prev) => ({ ...prev, protein: Number(event.target.value) }))} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" />
+              </label>
+              <label className="text-sm text-slate-700">Carbs (g)
+                <input type="number" min={0} value={analysisTotals.carbs} onChange={(event) => setAnalysisTotals((prev) => ({ ...prev, carbs: Number(event.target.value) }))} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" />
+              </label>
+              <label className="text-sm text-slate-700">Fat (g)
+                <input type="number" min={0} value={analysisTotals.fat} onChange={(event) => setAnalysisTotals((prev) => ({ ...prev, fat: Number(event.target.value) }))} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" />
+              </label>
+            </div>
+
+            {analysisMeta ? <p className="mt-3 text-xs text-slate-500">Meal: {analysisMeta.text}</p> : null}
+
+            <div className="mt-5 flex justify-end gap-2">
+              <button type="button" onClick={() => { setAnalysisModalOpen(false); setAnalysisMeta(null); setAnalysisResult(null); }} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700">Cancel</button>
+              <button type="button" onClick={addAnalyzedMealFromModal} className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-400">Add meal</button>
             </div>
           </div>
         </div>
