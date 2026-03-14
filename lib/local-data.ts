@@ -7,6 +7,7 @@ export const STORAGE_KEYS = {
   quickMeals: "ai-calorie-coach-quick-meals",
   disabledMacros: "ai-calorie-coach-disabled-macros",
   macroManualMode: "ai-calorie-coach-macro-manual-mode",
+  weeklyMacroScheme: "ai-calorie-coach-weekly-macro-scheme",
   workouts: "ai-calorie-coach-workouts",
   workoutExceptions: "ai-calorie-coach-workout-exceptions"
 } as const;

@@ -13,9 +13,20 @@ type QuickMealsModalProps = {
 
 function getNowDateTimeInputValues() {
   const now = new Date();
-  const date = now.toISOString().slice(0, 10);
-  const time = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
-  return { date, time };
+  const amsterdamDate = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Amsterdam",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).format(now);
+  const amsterdamTime = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/Amsterdam",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false
+  }).format(now);
+
+  return { date: amsterdamDate, time: amsterdamTime };
 }
 
 export function QuickMealsModal({

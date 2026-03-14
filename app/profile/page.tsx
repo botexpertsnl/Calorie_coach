@@ -3,9 +3,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { AppHeaderNav } from "@/components/AppHeaderNav";
 import { STORAGE_KEYS, readJson, writeJson } from "@/lib/local-data";
-import { TARGETS_UPDATED_EVENT, recalculateAndPersistTodayTargets } from "@/lib/daily-targets";
+import { TARGETS_UPDATED_EVENT, getDailyMacroTargets, recalculateAndPersistTodayTargets } from "@/lib/daily-targets";
 import { calculateDailyTargets } from "@/lib/nutrition";
-import { DailyTargets, MacroKey, ProfileInput } from "@/lib/types";
+import { getCurrentWeekDateKeys } from "@/lib/workout-execution";
+import { DailyTargets, MacroKey, ProfileInput, WorkoutDay, WorkoutException, WorkoutWeekPlan } from "@/lib/types";
 
 const defaultProfile: ProfileInput = {
   heightCm: 170,
@@ -44,6 +45,45 @@ const secondaryGoalOptionsByPrimary: Record<(typeof primaryGoalOptions)[number],
   "General Health & Longevity": ["Improve Energy", "Weight Maintenance", "Mobility", "Stress Management"]
 };
 
+const weekDayOrder: WorkoutDay[] = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
+
+const weekDayLabels: Record<WorkoutDay, string> = {
+  monday: "Monday",
+  tuesday: "Tuesday",
+  wednesday: "Wednesday",
+  thursday: "Thursday",
+  friday: "Friday",
+  saturday: "Saturday",
+  sunday: "Sunday"
+};
+
+function dayFromDateKey(dateKey: string): WorkoutDay {
+  const d = new Date(`${dateKey}T00:00:00`);
+  const day = d.getDay();
+  const map: Record<number, WorkoutDay> = {
+    0: "sunday",
+    1: "monday",
+    2: "tuesday",
+    3: "wednesday",
+    4: "thursday",
+    5: "friday",
+    6: "saturday"
+  };
+  return map[day];
+}
+
+function createDefaultWeekMacroScheme(targets: DailyTargets): Record<WorkoutDay, Record<MacroKey, number>> {
+  return weekDayOrder.reduce((acc, day) => {
+    acc[day] = {
+      calories: targets.calories,
+      protein: targets.protein,
+      carbs: targets.carbs,
+      fat: targets.fat
+    };
+    return acc;
+  }, {} as Record<WorkoutDay, Record<MacroKey, number>>);
+}
+
 function composeGoalText(mainGoal: string, secondaryGoal: string, goalDescription: string) {
   const parts: string[] = [];
 
@@ -80,12 +120,20 @@ export default function ProfilePage() {
   const [goalDescription, setGoalDescription] = useState("");
   const [isManualMode, setIsManualMode] = useState(false);
   const [saveConfirmation, setSaveConfirmation] = useState<string | null>(null);
+  const [workouts, setWorkouts] = useState<WorkoutWeekPlan | null>(null);
+  const [exceptions, setExceptions] = useState<WorkoutException[]>([]);
+  const [manualWeekScheme, setManualWeekScheme] = useState<Record<WorkoutDay, Record<MacroKey, number>>>(
+    createDefaultWeekMacroScheme(defaultTargets)
+  );
 
   useEffect(() => {
     const savedProfile = readJson<ProfileInput>(STORAGE_KEYS.profile);
     const savedTargets = readJson<DailyTargets>(STORAGE_KEYS.targets);
     const savedDisabled = readJson<MacroKey[]>(STORAGE_KEYS.disabledMacros);
     const savedManualMode = readJson<boolean>(STORAGE_KEYS.macroManualMode);
+    const savedWorkouts = readJson<WorkoutWeekPlan>(STORAGE_KEYS.workouts);
+    const savedExceptions = readJson<WorkoutException[]>(STORAGE_KEYS.workoutExceptions) ?? [];
+    const savedWeekScheme = readJson<Record<WorkoutDay, Record<MacroKey, number>>>(STORAGE_KEYS.weeklyMacroScheme);
 
     if (savedProfile) {
       setProfile({ ...defaultProfile, ...savedProfile });
@@ -98,6 +146,35 @@ export default function ProfilePage() {
     if (savedTargets) setTargets(savedTargets);
     if (savedDisabled) setDisabledMacros(savedDisabled);
     if (typeof savedManualMode === "boolean") setIsManualMode(savedManualMode);
+    if (savedWorkouts) setWorkouts(savedWorkouts);
+    setExceptions(savedExceptions);
+    if (savedWeekScheme) setManualWeekScheme(savedWeekScheme);
+  }, []);
+
+
+  useEffect(() => {
+    const syncWorkouts = () => {
+      const savedWorkouts = readJson<WorkoutWeekPlan>(STORAGE_KEYS.workouts);
+      const savedExceptions = readJson<WorkoutException[]>(STORAGE_KEYS.workoutExceptions) ?? [];
+      setWorkouts(savedWorkouts);
+      setExceptions(savedExceptions);
+    };
+
+    const onStorage = (event: StorageEvent) => {
+      if (!event.key || event.key === STORAGE_KEYS.workouts || event.key === STORAGE_KEYS.workoutExceptions) {
+        syncWorkouts();
+      }
+    };
+
+    const onFocus = () => syncWorkouts();
+
+    window.addEventListener("storage", onStorage);
+    window.addEventListener("focus", onFocus);
+
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener("focus", onFocus);
+    };
   }, []);
 
   const builtGoalText = useMemo(
@@ -117,12 +194,54 @@ export default function ProfilePage() {
     }
   }, [secondaryGoal, secondaryOptions]);
 
-  function updateProfile<K extends keyof ProfileInput>(key: K, value: ProfileInput[K]) {
-    setProfile((prev) => ({ ...prev, [key]: value }));
+  const calculatedWeekScheme = useMemo(() => {
+    const weekKeys = getCurrentWeekDateKeys();
+
+    return weekKeys.reduce((acc, dateKey) => {
+      const day = dayFromDateKey(dateKey);
+      const dayTargets = getDailyMacroTargets(dateKey, profile, workouts, exceptions);
+      acc[day] = {
+        calories: dayTargets.calories,
+        protein: dayTargets.protein,
+        carbs: dayTargets.carbs,
+        fat: dayTargets.fat
+      };
+      return acc;
+    }, {} as Record<WorkoutDay, Record<MacroKey, number>>);
+  }, [exceptions, profile, workouts]);
+
+  const visibleWeekScheme = isManualMode ? manualWeekScheme : calculatedWeekScheme;
+
+  const averageWeekMacros = useMemo(() => {
+    const count = weekDayOrder.length;
+    return macroConfig.reduce((acc, { key }) => {
+      const total = weekDayOrder.reduce((sum, day) => sum + (visibleWeekScheme[day]?.[key] ?? 0), 0);
+      acc[key] = Math.round(total / count);
+      return acc;
+    }, {} as Record<MacroKey, number>);
+  }, [visibleWeekScheme]);
+
+  function updateWeekMacro(day: WorkoutDay, key: MacroKey, value: number) {
+    setManualWeekScheme((prev) => {
+      const next = {
+        ...prev,
+        [day]: {
+          ...prev[day],
+          [key]: Math.max(0, value)
+        }
+      };
+      writeJson(STORAGE_KEYS.weeklyMacroScheme, next);
+      return next;
+    });
+
+    const todayDay = dayFromDateKey(new Date().toISOString().slice(0, 10));
+    if (day === todayDay) {
+      setTargets((prev) => ({ ...prev, [key]: Math.max(0, value) }));
+    }
   }
 
-  function updateTarget<K extends MacroKey>(key: K, value: number) {
-    setTargets((prev) => ({ ...prev, [key]: Math.max(0, value) }));
+  function updateProfile<K extends keyof ProfileInput>(key: K, value: ProfileInput[K]) {
+    setProfile((prev) => ({ ...prev, [key]: value }));
   }
 
   function disableMacro(key: MacroKey) {
@@ -152,15 +271,18 @@ export default function ProfilePage() {
     writeJson(STORAGE_KEYS.profile, profileToSave);
     writeJson(STORAGE_KEYS.disabledMacros, disabledMacros);
     writeJson(STORAGE_KEYS.macroManualMode, isManualMode);
+    writeJson(STORAGE_KEYS.weeklyMacroScheme, manualWeekScheme);
 
     if (!isManualMode) {
-      const nextTargets = recalculateAndPersistTodayTargets({ profile: profileToSave, disabledMacros, force: true });
+      const nextTargets = recalculateAndPersistTodayTargets({ profile: profileToSave, workouts, exceptions, disabledMacros, force: true });
       if (nextTargets) setTargets(nextTargets);
       const confirmationMessage = "Profile saved successfully. Daily macros were recalculated from your profile, daily activity, and today's workout plan.";
       setMessage(confirmationMessage);
       setSaveConfirmation(confirmationMessage);
     } else {
-      const manualTargets = { ...targets, disabledMacros };
+      const todayDay = dayFromDateKey(new Date().toISOString().slice(0, 10));
+      const todayManual = manualWeekScheme[todayDay] ?? createDefaultWeekMacroScheme(targets)[todayDay];
+      const manualTargets = { ...targets, ...todayManual, disabledMacros };
       writeJson(STORAGE_KEYS.targets, manualTargets);
       window.dispatchEvent(new CustomEvent(TARGETS_UPDATED_EVENT, { detail: manualTargets }));
       const confirmationMessage = "Profile saved successfully. Manual daily macros were kept.";
@@ -287,10 +409,14 @@ export default function ProfilePage() {
                 const next = e.target.checked;
                 setIsManualMode(next);
                 writeJson(STORAGE_KEYS.macroManualMode, next);
-                if (!next) {
-                  const recalculated = recalculateAndPersistTodayTargets({ profile, disabledMacros, force: true });
-                  if (recalculated) setTargets(recalculated);
+                if (next) {
+                  setManualWeekScheme(calculatedWeekScheme);
+                  writeJson(STORAGE_KEYS.weeklyMacroScheme, calculatedWeekScheme);
+                  return;
                 }
+
+                const recalculated = recalculateAndPersistTodayTargets({ profile, workouts, exceptions, disabledMacros, force: true });
+                if (recalculated) setTargets(recalculated);
               }}
             />
             <span className="font-medium text-slate-800">input manual</span>
@@ -301,33 +427,50 @@ export default function ProfilePage() {
           Daily macros are calculated from your body profile, goals, and today&apos;s planned workout load. They are recalculated when you save your profile.
         </p>
 
-        <div className="grid gap-3 md:grid-cols-4">
-          {macroConfig
-            .filter((macro) => !disabledMacros.includes(macro.key))
-            .map(({ key, label, unit }) => (
-              <label key={key} className="text-sm text-slate-700">
-                <span className="flex items-center justify-between">
-                  {label}
-                  <button
-                    type="button"
-                    onClick={() => disableMacro(key)}
-                    className="rounded-md px-2 py-0.5 text-xs text-slate-500 hover:bg-slate-100 hover:text-slate-700"
-                    aria-label={`Disable ${label}`}
-                  >
-                    ✕
-                  </button>
-                </span>
-                <input
-                  type="number"
-                  min={0}
-                  disabled={!isManualMode}
-                  className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
-                  value={targets[key]}
-                  onChange={(e) => updateTarget(key, Number(e.target.value))}
-                />
-                <p className="mt-1 text-xs text-slate-500">{unit}</p>
-              </label>
-            ))}
+        <div className="overflow-hidden rounded-xl border border-slate-200">
+          <table className="min-w-full divide-y divide-slate-200 text-sm">
+            <thead className="bg-slate-50">
+              <tr>
+                <th className="px-3 py-2 text-left font-semibold text-slate-700">Day</th>
+                {macroConfig.filter((macro) => !disabledMacros.includes(macro.key)).map(({ key, label, unit }) => (
+                  <th key={key} className="px-3 py-2 text-left font-semibold text-slate-700">
+                    <div className="flex items-center gap-2">
+                      <span>{label}</span>
+                      <span className="text-xs font-normal text-slate-500">({unit})</span>
+                      <button type="button" onClick={() => disableMacro(key)} className="rounded-md px-1.5 py-0.5 text-xs text-slate-500 hover:bg-slate-100">✕</button>
+                    </div>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {weekDayOrder.map((day) => (
+                <tr key={day}>
+                  <td className="px-3 py-2 font-medium text-slate-700">{weekDayLabels[day]}</td>
+                  {macroConfig.filter((macro) => !disabledMacros.includes(macro.key)).map(({ key }) => (
+                    <td key={`${day}-${key}`} className="px-3 py-2">
+                      <input
+                        type="number"
+                        min={0}
+                        disabled={!isManualMode}
+                        className="w-full rounded-lg border border-slate-200 px-2 py-1.5 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
+                        value={visibleWeekScheme[day]?.[key] ?? 0}
+                        onChange={(e) => updateWeekMacro(day, key, Number(e.target.value))}
+                      />
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+            <tfoot className="border-t border-slate-200 bg-slate-50">
+              <tr>
+                <td className="px-3 py-2 font-semibold text-slate-800">Weekly average</td>
+                {macroConfig.filter((macro) => !disabledMacros.includes(macro.key)).map(({ key }) => (
+                  <td key={`avg-${key}`} className="px-3 py-2 font-semibold text-slate-700">{averageWeekMacros[key]}</td>
+                ))}
+              </tr>
+            </tfoot>
+          </table>
         </div>
 
         {disabledMacros.length ? (
