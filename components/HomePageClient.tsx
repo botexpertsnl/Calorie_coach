@@ -2,13 +2,12 @@
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { AppHeaderNav } from "@/components/AppHeaderNav";
-import { NutritionAnalysisModal } from "@/components/NutritionAnalysisModal";
 import { QuickMealsModal } from "@/components/QuickMealsModal";
 import { Spinner } from "@/components/Spinner";
 import { STORAGE_KEYS, readJson, writeJson } from "@/lib/local-data";
 import { TARGETS_UPDATED_EVENT } from "@/lib/daily-targets";
 import { ALL_WEEKDAYS, applyDailyMealsForDate, getLocalDateKey, getMealsForDate, toCalorieResponseFromQuickMeal } from "@/lib/meals";
-import { CalorieResponse, DailyTargets, MacroKey, MealSourceType, MealWeekday, QuickMeal, StoredMealLog } from "@/lib/types";
+import { CalorieResponse, DailyTargets, MacroKey, MealSourceType, QuickMeal, StoredMealLog } from "@/lib/types";
 
 type MacroRowProps = {
   label: string;
@@ -77,6 +76,17 @@ function toIsoFromDateTime(date: string, time: string) {
   return Number.isNaN(localDateTime.getTime()) ? new Date().toISOString() : localDateTime.toISOString();
 }
 
+
+function toDateAndTimeFromIso(iso: string) {
+  const parsed = new Date(iso);
+  if (Number.isNaN(parsed.getTime())) return getNowDateTimeInputValues();
+
+  return {
+    date: parsed.toISOString().slice(0, 10),
+    time: `${String(parsed.getHours()).padStart(2, "0")}:${String(parsed.getMinutes()).padStart(2, "0")}`
+  };
+}
+
 export function HomePageClient() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -92,15 +102,12 @@ export function HomePageClient() {
   const [todayKey, setTodayKey] = useState(getLocalDateKey());
   const [deleteMealId, setDeleteMealId] = useState<string | null>(null);
 
-  const [isAnalysisModalOpen, setIsAnalysisModalOpen] = useState(false);
-  const [analysisStatus, setAnalysisStatus] = useState<"loading" | "success" | "error">("loading");
-  const [analysisResult, setAnalysisResult] = useState<CalorieResponse | null>(null);
-  const [analysisError, setAnalysisError] = useState<string | null>(null);
-  const [pendingMealMeta, setPendingMealMeta] = useState<{ text: string; source: "text" | "image" } | null>(null);
-  const [mealDateInput, setMealDateInput] = useState(getNowDateTimeInputValues().date);
-  const [mealTimeInput, setMealTimeInput] = useState(getNowDateTimeInputValues().time);
-  const [analysisIsDailyMeal, setAnalysisIsDailyMeal] = useState(false);
-  const [analysisDailyMealDays, setAnalysisDailyMealDays] = useState<MealWeekday[]>([...ALL_WEEKDAYS]);
+  const [editMealId, setEditMealId] = useState<string | null>(null);
+  const [editMealText, setEditMealText] = useState("");
+  const [editMealDate, setEditMealDate] = useState(getNowDateTimeInputValues().date);
+  const [editMealTime, setEditMealTime] = useState(getNowDateTimeInputValues().time);
+  const [editMealTotals, setEditMealTotals] = useState({ calories: 0, protein: 0, carbs: 0, fat: 0 });
+  const [confirmation, setConfirmation] = useState<string | null>(null);
 
   useEffect(() => {
     const savedMeals = readJson<StoredMealLog[]>(STORAGE_KEYS.meals);
@@ -194,30 +201,30 @@ export function HomePageClient() {
     [todayMeals]
   );
 
-  async function runAnalysis(requestFn: () => Promise<{ data?: CalorieResponse; error?: string; ok: boolean }>, meta: { text: string; source: "text" | "image" }) {
-    setError(null);
-    setAnalysisResult(null);
-    setAnalysisError(null);
-    setPendingMealMeta(meta);
-    const now = getNowDateTimeInputValues();
-    setMealDateInput(now.date);
-    setMealTimeInput(now.time);
-    setAnalysisIsDailyMeal(false);
-    setAnalysisDailyMealDays([...ALL_WEEKDAYS]);
-    setAnalysisStatus("loading");
-    setIsAnalysisModalOpen(true);
+  function appendMealToHistory(entry: StoredMealLog) {
+    setHistory((prev) => [entry, ...prev]);
+  }
 
-    try {
-      const payload = await requestFn();
-      if (!payload.ok || !payload.data) throw new Error(payload.error ?? "Unable to analyze meal right now.");
-      setAnalysisResult(payload.data);
-      setAnalysisStatus("success");
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : "Something went wrong.";
-      setError(msg);
-      setAnalysisError(msg);
-      setAnalysisStatus("error");
-    }
+  function addMealFromAnalysis(result: CalorieResponse, meta: { text: string; source: "text" | "image" }, date: string, time: string) {
+    const createdAt = toIsoFromDateTime(date, time);
+    const mealDate = createdAt.slice(0, 10);
+
+    appendMealToHistory({
+      id: crypto.randomUUID(),
+      title: meta.text,
+      text: meta.text,
+      source: meta.source,
+      sourceType: "ai",
+      mealDate,
+      result,
+      createdAt
+    });
+
+    const isToday = mealDate === todayKey;
+    const confirmationMessage = isToday
+      ? "Meal added to Meals Today."
+      : `Meal saved for ${mealDate}. It is stored for insights and will not appear in Meals Today.`;
+    setConfirmation(confirmationMessage);
   }
 
   async function analyzeMealText(event: FormEvent<HTMLFormElement>) {
@@ -225,71 +232,151 @@ export function HomePageClient() {
     const trimmed = mealDescription.trim();
     if (!trimmed) return setError("Please describe your meal before analyzing.");
     setIsTextLoading(true);
+    setError(null);
 
-    await runAnalysis(async () => {
+    try {
       const response = await fetch("/api/calories", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ mealDescription: trimmed })
       });
       const payload = (await response.json()) as { data?: CalorieResponse; error?: string };
-      return { ...payload, ok: response.ok };
-    }, { text: trimmed, source: "text" });
+      if (!response.ok || !payload.data) throw new Error(payload.error ?? "Unable to analyze meal right now.");
 
-    setIsTextLoading(false);
-    setMealDescription("");
+      const now = getNowDateTimeInputValues();
+      addMealFromAnalysis(payload.data, { text: trimmed, source: "text" }, now.date, now.time);
+      setMealDescription("");
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Something went wrong.";
+      setError(msg);
+    } finally {
+      setIsTextLoading(false);
+    }
   }
 
   async function analyzeMealImage(file: File) {
     setIsImageLoading(true);
-    await runAnalysis(async () => {
+    setError(null);
+
+    try {
       const formData = new FormData();
       formData.append("image", file);
       const response = await fetch("/api/analyze-image", { method: "POST", body: formData });
       const payload = (await response.json()) as { data?: CalorieResponse; error?: string };
-      return { ...payload, ok: response.ok };
-    }, { text: file.name || "Photo meal", source: "image" });
-    setIsImageLoading(false);
-    if (fileInputRef.current) fileInputRef.current.value = "";
+      if (!response.ok || !payload.data) throw new Error(payload.error ?? "Unable to analyze meal image right now.");
+
+      const now = getNowDateTimeInputValues();
+      addMealFromAnalysis(payload.data, { text: file.name || "Photo meal", source: "image" }, now.date, now.time);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Something went wrong.";
+      setError(msg);
+    } finally {
+      setIsImageLoading(false);
+    }
   }
 
-  function closeAnalysisModal() {
-    setIsAnalysisModalOpen(false);
-    setPendingMealMeta(null);
-    setAnalysisResult(null);
-    setAnalysisError(null);
-    const now = getNowDateTimeInputValues();
-    setMealDateInput(now.date);
-    setMealTimeInput(now.time);
-    setAnalysisIsDailyMeal(false);
-    setAnalysisDailyMealDays([...ALL_WEEKDAYS]);
+  async function handleQuickAddClick() {
+    const trimmed = mealDescription.trim();
+    if (!trimmed) {
+      setIsQuickMealsOpen(true);
+      return;
+    }
+
+    setIsTextLoading(true);
+    setError(null);
+
+    try {
+      const response = await fetch("/api/calories", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mealDescription: trimmed })
+      });
+      const payload = (await response.json()) as { data?: CalorieResponse; error?: string };
+      if (!response.ok || !payload.data) throw new Error(payload.error ?? "Unable to analyze meal right now.");
+
+      const now = getNowDateTimeInputValues();
+      addMealFromAnalysis(payload.data, { text: trimmed, source: "text" }, now.date, now.time);
+      setMealDescription("");
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Something went wrong.";
+      setError(msg);
+    } finally {
+      setIsTextLoading(false);
+    }
   }
 
-  function toggleAnalysisDailyMealDay(day: MealWeekday) {
-    setAnalysisDailyMealDays((prev) =>
-      prev.includes(day) ? prev.filter((item) => item !== day) : [...prev, day]
+  function openEditMeal(meal: StoredMealLog) {
+    setEditMealId(meal.id);
+    setEditMealText(meal.text);
+    const dateTime = toDateAndTimeFromIso(meal.createdAt);
+    setEditMealDate(dateTime.date);
+    setEditMealTime(dateTime.time);
+    setEditMealTotals({
+      calories: meal.result.totals.calories,
+      protein: meal.result.totals.protein,
+      carbs: meal.result.totals.carbs,
+      fat: meal.result.totals.fat
+    });
+  }
+
+  function saveEditedMeal() {
+    if (!editMealId) return;
+    const createdAt = toIsoFromDateTime(editMealDate, editMealTime);
+    const mealDate = createdAt.slice(0, 10);
+
+    setHistory((prev) =>
+      prev.map((entry) =>
+        entry.id !== editMealId
+          ? entry
+          : {
+              ...entry,
+              text: editMealText.trim() || entry.text,
+              title: editMealText.trim() || entry.title,
+              mealDate,
+              createdAt,
+              result: {
+                ...entry.result,
+                totals: {
+                  calories: Math.max(0, Number(editMealTotals.calories) || 0),
+                  protein: Math.max(0, Number(editMealTotals.protein) || 0),
+                  carbs: Math.max(0, Number(editMealTotals.carbs) || 0),
+                  fat: Math.max(0, Number(editMealTotals.fat) || 0)
+                }
+              }
+            }
+      )
     );
+
+    const confirmationMessage = mealDate === todayKey
+      ? "Meal updated in Meals Today."
+      : `Meal updated for ${mealDate}. It is stored for insights and not shown in Meals Today.`;
+    setConfirmation(confirmationMessage);
+    setEditMealId(null);
   }
+
 
   function handleAddQuickMealToDay(meal: QuickMeal, date: string, time: string) {
     const createdAt = toIsoFromDateTime(date, time);
     const mealDate = createdAt.slice(0, 10);
 
-    setHistory((prev) => [
-      {
-        id: crypto.randomUUID(),
-        title: meal.title,
-        text: meal.title,
-        source: "quick_meal",
-        sourceType: "quick",
-        quickMealId: meal.id,
-        mealDate,
-        result: toCalorieResponseFromQuickMeal(meal),
-        createdAt
-      },
-      ...prev
-    ]);
+    appendMealToHistory({
+      id: crypto.randomUUID(),
+      title: meal.title,
+      text: meal.title,
+      source: "quick_meal",
+      sourceType: "quick",
+      quickMealId: meal.id,
+      mealDate,
+      result: toCalorieResponseFromQuickMeal(meal),
+      createdAt
+    });
+
     setIsQuickMealsOpen(false);
+    const confirmationMessage = mealDate === todayKey
+      ? "Quick meal added to Meals Today."
+      : `Quick meal saved for ${mealDate}. It is stored for insights and will not appear in Meals Today.`;
+    setConfirmation(confirmationMessage);
   }
 
   function handleCreateOrUpdateQuickMeal(
@@ -323,48 +410,6 @@ export function HomePageClient() {
     setQuickMeals((prev) => prev.filter((meal) => meal.id !== mealId));
   }
 
-  function handleAddMeal() {
-    if (!analysisResult || !pendingMealMeta) return;
-
-    const createdAt = toIsoFromDateTime(mealDateInput, mealTimeInput);
-    const mealDate = createdAt.slice(0, 10);
-
-    setHistory((prev) => [
-      {
-        id: crypto.randomUUID(),
-        title: pendingMealMeta.text,
-        text: pendingMealMeta.text,
-        source: pendingMealMeta.source,
-        sourceType: "ai",
-        mealDate,
-        result: analysisResult,
-        createdAt
-      },
-      ...prev
-    ]);
-
-    if (analysisIsDailyMeal) {
-      const now = new Date().toISOString();
-      setQuickMeals((prev) => [
-        {
-          id: crypto.randomUUID(),
-          title: pendingMealMeta.text,
-          calories: analysisResult.totals.calories,
-          protein: analysisResult.totals.protein,
-          carbs: analysisResult.totals.carbs,
-          fat: analysisResult.totals.fat,
-          isDailyMeal: true,
-          dailyMealDays: analysisDailyMealDays.length ? analysisDailyMealDays : [...ALL_WEEKDAYS],
-          createdAt: now,
-          updatedAt: now
-        },
-        ...prev
-      ]);
-    }
-
-    closeAnalysisModal();
-  }
-
   function confirmDeleteMeal() {
     if (!deleteMealId) return;
     setHistory((prev) => prev.filter((entry) => entry.id !== deleteMealId));
@@ -386,26 +431,46 @@ export function HomePageClient() {
           </div>
         </div>
       ) : null}
+      {editMealId ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
+          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl">
+            <h3 className="text-lg font-semibold text-slate-900">Edit meal</h3>
+            <div className="mt-4 space-y-3">
+              <label className="block text-sm text-slate-700">Meal description
+                <input type="text" value={editMealText} onChange={(event) => setEditMealText(event.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" />
+              </label>
+              <div className="grid gap-3 md:grid-cols-2">
+                <label className="text-sm text-slate-700">Meal date
+                  <input type="date" value={editMealDate} onChange={(event) => setEditMealDate(event.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" />
+                </label>
+                <label className="text-sm text-slate-700">Meal time
+                  <input type="time" value={editMealTime} onChange={(event) => setEditMealTime(event.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" />
+                </label>
+              </div>
+              <div className="grid gap-3 md:grid-cols-2">
+                <label className="text-sm text-slate-700">Calories
+                  <input type="number" min={0} value={editMealTotals.calories} onChange={(event) => setEditMealTotals((prev) => ({ ...prev, calories: Number(event.target.value) }))} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" />
+                </label>
+                <label className="text-sm text-slate-700">Protein (g)
+                  <input type="number" min={0} value={editMealTotals.protein} onChange={(event) => setEditMealTotals((prev) => ({ ...prev, protein: Number(event.target.value) }))} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" />
+                </label>
+                <label className="text-sm text-slate-700">Carbs (g)
+                  <input type="number" min={0} value={editMealTotals.carbs} onChange={(event) => setEditMealTotals((prev) => ({ ...prev, carbs: Number(event.target.value) }))} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" />
+                </label>
+                <label className="text-sm text-slate-700">Fat (g)
+                  <input type="number" min={0} value={editMealTotals.fat} onChange={(event) => setEditMealTotals((prev) => ({ ...prev, fat: Number(event.target.value) }))} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" />
+                </label>
+              </div>
+            </div>
+            <div className="mt-5 flex justify-end gap-2">
+              <button type="button" onClick={() => setEditMealId(null)} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700">Cancel</button>
+              <button type="button" onClick={saveEditedMeal} className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-400">Save changes</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
-      <NutritionAnalysisModal
-        isOpen={isAnalysisModalOpen}
-        status={analysisStatus}
-        result={analysisResult}
-        errorMessage={analysisError}
-        onClose={closeAnalysisModal}
-        onAddMeal={handleAddMeal}
-        mealDate={mealDateInput}
-        mealTime={mealTimeInput}
-        onMealDateChange={setMealDateInput}
-        onMealTimeChange={setMealTimeInput}
-        isDailyMeal={analysisIsDailyMeal}
-        dailyMealDays={analysisDailyMealDays}
-        onDailyMealToggle={(checked) => {
-          setAnalysisIsDailyMeal(checked);
-          if (checked && analysisDailyMealDays.length === 0) setAnalysisDailyMealDays([...ALL_WEEKDAYS]);
-        }}
-        onDailyMealDayToggle={toggleAnalysisDailyMealDay}
-      />
+
       <QuickMealsModal
         isOpen={isQuickMealsOpen}
         quickMeals={quickMeals}
@@ -417,6 +482,15 @@ export function HomePageClient() {
 
       <main className="mx-auto w-full max-w-6xl space-y-6 px-4 py-8 md:px-8">
         <AppHeaderNav />
+
+        {confirmation ? (
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+            <div className="flex items-center justify-between gap-3">
+              <p>{confirmation}</p>
+              <button type="button" onClick={() => setConfirmation(null)} className="rounded-md border border-emerald-200 px-2 py-1 text-xs font-semibold text-emerald-700 hover:bg-emerald-100">Dismiss</button>
+            </div>
+          </div>
+        ) : null}
 
         <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
           <div className="grid gap-4 md:grid-cols-2">
@@ -444,7 +518,7 @@ export function HomePageClient() {
               <div className="flex gap-2">
                 <button
                   type="button"
-                  onClick={() => setIsQuickMealsOpen(true)}
+                  onClick={() => void handleQuickAddClick()}
                   className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
                 >
                   Quick Add
@@ -463,7 +537,7 @@ export function HomePageClient() {
           {todayMeals.length === 0 ? <div className="mt-8 rounded-xl border border-dashed border-slate-200 py-10 text-center text-slate-500">No meals logged for today yet.</div> : (
             <ul className="mt-4 space-y-3">
               {todayMeals.map((entry) => (
-                <li key={entry.id} className="rounded-xl border border-slate-200 p-4">
+                <li key={entry.id} className="cursor-pointer rounded-xl border border-slate-200 p-4 hover:bg-slate-50" onClick={() => openEditMeal(entry)}>
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-slate-400"><p>{entry.sourceType === "daily" ? "Daily meal" : entry.source === "image" ? "Photo meal" : entry.source === "quick_meal" ? "Quick meal" : "Text meal"} · {new Date(entry.createdAt).toLocaleDateString()} {new Date(entry.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</p>{entry.sourceType === "daily" ? <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">Daily</span> : null}</div>
@@ -472,7 +546,7 @@ export function HomePageClient() {
                     </div>
                     <button
                       type="button"
-                      onClick={() => setDeleteMealId(entry.id)}
+                      onClick={(event) => { event.stopPropagation(); setDeleteMealId(entry.id); }}
                       className="rounded-lg border border-rose-200 px-2 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-50"
                       aria-label={`Delete meal ${entry.text}`}
                     >
