@@ -13,7 +13,7 @@ type QuickMealsModalProps = {
 
 function getNowDateTimeInputValues() {
   const now = new Date();
-  const amsterdamDate = new Intl.DateTimeFormat("en-CA", {
+  const amsterdamDate = new Intl.DateTimeFormat("sv-SE", {
     timeZone: "Europe/Amsterdam",
     year: "numeric",
     month: "2-digit",

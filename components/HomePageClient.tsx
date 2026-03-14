@@ -64,7 +64,7 @@ function normalizeQuickMeal(meal: QuickMeal): QuickMeal {
 
 function getNowDateTimeInputValues() {
   const now = new Date();
-  const amsterdamDate = new Intl.DateTimeFormat("en-CA", {
+  const amsterdamDate = new Intl.DateTimeFormat("sv-SE", {
     timeZone: "Europe/Amsterdam",
     year: "numeric",
     month: "2-digit",
@@ -80,11 +80,46 @@ function getNowDateTimeInputValues() {
   return { date: amsterdamDate, time: amsterdamTime };
 }
 
+function getAmsterdamOffsetMs(date: Date) {
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Europe/Amsterdam",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false
+  });
+
+  const parts = formatter.formatToParts(date);
+  const getPart = (type: Intl.DateTimeFormatPartTypes) => Number(parts.find((part) => part.type === type)?.value ?? 0);
+  const asUtc = Date.UTC(
+    getPart("year"),
+    getPart("month") - 1,
+    getPart("day"),
+    getPart("hour"),
+    getPart("minute"),
+    getPart("second")
+  );
+
+  return asUtc - date.getTime();
+}
+
 function toIsoFromDateTime(date: string, time: string) {
   const safeDate = date || getNowDateTimeInputValues().date;
   const safeTime = time || getNowDateTimeInputValues().time;
-  const localDateTime = new Date(`${safeDate}T${safeTime}:00`);
-  return Number.isNaN(localDateTime.getTime()) ? new Date().toISOString() : localDateTime.toISOString();
+  const [year, month, day] = safeDate.split("-").map(Number);
+  const [hour, minute] = safeTime.split(":").map(Number);
+
+  if ([year, month, day, hour, minute].some((value) => Number.isNaN(value))) {
+    return new Date().toISOString();
+  }
+
+  const utcGuess = new Date(Date.UTC(year, month - 1, day, hour, minute, 0));
+  const offsetMs = getAmsterdamOffsetMs(utcGuess);
+  const amsterdamDateTime = new Date(utcGuess.getTime() - offsetMs);
+  return amsterdamDateTime.toISOString();
 }
 
 
@@ -240,7 +275,7 @@ export function HomePageClient() {
 
   function addMealFromAnalysis(result: CalorieResponse, meta: { text: string; source: "text" | "image" }, date: string, time: string) {
     const createdAt = toIsoFromDateTime(date, time);
-    const mealDate = createdAt.slice(0, 10);
+    const mealDate = date || getNowDateTimeInputValues().date;
 
     appendMealToHistory({
       id: crypto.randomUUID(),
@@ -402,7 +437,7 @@ export function HomePageClient() {
   function saveEditedMeal() {
     if (!editMealId) return;
     const createdAt = toIsoFromDateTime(editMealDate, editMealTime);
-    const mealDate = createdAt.slice(0, 10);
+    const mealDate = editMealDate || getNowDateTimeInputValues().date;
 
     setHistory((prev) =>
       prev.map((entry) =>
@@ -484,7 +519,7 @@ export function HomePageClient() {
 
   function handleAddQuickMealToDay(meal: QuickMeal, date: string, time: string) {
     const createdAt = toIsoFromDateTime(date, time);
-    const mealDate = createdAt.slice(0, 10);
+    const mealDate = date || getNowDateTimeInputValues().date;
 
     appendMealToHistory({
       id: crypto.randomUUID(),
