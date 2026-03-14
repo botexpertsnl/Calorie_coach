@@ -29,6 +29,7 @@ export function QuickMealsModal({
   const [editingMealId, setEditingMealId] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [confirmDailyAddMealId, setConfirmDailyAddMealId] = useState<string | null>(null);
   const [{ date, time }, setDateTime] = useState(getNowDateTimeInputValues());
 
   const editingMeal = useMemo(
@@ -45,6 +46,7 @@ export function QuickMealsModal({
     setIsCreating(false);
     setEditingMealId(null);
     setConfirmDeleteId(null);
+    setConfirmDailyAddMealId(null);
   }, [isOpen]);
 
   if (!isOpen) return null;
@@ -109,10 +111,18 @@ export function QuickMealsModal({
                       </div>
 
                       <div className="flex flex-wrap gap-2">
-                        <button type="button" onClick={(event) => { event.stopPropagation(); onAddQuickMealToDay(meal, date, time); }} className="rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-400">Add</button>
+                        <button type="button" onClick={(event) => { event.stopPropagation(); if (meal.isDailyMeal) { setConfirmDailyAddMealId(meal.id); return; } onAddQuickMealToDay(meal, date, time); }} className="rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-400">Add</button>
                         <button type="button" onClick={(event) => { event.stopPropagation(); setConfirmDeleteId(meal.id); }} className="rounded-lg border border-rose-200 px-3 py-1.5 text-xs font-semibold text-rose-700">Delete</button>
                       </div>
                     </div>
+
+                    {confirmDailyAddMealId === meal.id ? (
+                      <div className="mt-3 flex items-center gap-2 rounded-lg bg-amber-50 p-2 text-xs">
+                        <p className="text-amber-800">This is a Daily Meal and may already be auto-added today. Add it again manually?</p>
+                        <button type="button" onClick={(event) => { event.stopPropagation(); onAddQuickMealToDay(meal, date, time); setConfirmDailyAddMealId(null); }} className="rounded bg-amber-600 px-2 py-1 text-white">Add anyway</button>
+                        <button type="button" onClick={(event) => { event.stopPropagation(); setConfirmDailyAddMealId(null); }} className="rounded border border-slate-200 px-2 py-1">Cancel</button>
+                      </div>
+                    ) : null}
 
                     {confirmDeleteId === meal.id ? (
                       <div className="mt-3 flex items-center gap-2 rounded-lg bg-rose-50 p-2 text-xs">

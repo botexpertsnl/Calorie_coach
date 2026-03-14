@@ -5,9 +5,9 @@ import { AppHeaderNav } from "@/components/AppHeaderNav";
 import { QuickMealsModal } from "@/components/QuickMealsModal";
 import { Spinner } from "@/components/Spinner";
 import { STORAGE_KEYS, readJson, writeJson } from "@/lib/local-data";
-import { TARGETS_UPDATED_EVENT } from "@/lib/daily-targets";
+import { TARGETS_UPDATED_EVENT, recalculateAndPersistTodayTargets } from "@/lib/daily-targets";
 import { ALL_WEEKDAYS, applyDailyMealsForDate, getLocalDateKey, getMealsForDate, toCalorieResponseFromQuickMeal } from "@/lib/meals";
-import { CalorieResponse, DailyTargets, MacroKey, MealSourceType, QuickMeal, StoredMealLog } from "@/lib/types";
+import { CalorieResponse, DailyTargets, MacroKey, MealSourceType, MealWeekday, QuickMeal, StoredMealLog } from "@/lib/types";
 
 type MacroRowProps = {
   label: string;
@@ -107,6 +107,8 @@ export function HomePageClient() {
   const [editMealDate, setEditMealDate] = useState(getNowDateTimeInputValues().date);
   const [editMealTime, setEditMealTime] = useState(getNowDateTimeInputValues().time);
   const [editMealTotals, setEditMealTotals] = useState({ calories: 0, protein: 0, carbs: 0, fat: 0 });
+  const [editAsDailyMeal, setEditAsDailyMeal] = useState(false);
+  const [editDailyMealDays, setEditDailyMealDays] = useState<MealWeekday[]>([...ALL_WEEKDAYS]);
   const [confirmation, setConfirmation] = useState<string | null>(null);
 
   useEffect(() => {
@@ -144,7 +146,8 @@ export function HomePageClient() {
 
   useEffect(() => {
     const syncTargets = () => {
-      const savedTargets = readJson<DailyTargets>(STORAGE_KEYS.targets);
+      const recalculated = recalculateAndPersistTodayTargets();
+      const savedTargets = recalculated ?? readJson<DailyTargets>(STORAGE_KEYS.targets);
       const savedDisabled = readJson<MacroKey[]>(STORAGE_KEYS.disabledMacros) ?? [];
       if (savedTargets) setDailyTargets(savedTargets);
       setDisabledMacros(savedDisabled);
@@ -163,16 +166,29 @@ export function HomePageClient() {
         return;
       }
 
-      const watchKeys = new Set<string>([STORAGE_KEYS.targets, STORAGE_KEYS.disabledMacros]);
+      const watchKeys = new Set<string>([
+        STORAGE_KEYS.targets,
+        STORAGE_KEYS.disabledMacros,
+        STORAGE_KEYS.profile,
+        STORAGE_KEYS.workouts,
+        STORAGE_KEYS.workoutExceptions,
+        STORAGE_KEYS.macroManualMode
+      ]);
+
       if (watchKeys.has(event.key)) syncTargets();
     };
 
+    const onFocus = () => syncTargets();
+
+    syncTargets();
     window.addEventListener(TARGETS_UPDATED_EVENT, onTargetsUpdated as EventListener);
     window.addEventListener("storage", onStorage);
+    window.addEventListener("focus", onFocus);
 
     return () => {
       window.removeEventListener(TARGETS_UPDATED_EVENT, onTargetsUpdated as EventListener);
       window.removeEventListener("storage", onStorage);
+      window.removeEventListener("focus", onFocus);
     };
   }, []);
 
@@ -318,6 +334,19 @@ export function HomePageClient() {
       carbs: meal.result.totals.carbs,
       fat: meal.result.totals.fat
     });
+
+    const relatedQuickMeal = meal.quickMealId
+      ? quickMeals.find((item) => item.id === meal.quickMealId)
+      : quickMeals.find((item) => item.title.toLowerCase() === meal.text.toLowerCase() && item.isDailyMeal);
+
+    setEditAsDailyMeal(Boolean(relatedQuickMeal?.isDailyMeal || meal.sourceType === "daily"));
+    setEditDailyMealDays(relatedQuickMeal?.dailyMealDays?.length ? relatedQuickMeal.dailyMealDays : [...ALL_WEEKDAYS]);
+  }
+
+  function toggleEditDailyMealDay(day: MealWeekday) {
+    setEditDailyMealDays((prev) =>
+      prev.includes(day) ? prev.filter((item) => item !== day) : [...prev, day]
+    );
   }
 
   function saveEditedMeal() {
@@ -333,6 +362,7 @@ export function HomePageClient() {
               ...entry,
               text: editMealText.trim() || entry.text,
               title: editMealText.trim() || entry.title,
+              sourceType: editAsDailyMeal ? "daily" : entry.sourceType,
               mealDate,
               createdAt,
               result: {
@@ -348,11 +378,57 @@ export function HomePageClient() {
       )
     );
 
+    if (editAsDailyMeal) {
+      const now = new Date().toISOString();
+      const safeDays = editDailyMealDays.length ? editDailyMealDays : [...ALL_WEEKDAYS];
+
+      setQuickMeals((prev) => {
+        const currentEntry = history.find((entry) => entry.id === editMealId);
+        const existingId = currentEntry?.quickMealId;
+
+        if (existingId && prev.some((item) => item.id === existingId)) {
+          return prev.map((item) =>
+            item.id === existingId
+              ? {
+                  ...item,
+                  title: editMealText.trim() || item.title,
+                  calories: Math.max(0, Number(editMealTotals.calories) || 0),
+                  protein: Math.max(0, Number(editMealTotals.protein) || 0),
+                  carbs: Math.max(0, Number(editMealTotals.carbs) || 0),
+                  fat: Math.max(0, Number(editMealTotals.fat) || 0),
+                  isDailyMeal: true,
+                  dailyMealDays: safeDays,
+                  updatedAt: now
+                }
+              : item
+          );
+        }
+
+        return [
+          {
+            id: crypto.randomUUID(),
+            title: editMealText.trim() || "Daily Meal",
+            calories: Math.max(0, Number(editMealTotals.calories) || 0),
+            protein: Math.max(0, Number(editMealTotals.protein) || 0),
+            carbs: Math.max(0, Number(editMealTotals.carbs) || 0),
+            fat: Math.max(0, Number(editMealTotals.fat) || 0),
+            isDailyMeal: true,
+            dailyMealDays: safeDays,
+            createdAt: now,
+            updatedAt: now
+          },
+          ...prev
+        ];
+      });
+    }
+
     const confirmationMessage = mealDate === todayKey
       ? "Meal updated in Meals Today."
       : `Meal updated for ${mealDate}. It is stored for insights and not shown in Meals Today.`;
     setConfirmation(confirmationMessage);
     setEditMealId(null);
+    setEditAsDailyMeal(false);
+    setEditDailyMealDays([...ALL_WEEKDAYS]);
   }
 
 
@@ -373,6 +449,7 @@ export function HomePageClient() {
     });
 
     setIsQuickMealsOpen(false);
+
     const confirmationMessage = mealDate === todayKey
       ? "Quick meal added to Meals Today."
       : `Quick meal saved for ${mealDate}. It is stored for insights and will not appear in Meals Today.`;
@@ -447,6 +524,28 @@ export function HomePageClient() {
                   <input type="time" value={editMealTime} onChange={(event) => setEditMealTime(event.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" />
                 </label>
               </div>
+              <label className="flex items-start gap-3 rounded-xl border border-slate-200 p-3 text-sm text-slate-700">
+                <input type="checkbox" checked={editAsDailyMeal} onChange={(event) => setEditAsDailyMeal(event.target.checked)} className="mt-0.5 h-4 w-4 rounded border-slate-300 text-emerald-500 focus:ring-emerald-400" />
+                <span>
+                  <span className="font-medium text-slate-800">Save as Daily Meal</span>
+                  <span className="mt-1 block text-xs text-slate-500">This meal can be auto-added on selected days.</span>
+                </span>
+              </label>
+
+              {editAsDailyMeal ? (
+                <div className="rounded-xl border border-slate-200 p-3">
+                  <p className="text-sm font-medium text-slate-800">Auto-add days</p>
+                  <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                    {ALL_WEEKDAYS.map((day) => (
+                      <label key={day} className="inline-flex items-center gap-2 text-sm text-slate-700">
+                        <input type="checkbox" checked={editDailyMealDays.includes(day)} onChange={() => toggleEditDailyMealDay(day)} className="h-4 w-4 rounded border-slate-300 text-emerald-500 focus:ring-emerald-400" />
+                        {day.charAt(0).toUpperCase() + day.slice(1)}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
               <div className="grid gap-3 md:grid-cols-2">
                 <label className="text-sm text-slate-700">Calories
                   <input type="number" min={0} value={editMealTotals.calories} onChange={(event) => setEditMealTotals((prev) => ({ ...prev, calories: Number(event.target.value) }))} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" />

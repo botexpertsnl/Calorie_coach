@@ -79,6 +79,7 @@ export default function ProfilePage() {
   const [secondaryGoal, setSecondaryGoal] = useState("");
   const [goalDescription, setGoalDescription] = useState("");
   const [isManualMode, setIsManualMode] = useState(false);
+  const [saveConfirmation, setSaveConfirmation] = useState<string | null>(null);
 
   useEffect(() => {
     const savedProfile = readJson<ProfileInput>(STORAGE_KEYS.profile);
@@ -157,14 +158,14 @@ export default function ProfilePage() {
       if (nextTargets) setTargets(nextTargets);
       const confirmationMessage = "Profile saved successfully. Daily macros were recalculated from your profile, daily activity, and today's workout plan.";
       setMessage(confirmationMessage);
-      window.alert(confirmationMessage);
+      setSaveConfirmation(confirmationMessage);
     } else {
       const manualTargets = { ...targets, disabledMacros };
       writeJson(STORAGE_KEYS.targets, manualTargets);
       window.dispatchEvent(new CustomEvent(TARGETS_UPDATED_EVENT, { detail: manualTargets }));
       const confirmationMessage = "Profile saved successfully. Manual daily macros were kept.";
       setMessage(confirmationMessage);
-      window.alert(confirmationMessage);
+      setSaveConfirmation(confirmationMessage);
     }
   }
 
@@ -352,6 +353,19 @@ export default function ProfilePage() {
         <p className="text-sm text-slate-500">Save Profile stores body profile, goals, and macro targets together.</p>
         <button onClick={saveProfile} className="rounded-xl bg-emerald-500 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-400">Save Profile</button>
       </section>
+
+
+      {saveConfirmation ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl ring-1 ring-slate-200">
+            <h3 className="text-lg font-semibold text-slate-900">Profile saved</h3>
+            <p className="mt-2 text-sm text-slate-600">{saveConfirmation}</p>
+            <div className="mt-5 flex justify-end">
+              <button type="button" onClick={() => setSaveConfirmation(null)} className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-400">OK</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {message ? <p className="text-sm text-slate-600">{message}</p> : null}
     </main>
