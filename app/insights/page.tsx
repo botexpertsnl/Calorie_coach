@@ -1,15 +1,109 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { ReactNode, useEffect, useMemo, useState } from "react";
 import { AppHeaderNav } from "@/components/AppHeaderNav";
-import { InsightsLineChart } from "@/components/InsightsLineChart";
-import { STORAGE_KEYS, readJson } from "@/lib/local-data";
-import { TARGETS_UPDATED_EVENT } from "@/lib/daily-targets";
+import { TARGETS_UPDATED_EVENT, getDailyMacroTargets } from "@/lib/daily-targets";
 import { ensureDemoSeedData } from "@/lib/demo-seed";
+import { STORAGE_KEYS, readJson } from "@/lib/local-data";
+import { getLocalDateKey } from "@/lib/meals";
 import { buildEffectiveWorkoutInstances, buildWorkoutAdjustedSummary, getCurrentWeekDateKeys, getDateKeysInRange } from "@/lib/workout-execution";
-import { DailyTargets, MacroKey, MacroTotals, ProfileInput, StoredMealLog, WorkoutException, WorkoutWeekPlan } from "@/lib/types";
+import {
+  DailyTargets,
+  MacroKey,
+  MacroTotals,
+  MuscleGroup,
+  ProfileInput,
+  SpecifyMuscle,
+  StoredMealLog,
+  WorkoutException,
+  WorkoutExercise,
+  WorkoutExerciseType,
+  WorkoutWeekPlan
+} from "@/lib/types";
 
 type RangePreset = "7d" | "1m" | "3m" | "6m" | "custom";
+type ProgressMetric = "weight" | "reps" | "volume" | "duration" | "calories";
+
+type NutritionPoint = {
+  date: string;
+  actual: MacroTotals;
+  target: MacroTotals;
+};
+
+type ExerciseRecord = {
+  date: string;
+  type: WorkoutExerciseType;
+  exerciseName: string;
+  muscleGroup: MuscleGroup;
+  specifyMuscle?: SpecifyMuscle;
+  weight: number;
+  reps: number;
+  volume: number;
+  duration: number;
+  calories: number;
+};
+
+const rangeOptions: Array<{ value: RangePreset; label: string }> = [
+  { value: "7d", label: "7 days" },
+  { value: "1m", label: "1 month" },
+  { value: "3m", label: "3 months" },
+  { value: "6m", label: "6 months" },
+  { value: "custom", label: "Custom" }
+];
+
+const macroConfigs: Array<{ key: MacroKey; label: string; unit: string; color: string }> = [
+  { key: "calories", label: "Calories", unit: "kcal", color: "#f97316" },
+  { key: "protein", label: "Protein", unit: "g", color: "#22c55e" },
+  { key: "carbs", label: "Carbs", unit: "g", color: "#3b82f6" },
+  { key: "fat", label: "Fat", unit: "g", color: "#a855f7" }
+];
+
+const muscleGroupLabels: Record<MuscleGroup, string> = {
+  chest: "Chest",
+  back: "Back",
+  legs: "Legs",
+  shoulders: "Shoulders",
+  arms: "Arms",
+  core: "Core"
+};
+
+const specifyMuscleLabels: Record<SpecifyMuscle, string> = {
+  upper_chest: "Upper Chest",
+  mid_chest: "Mid Chest",
+  lower_chest: "Lower Chest",
+  inner_chest: "Inner Chest",
+  lats: "Lats",
+  upper_back: "Upper Back",
+  mid_back: "Mid Back",
+  lower_back: "Lower Back",
+  traps: "Traps",
+  quads: "Quads",
+  hamstrings: "Hamstrings",
+  glutes: "Glutes",
+  calves: "Calves",
+  adductors: "Adductors",
+  hip_flexors: "Hip Flexors",
+  front_delts: "Front Delts",
+  side_delts: "Side Delts",
+  rear_delts: "Rear Delts",
+  biceps: "Biceps",
+  triceps: "Triceps",
+  forearms: "Forearms",
+  brachialis: "Brachialis",
+  upper_abs: "Upper Abs",
+  lower_abs: "Lower Abs",
+  obliques: "Obliques",
+  deep_core: "Deep Core"
+};
+
+const specifyMuscleByGroup: Record<MuscleGroup, SpecifyMuscle[]> = {
+  chest: ["upper_chest", "mid_chest", "lower_chest", "inner_chest"],
+  back: ["lats", "upper_back", "mid_back", "lower_back", "traps"],
+  legs: ["quads", "hamstrings", "glutes", "calves", "adductors", "hip_flexors"],
+  shoulders: ["front_delts", "side_delts", "rear_delts", "traps"],
+  arms: ["biceps", "triceps", "forearms", "brachialis"],
+  core: ["upper_abs", "lower_abs", "obliques", "lower_back", "deep_core"]
+};
 
 function startDateFromPreset(preset: Exclude<RangePreset, "custom">) {
   const now = new Date();
@@ -22,9 +116,96 @@ function startDateFromPreset(preset: Exclude<RangePreset, "custom">) {
   return start;
 }
 
+function toDateKey(input: string) {
+  return input.slice(0, 10);
+}
+
+function formatShortDate(dateKey: string) {
+  return dateKey.slice(5);
+}
+
+function ChartCard({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+      <h3 className="text-lg font-semibold text-slate-900">{title}</h3>
+      <div className="mt-4">{children}</div>
+    </section>
+  );
+}
+
+function LineCompareChart({
+  points,
+  actualColor,
+  targetColor,
+  valueFormatter
+}: {
+  points: Array<{ date: string; actual: number; target: number }>;
+  actualColor: string;
+  targetColor: string;
+  valueFormatter: (n: number) => string;
+}) {
+  if (!points.length) return <p className="text-sm text-slate-500">No data in this range yet.</p>;
+
+  const width = 820;
+  const height = 220;
+  const padding = 34;
+  const allValues = points.flatMap((point) => [point.actual, point.target]);
+  const maxValue = Math.max(...allValues, 1);
+
+  const toX = (index: number) => padding + (index / Math.max(points.length - 1, 1)) * (width - padding * 2);
+  const toY = (value: number) => height - padding - (value / maxValue) * (height - padding * 2);
+
+  const actualPath = points.map((point, index) => `${index === 0 ? "M" : "L"}${toX(index)} ${toY(point.actual)}`).join(" ");
+  const targetPath = points.map((point, index) => `${index === 0 ? "M" : "L"}${toX(index)} ${toY(point.target)}`).join(" ");
+
+  return (
+    <div>
+      <svg viewBox={`0 0 ${width} ${height}`} className="h-56 w-full">
+        <line x1={padding} y1={height - padding} x2={width - padding} y2={height - padding} stroke="#cbd5e1" strokeWidth="1" />
+        <line x1={padding} y1={padding} x2={padding} y2={height - padding} stroke="#cbd5e1" strokeWidth="1" />
+
+        <path d={targetPath} fill="none" stroke={targetColor} strokeWidth="2" strokeDasharray="6 4" />
+        <path d={actualPath} fill="none" stroke={actualColor} strokeWidth="2.5" />
+
+        {points.map((point, index) => (
+          <circle key={`${point.date}-${index}`} cx={toX(index)} cy={toY(point.actual)} r="2.5" fill={actualColor} />
+        ))}
+      </svg>
+      <div className="mt-2 flex items-center justify-between text-xs text-slate-500">
+        <span>{formatShortDate(points[0].date)}</span>
+        <span>Target line is dotted · max {valueFormatter(maxValue)}</span>
+        <span>{formatShortDate(points[points.length - 1].date)}</span>
+      </div>
+    </div>
+  );
+}
+
+function BarChart({ bars }: { bars: Array<{ label: string; value: number; color?: string }> }) {
+  if (!bars.length) return <p className="text-sm text-slate-500">No data in this range yet.</p>;
+  const maxValue = Math.max(...bars.map((bar) => bar.value), 1);
+
+  return (
+    <div className="space-y-3">
+      {bars.map((bar) => (
+        <div key={bar.label}>
+          <div className="mb-1 flex items-center justify-between text-sm">
+            <span className="font-medium text-slate-700">{bar.label}</span>
+            <span className="text-slate-500">{Math.round(bar.value).toLocaleString()}</span>
+          </div>
+          <div className="h-2.5 rounded-full bg-slate-200">
+            <div
+              className="h-2.5 rounded-full"
+              style={{ width: `${Math.max(4, (bar.value / maxValue) * 100)}%`, backgroundColor: bar.color ?? "#0ea5e9" }}
+            />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function InsightsPage() {
   const [rangePreset, setRangePreset] = useState<RangePreset>("7d");
-  const [metric, setMetric] = useState<keyof MacroTotals>("calories");
   const [customStart, setCustomStart] = useState("");
   const [customEnd, setCustomEnd] = useState("");
   const [disabledMacros, setDisabledMacros] = useState<MacroKey[]>([]);
@@ -34,6 +215,13 @@ export default function InsightsPage() {
   const [workoutExceptions, setWorkoutExceptions] = useState<WorkoutException[]>([]);
   const [nutritionTargets, setNutritionTargets] = useState<DailyTargets | null>(null);
   const [profile, setProfile] = useState<ProfileInput | null>(null);
+
+  const [progressMetric, setProgressMetric] = useState<ProgressMetric>("volume");
+  const [typeFilter, setTypeFilter] = useState<"all" | WorkoutExerciseType>("all");
+  const [muscleFilter, setMuscleFilter] = useState<"all" | MuscleGroup>("all");
+  const [specifyFilter, setSpecifyFilter] = useState<"all" | SpecifyMuscle>("all");
+  const [exerciseFilter, setExerciseFilter] = useState<"all" | string>("all");
+
   const weekDateKeys = useMemo(() => getCurrentWeekDateKeys(), []);
 
   useEffect(() => {
@@ -43,8 +231,7 @@ export default function InsightsPage() {
       setWorkouts(readJson<WorkoutWeekPlan>(STORAGE_KEYS.workouts));
       setWorkoutExceptions(readJson<WorkoutException[]>(STORAGE_KEYS.workoutExceptions) ?? []);
       setNutritionTargets(readJson<DailyTargets>(STORAGE_KEYS.targets));
-      const savedProfile = readJson<ProfileInput>(STORAGE_KEYS.profile);
-      setProfile(savedProfile);
+      setProfile(readJson<ProfileInput>(STORAGE_KEYS.profile));
       setDisabledMacros(readJson<MacroKey[]>(STORAGE_KEYS.disabledMacros) ?? []);
     };
 
@@ -81,37 +268,9 @@ export default function InsightsPage() {
     };
   }, []);
 
-  const availableMetrics = useMemo(
-    () => (["calories", "protein", "carbs", "fat"] as const).filter((item) => !disabledMacros.includes(item)),
-    [disabledMacros]
-  );
-
-  useEffect(() => {
-    if (!availableMetrics.length) return;
-    if (!availableMetrics.includes(metric)) setMetric(availableMetrics[0]);
-  }, [availableMetrics, metric]);
-
-  const filteredMeals = useMemo(() => {
-    const now = new Date();
-    const end = rangePreset === "custom" && customEnd ? new Date(customEnd) : now;
-    end.setHours(23, 59, 59, 999);
-
-    const start =
-      rangePreset === "custom"
-        ? customStart
-          ? new Date(customStart)
-          : new Date(0)
-        : startDateFromPreset(rangePreset);
-
-    return meals.filter((meal) => {
-      const createdAt = new Date(meal.createdAt || new Date().toISOString());
-      return createdAt >= start && createdAt <= end;
-    });
-  }, [customEnd, customStart, meals, rangePreset]);
-
-  const workoutDateKeys = useMemo(() => {
+  const rangeDateKeys = useMemo(() => {
     if (rangePreset === "custom") {
-      const start = customStart ? new Date(customStart) : new Date(0);
+      const start = customStart ? new Date(customStart) : startDateFromPreset("7d");
       const end = customEnd ? new Date(customEnd) : new Date();
       return getDateKeysInRange(start, end);
     }
@@ -123,127 +282,295 @@ export default function InsightsPage() {
     return getDateKeysInRange(start, end);
   }, [customEnd, customStart, rangePreset, weekDateKeys]);
 
-  const workoutSummary = useMemo(
-    () => buildWorkoutAdjustedSummary(workouts, workoutExceptions, workoutDateKeys),
-    [workouts, workoutExceptions, workoutDateKeys]
-  );
+  const mealsByDate = useMemo(() => {
+    const map = new Map<string, MacroTotals>();
 
-  const muscleGroupBalance = useMemo(() => {
-    const counts = { chest: 0, back: 0, legs: 0, shoulders: 0, arms: 0, core: 0 };
-    const effective = buildEffectiveWorkoutInstances(workouts, workoutExceptions, workoutDateKeys);
-
-    effective.forEach((instance) => {
-      counts[instance.exercise.muscleGroup] += 1;
-    });
-
-    return counts;
-  }, [workouts, workoutExceptions, workoutDateKeys]);
-
-  const points = useMemo(() => {
-    const bucket = new Map<string, MacroTotals>();
-
-    filteredMeals.forEach((meal) => {
-      const day = new Date(meal.createdAt || new Date().toISOString()).toISOString().slice(0, 10);
-      const existing = bucket.get(day) ?? { calories: 0, protein: 0, carbs: 0, fat: 0 };
-      bucket.set(day, {
-        calories: existing.calories + meal.result.totals.calories,
-        protein: existing.protein + meal.result.totals.protein,
-        carbs: existing.carbs + meal.result.totals.carbs,
-        fat: existing.fat + meal.result.totals.fat
+    meals.forEach((meal) => {
+      const dateKey = meal.mealDate || toDateKey(meal.createdAt);
+      const current = map.get(dateKey) ?? { calories: 0, protein: 0, carbs: 0, fat: 0 };
+      map.set(dateKey, {
+        calories: current.calories + meal.result.totals.calories,
+        protein: current.protein + meal.result.totals.protein,
+        carbs: current.carbs + meal.result.totals.carbs,
+        fat: current.fat + meal.result.totals.fat
       });
     });
 
-    return Array.from(bucket.entries())
-      .sort((a, b) => a[0].localeCompare(b[0]))
-      .map(([date, totals]) => ({ date, totals }));
-  }, [filteredMeals]);
+    return map;
+  }, [meals]);
+
+  const nutritionPoints = useMemo<NutritionPoint[]>(() => {
+    if (!profile) {
+      return rangeDateKeys.map((dateKey) => ({
+        date: dateKey,
+        actual: mealsByDate.get(dateKey) ?? { calories: 0, protein: 0, carbs: 0, fat: 0 },
+        target: {
+          calories: nutritionTargets?.calories ?? 0,
+          protein: nutritionTargets?.protein ?? 0,
+          carbs: nutritionTargets?.carbs ?? 0,
+          fat: nutritionTargets?.fat ?? 0
+        }
+      }));
+    }
+
+    return rangeDateKeys.map((dateKey) => {
+      const target = getDailyMacroTargets(dateKey, profile, workouts, workoutExceptions);
+      return {
+        date: dateKey,
+        actual: mealsByDate.get(dateKey) ?? { calories: 0, protein: 0, carbs: 0, fat: 0 },
+        target: {
+          calories: target.calories,
+          protein: target.protein,
+          carbs: target.carbs,
+          fat: target.fat
+        }
+      };
+    });
+  }, [mealsByDate, nutritionTargets, profile, rangeDateKeys, workoutExceptions, workouts]);
+
+  const workoutSummary = useMemo(
+    () => buildWorkoutAdjustedSummary(workouts, workoutExceptions, rangeDateKeys),
+    [rangeDateKeys, workoutExceptions, workouts]
+  );
+
+  const effectiveWorkouts = useMemo(
+    () => buildEffectiveWorkoutInstances(workouts, workoutExceptions, rangeDateKeys),
+    [rangeDateKeys, workoutExceptions, workouts]
+  );
+
+  const exerciseRecords = useMemo<ExerciseRecord[]>(() => {
+    const rows: ExerciseRecord[] = [];
+
+    effectiveWorkouts.forEach((instance) => {
+      const exercise = instance.exercise;
+      rows.push(toRecord(instance.date, exercise));
+
+      const history = Array.isArray(exercise.progressHistory) ? exercise.progressHistory : [];
+      history.forEach((entry) => {
+        const date = toDateKey(entry.recordedAt || instance.date);
+        rows.push({
+          date,
+          type: exercise.type,
+          exerciseName: exercise.name,
+          muscleGroup: exercise.muscleGroup,
+          specifyMuscle: exercise.specifyMuscle,
+          weight: entry.weight ?? ("weight" in exercise ? exercise.weight ?? 0 : 0),
+          reps: entry.reps ?? ("reps" in exercise ? exercise.reps ?? 0 : 0),
+          volume: entry.trainingVolume ?? exercise.trainingVolume,
+          duration: entry.durationMinutes ?? ("durationMinutes" in exercise ? exercise.durationMinutes : 0),
+          calories: entry.estimatedCalories ?? exercise.estimatedCalories
+        });
+      });
+    });
+
+    return rows.filter((row) => rangeDateKeys.includes(row.date));
+  }, [effectiveWorkouts, rangeDateKeys]);
+
+  const availableSpecifyOptions = useMemo(() => {
+    if (muscleFilter === "all") return [] as SpecifyMuscle[];
+    return specifyMuscleByGroup[muscleFilter];
+  }, [muscleFilter]);
+
+  useEffect(() => {
+    if (muscleFilter === "all") setSpecifyFilter("all");
+    if (specifyFilter !== "all" && muscleFilter !== "all" && !specifyMuscleByGroup[muscleFilter].includes(specifyFilter)) {
+      setSpecifyFilter("all");
+    }
+  }, [muscleFilter, specifyFilter]);
+
+  const filteredRecords = useMemo(() => {
+    return exerciseRecords.filter((record) => {
+      const typeOk = typeFilter === "all" ? true : record.type === typeFilter;
+      const muscleOk = muscleFilter === "all" ? true : record.muscleGroup === muscleFilter;
+      const specifyOk = specifyFilter === "all" ? true : record.specifyMuscle === specifyFilter;
+      const exerciseOk = exerciseFilter === "all" ? true : record.exerciseName === exerciseFilter;
+      return typeOk && muscleOk && specifyOk && exerciseOk;
+    });
+  }, [exerciseFilter, exerciseRecords, muscleFilter, specifyFilter, typeFilter]);
+
+  const exerciseOptions = useMemo(() => {
+    const names = new Set(filteredRecords.map((record) => record.exerciseName));
+    return Array.from(names).sort((a, b) => a.localeCompare(b));
+  }, [filteredRecords]);
+
+  useEffect(() => {
+    if (exerciseFilter === "all") return;
+    if (!exerciseOptions.includes(exerciseFilter)) setExerciseFilter("all");
+  }, [exerciseFilter, exerciseOptions]);
+
+  const progressTrend = useMemo(() => {
+    const bucket = new Map<string, number>();
+
+    filteredRecords.forEach((record) => {
+      const value =
+        progressMetric === "weight"
+          ? record.weight
+          : progressMetric === "reps"
+            ? record.reps
+            : progressMetric === "duration"
+              ? record.duration
+              : progressMetric === "calories"
+                ? record.calories
+                : record.volume;
+
+      bucket.set(record.date, (bucket.get(record.date) ?? 0) + value);
+    });
+
+    return rangeDateKeys.map((date) => ({ date, value: bucket.get(date) ?? 0 }));
+  }, [filteredRecords, progressMetric, rangeDateKeys]);
+
+  const trainingBalanceBars = useMemo(() => {
+    const volumeByGroup: Record<MuscleGroup, number> = {
+      chest: 0,
+      back: 0,
+      legs: 0,
+      shoulders: 0,
+      arms: 0,
+      core: 0
+    };
+
+    filteredRecords.forEach((record) => {
+      volumeByGroup[record.muscleGroup] += record.volume;
+    });
+
+    return (Object.keys(volumeByGroup) as MuscleGroup[]).map((key) => ({
+      label: muscleGroupLabels[key],
+      value: volumeByGroup[key],
+      color: "#0ea5e9"
+    }));
+  }, [filteredRecords]);
+
+  const weeklyConsistencyBars = useMemo(() => {
+    const weekBuckets = new Map<string, { scheduled: number; completed: number }>();
+
+    rangeDateKeys.forEach((dateKey) => {
+      const weekKey = `${dateKey.slice(0, 8)}W${Math.ceil(Number(dateKey.slice(8, 10)) / 7)}`;
+      const daySummary = buildWorkoutAdjustedSummary(workouts, workoutExceptions, [dateKey]);
+      const bucket = weekBuckets.get(weekKey) ?? { scheduled: 0, completed: 0 };
+      bucket.scheduled += daySummary.plannedSessions;
+      bucket.completed += daySummary.completedSessions;
+      weekBuckets.set(weekKey, bucket);
+    });
+
+    return Array.from(weekBuckets.entries()).map(([weekKey, value]) => ({
+      label: weekKey,
+      value: value.scheduled ? (value.completed / value.scheduled) * 100 : 0,
+      color: "#22c55e"
+    }));
+  }, [rangeDateKeys, workoutExceptions, workouts]);
 
   const summary = useMemo(() => {
-    const totals = filteredMeals.reduce(
-      (sum, meal) => ({
-        calories: sum.calories + meal.result.totals.calories,
-        protein: sum.protein + meal.result.totals.protein,
-        carbs: sum.carbs + meal.result.totals.carbs,
-        fat: sum.fat + meal.result.totals.fat
+    const days = Math.max(nutritionPoints.length, 1);
+
+    const totals = nutritionPoints.reduce(
+      (acc, point) => ({
+        calories: acc.calories + point.actual.calories,
+        protein: acc.protein + point.actual.protein,
+        carbs: acc.carbs + point.actual.carbs,
+        fat: acc.fat + point.actual.fat
       }),
       { calories: 0, protein: 0, carbs: 0, fat: 0 }
     );
 
-    const days = Math.max(points.length, 1);
+    const calorieAdherence =
+      nutritionPoints.length > 0
+        ? Math.round(
+            nutritionPoints.reduce((sum, point) => {
+              if (point.target.calories <= 0) return sum;
+              const adherence = Math.max(0, 100 - Math.abs(((point.actual.calories - point.target.calories) / point.target.calories) * 100));
+              return sum + adherence;
+            }, 0) / nutritionPoints.length
+          )
+        : 0;
+
+    const proteinDaysHit = nutritionPoints.filter((point) => point.target.protein > 0 && point.actual.protein >= point.target.protein).length;
+
+    const workoutCompletion = workoutSummary.plannedSessions
+      ? Math.round((workoutSummary.completedSessions / workoutSummary.plannedSessions) * 100)
+      : 0;
+
     return {
+      days,
       totals,
       averages: {
         calories: Math.round(totals.calories / days),
         protein: Math.round(totals.protein / days),
         carbs: Math.round(totals.carbs / days),
         fat: Math.round(totals.fat / days)
-      }
+      },
+      calorieAdherence,
+      proteinDaysHit,
+      workoutCompletion
     };
-  }, [filteredMeals, points.length]);
+  }, [nutritionPoints, workoutSummary]);
 
-  const adherence = useMemo(() => {
-    const consistency = workoutSummary.plannedSessions
-      ? Math.min(100, Math.round((workoutSummary.completedSessions / workoutSummary.plannedSessions) * 100))
-      : 0;
+  const coachingInsights = useMemo(() => {
+    const tips: string[] = [];
+    const goal = (profile?.primaryGoal ?? "").toLowerCase();
+    const isAdvanced = profile?.trainingExperience === "advanced";
 
-    const proteinTarget = nutritionTargets?.protein ?? null;
-    const calorieTarget = nutritionTargets?.calories ?? null;
+    if (summary.calorieAdherence < (isAdvanced ? 85 : 75)) {
+      tips.push("Calorie adherence is below target range. Tightening meal consistency should improve goal progress.");
+    }
 
-    const proteinHitRate =
-      proteinTarget && proteinTarget > 0
-        ? Math.min(100, Math.round((summary.averages.protein / proteinTarget) * 100))
-        : null;
+    if (summary.proteinDaysHit < Math.ceil(summary.days * (isAdvanced ? 0.75 : 0.6))) {
+      tips.push("Protein targets are missed on multiple days. Increasing protein intake can support muscle retention and recovery.");
+    }
 
-    const calorieHitRate =
-      calorieTarget && calorieTarget > 0
-        ? Math.max(0, 100 - Math.abs(Math.round(((summary.averages.calories - calorieTarget) / calorieTarget) * 100)))
-        : null;
+    if (summary.workoutCompletion < (isAdvanced ? 90 : 80)) {
+      tips.push("Workout completion is trending low. Hitting scheduled sessions more consistently should improve progress.");
+    }
 
-    const combinedScore = Math.round((consistency + (proteinHitRate ?? consistency) + (calorieHitRate ?? consistency)) / 3);
+    const chestVolume = trainingBalanceBars.find((item) => item.label === "Chest")?.value ?? 0;
+    const backVolume = trainingBalanceBars.find((item) => item.label === "Back")?.value ?? 0;
+    const legsVolume = trainingBalanceBars.find((item) => item.label === "Legs")?.value ?? 0;
 
-    let narrative = "Your training consistency and nutrition adherence look balanced.";
+    if (legsVolume < Math.max(chestVolume, backVolume) * 0.5) {
+      tips.push("Leg training volume is relatively low versus upper-body work. Adding lower-body volume would improve balance.");
+    }
 
-    if (consistency < 70) narrative = "Workout consistency is trending low this period. Aim to complete more planned sessions.";
-    else if ((proteinHitRate ?? 100) < 80) narrative = "Protein intake is below target on average; consider adding a protein-rich meal.";
-    else if ((calorieHitRate ?? 100) < 75) narrative = "Average calories are drifting away from your target range.";
+    if (chestVolume > backVolume * 1.4 && backVolume > 0) {
+      tips.push("Chest volume is notably higher than back volume. More pulling work may improve posture and shoulder balance.");
+    }
 
-    return { consistency, proteinHitRate, calorieHitRate, combinedScore, narrative };
-  }, [nutritionTargets, summary.averages.calories, summary.averages.protein, workoutSummary]);
+    const trendValues = progressTrend.map((point) => point.value).filter((value) => value > 0);
+    if (trendValues.length >= 4) {
+      const half = Math.floor(trendValues.length / 2);
+      const firstAvg = trendValues.slice(0, half).reduce((a, b) => a + b, 0) / Math.max(half, 1);
+      const secondAvg = trendValues.slice(half).reduce((a, b) => a + b, 0) / Math.max(trendValues.length - half, 1);
+      if (secondAvg > firstAvg * 1.08) tips.push("Exercise performance trend is improving steadily in the selected range.");
+      else if (secondAvg < firstAvg * 0.95) tips.push("Exercise progress appears to be stalling. Consider adjusting load, reps, or recovery.");
+    }
+
+    if (goal.includes("fat loss") && summary.averages.protein < (profile?.weightKg ?? 0) * 1.8) {
+      tips.push("For your fat-loss goal, higher protein intake could better support muscle retention.");
+    }
+
+    if (!tips.length) tips.push("Great consistency so far. Keep progressive overload and steady nutrition adherence.");
+
+    return tips.slice(0, 5);
+  }, [profile, progressTrend, summary, trainingBalanceBars]);
 
   return (
-    <main className="mx-auto w-full max-w-6xl space-y-6 px-4 py-8 md:px-8">
+    <main className="mx-auto w-full max-w-7xl space-y-6 px-4 py-8 md:px-8">
       <AppHeaderNav />
 
-      <section className="grid gap-4 md:grid-cols-4 xl:grid-cols-8">
-        <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200"><p className="text-xs text-slate-500">Planned Sessions</p><p className="mt-1 text-2xl font-semibold text-slate-900">{workoutSummary.plannedSessions}</p></div>
-        <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200"><p className="text-xs text-slate-500">Completed Sessions</p><p className="mt-1 text-2xl font-semibold text-slate-900">{workoutSummary.completedSessions}</p></div>
-        <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200"><p className="text-xs text-slate-500">Missed Sessions</p><p className="mt-1 text-2xl font-semibold text-slate-900">{workoutSummary.missedSessions}</p></div>
-        <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200"><p className="text-xs text-slate-500">Extra Sessions</p><p className="mt-1 text-2xl font-semibold text-slate-900">{workoutSummary.extraSessions}</p></div>
-        <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200"><p className="text-xs text-slate-500">Total Exercises</p><p className="mt-1 text-2xl font-semibold text-slate-900">{workoutSummary.totalExercises}</p></div>
-        <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200"><p className="text-xs text-slate-500">Workout Minutes</p><p className="mt-1 text-2xl font-semibold text-slate-900">{workoutSummary.totalMinutes}</p></div>
-        <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200"><p className="text-xs text-slate-500">Workout Calories</p><p className="mt-1 text-2xl font-semibold text-slate-900">{workoutSummary.totalCalories}</p></div>
-        <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200"><p className="text-xs text-slate-500">Fitness Volume</p><p className="mt-1 text-2xl font-semibold text-slate-900">{workoutSummary.totalFitnessVolume}</p></div>
-              </section>
-
-      <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
+      <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <h1 className="text-3xl font-semibold text-slate-900">Insights</h1>
+          <div>
+            <h1 className="text-3xl font-semibold text-slate-900">Insights Dashboard</h1>
+            <p className="mt-1 text-sm text-slate-500">Central analytics and coaching overview for nutrition, training, and progression.</p>
+          </div>
 
           <div className="flex flex-wrap gap-2">
-            {([
-              ["7d", "7 days"],
-              ["1m", "1 month"],
-              ["3m", "3 months"],
-              ["6m", "6 months"],
-              ["custom", "Custom"]
-            ] as const).map(([value, label]) => (
+            {rangeOptions.map((option) => (
               <button
-                key={value}
+                key={option.value}
                 type="button"
-                onClick={() => setRangePreset(value)}
-                className={`rounded-xl border px-3 py-2 text-sm ${rangePreset === value ? "border-emerald-500 bg-emerald-50 text-emerald-700" : "border-slate-200 text-slate-700 hover:bg-slate-50"}`}
+                onClick={() => setRangePreset(option.value)}
+                className={`rounded-xl border px-3 py-2 text-sm ${rangePreset === option.value ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 text-slate-700 hover:bg-slate-50"}`}
               >
-                {label}
+                {option.label}
               </button>
             ))}
           </div>
@@ -252,90 +579,153 @@ export default function InsightsPage() {
         {rangePreset === "custom" ? (
           <div className="mt-4 grid gap-3 md:grid-cols-2">
             <label className="text-sm text-slate-700">Start date
-              <input type="date" value={customStart} onChange={(e)=>setCustomStart(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" />
+              <input type="date" value={customStart} onChange={(event) => setCustomStart(event.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" />
             </label>
             <label className="text-sm text-slate-700">End date
-              <input type="date" value={customEnd} onChange={(e)=>setCustomEnd(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" />
+              <input type="date" value={customEnd} onChange={(event) => setCustomEnd(event.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" />
             </label>
           </div>
         ) : null}
-
-        <div className="mt-4 flex flex-wrap gap-2">
-          {availableMetrics.map((key) => (
-            <button
-              key={key}
-              type="button"
-              onClick={() => setMetric(key)}
-              className={`rounded-xl border px-3 py-2 text-sm capitalize ${metric === key ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 text-slate-700 hover:bg-slate-50"}`}
-            >
-              {key}
-            </button>
-          ))}
-        </div>
       </section>
 
-      <section className="grid gap-4 md:grid-cols-3">
-        <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200"><p className="text-xs text-slate-500">Workout Consistency</p><p className="text-2xl font-semibold text-slate-900">{adherence.consistency}%</p></div>
-        <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200"><p className="text-xs text-slate-500">Protein Target Hit</p><p className="text-2xl font-semibold text-slate-900">{adherence.proteinHitRate ?? "n/a"}{adherence.proteinHitRate !== null ? "%" : ""}</p></div>
-        <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200"><p className="text-xs text-slate-500">Combined Weekly Goal Score</p><p className="text-2xl font-semibold text-slate-900">{adherence.combinedScore}%</p></div>
-      </section>
-
-      <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
-        <h3 className="text-lg font-semibold text-slate-900">Goal Context</h3>
-        <p className="mt-2 text-sm text-slate-600">
-          Main goal: <span className="font-semibold text-slate-900">{profile?.primaryGoal ?? "Not set"}</span>
-          {" · "}
-          Intensity: <span className="font-semibold text-slate-900">{profile?.goalIntensity ?? "medium"}</span>
-        </p>
-      </section>
-
-      <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
-        <h3 className="text-lg font-semibold text-slate-900">Smart Summary</h3>
-        <p className="mt-2 text-sm text-slate-600">{adherence.narrative}</p>
-        <div className="mt-3 grid gap-3 md:grid-cols-2">
-          <p className="text-sm text-slate-600">Protein target hit rate: <span className="font-semibold text-slate-900">{adherence.proteinHitRate ?? "n/a"}{adherence.proteinHitRate !== null ? "%" : ""}</span></p>
-          <p className="text-sm text-slate-600">Calorie target adherence: <span className="font-semibold text-slate-900">{adherence.calorieHitRate ?? "n/a"}{adherence.calorieHitRate !== null ? "%" : ""}</span></p>
-        </div>
-      </section>
-
-      <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
-        <h3 className="text-lg font-semibold text-slate-900">Workout Timeline</h3>
-        <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-7">
-          {workoutDateKeys.slice(-7).map((dateKey) => {
-            const daySummary = buildWorkoutAdjustedSummary(workouts, workoutExceptions, [dateKey]);
-            return (
-              <div key={dateKey} className="rounded-xl border border-slate-200 p-3">
-                <p className="text-xs text-slate-500">{dateKey}</p>
-                <p className="text-sm font-semibold text-slate-900">{daySummary.completedSessions} sessions</p>
-                <p className="text-xs text-slate-500">{daySummary.totalExercises} exercises · {daySummary.totalMinutes} min</p>
-              </div>
-            );
-          })}
-        </div>
-      </section>
-
-      <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
-        <h3 className="text-lg font-semibold text-slate-900">Training Balance by Muscle Group</h3>
+      <section className="rounded-2xl bg-gradient-to-r from-emerald-50 to-sky-50 p-6 shadow-sm ring-1 ring-emerald-100">
+        <h2 className="text-xl font-semibold text-slate-900">Weekly Summary</h2>
         <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {Object.entries(muscleGroupBalance).map(([group, count]) => (
-            <div key={group} className="rounded-xl border border-slate-200 p-3">
-              <p className="text-xs uppercase tracking-wide text-slate-500">{group}</p>
-              <p className="text-xl font-semibold text-slate-900">{count} exercises</p>
-            </div>
-          ))}
+          <p className="text-sm text-slate-700">Calories adherence: <span className="font-semibold text-slate-900">{summary.calorieAdherence}%</span></p>
+          <p className="text-sm text-slate-700">Protein target reached: <span className="font-semibold text-slate-900">{summary.proteinDaysHit} / {summary.days} days</span></p>
+          <p className="text-sm text-slate-700">Workout completion rate: <span className="font-semibold text-slate-900">{summary.workoutCompletion}%</span></p>
+          <p className="text-sm text-slate-700">Workouts completed: <span className="font-semibold text-slate-900">{workoutSummary.completedSessions} / {workoutSummary.plannedSessions || 0}</span></p>
+          <p className="text-sm text-slate-700">Total exercises completed: <span className="font-semibold text-slate-900">{workoutSummary.totalExercises}</span></p>
+          <p className="text-sm text-slate-700">Training volume: <span className="font-semibold text-slate-900">{Math.round(workoutSummary.totalFitnessVolume).toLocaleString()} kg</span></p>
         </div>
       </section>
 
-      <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
-        {availableMetrics.length ? <InsightsLineChart points={points} metric={metric} /> : <p className="text-sm text-slate-500">All macros are disabled in Profile. Re-enable at least one macro to show insights.</p>}
-      </section>
+      <ChartCard title="Nutrition Insights">
+        <div className="grid gap-5 lg:grid-cols-2">
+          {macroConfigs
+            .filter((macro) => !disabledMacros.includes(macro.key))
+            .map((macro) => {
+              const points = nutritionPoints.map((point) => ({ date: point.date, actual: point.actual[macro.key], target: point.target[macro.key] }));
+              return (
+                <div key={macro.key} className="rounded-xl border border-slate-200 p-3">
+                  <p className="mb-2 text-sm font-semibold text-slate-800">{macro.label} vs Target</p>
+                  <LineCompareChart points={points} actualColor={macro.color} targetColor="#64748b" valueFormatter={(value) => `${Math.round(value)} ${macro.unit}`} />
+                </div>
+              );
+            })}
+        </div>
+      </ChartCard>
 
-      <section className="grid gap-4 md:grid-cols-4">
-        {!disabledMacros.includes("calories") ? <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200"><p className="text-xs text-slate-500">Avg Calories</p><p className="text-2xl font-semibold text-slate-900">{summary.averages.calories}</p></div> : null}
-        {!disabledMacros.includes("protein") ? <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200"><p className="text-xs text-slate-500">Avg Protein</p><p className="text-2xl font-semibold text-slate-900">{summary.averages.protein}g</p></div> : null}
-        {!disabledMacros.includes("carbs") ? <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200"><p className="text-xs text-slate-500">Avg Carbs</p><p className="text-2xl font-semibold text-slate-900">{summary.averages.carbs}g</p></div> : null}
-        {!disabledMacros.includes("fat") ? <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200"><p className="text-xs text-slate-500">Avg Fat</p><p className="text-2xl font-semibold text-slate-900">{summary.averages.fat}g</p></div> : null}
-      </section>
+      <ChartCard title="Workout Consistency Insights">
+        <div className="grid gap-4 lg:grid-cols-[1.5fr,1fr]">
+          <BarChart bars={weeklyConsistencyBars} />
+          <div className="rounded-xl border border-slate-200 p-4">
+            <p className="text-sm text-slate-600">Scheduled workouts</p>
+            <p className="text-2xl font-semibold text-slate-900">{workoutSummary.plannedSessions}</p>
+            <p className="mt-2 text-sm text-slate-600">Completed workouts</p>
+            <p className="text-2xl font-semibold text-slate-900">{workoutSummary.completedSessions}</p>
+            <p className="mt-2 text-sm text-slate-600">Missed workouts</p>
+            <p className="text-2xl font-semibold text-slate-900">{workoutSummary.missedSessions}</p>
+            <p className="mt-2 text-sm text-slate-600">Extra workouts</p>
+            <p className="text-2xl font-semibold text-slate-900">{workoutSummary.extraSessions}</p>
+          </div>
+        </div>
+      </ChartCard>
+
+      <ChartCard title="Exercise Progress Insights">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+          <label className="text-sm text-slate-700">Progress view
+            <select value={progressMetric} onChange={(e) => setProgressMetric(e.target.value as ProgressMetric)} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2">
+              <option value="weight">Weight lifted</option>
+              <option value="reps">Total reps</option>
+              <option value="volume">Training volume</option>
+              <option value="duration">Duration</option>
+              <option value="calories">Estimated calories</option>
+            </select>
+          </label>
+
+          <label className="text-sm text-slate-700">Workout Type
+            <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value as "all" | WorkoutExerciseType)} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2">
+              <option value="all">All</option>
+              <option value="fitness">Fitness</option>
+              <option value="cardio">Cardio</option>
+              <option value="crossfit">CrossFit</option>
+            </select>
+          </label>
+
+          <label className="text-sm text-slate-700">Muscle Group
+            <select value={muscleFilter} onChange={(e) => setMuscleFilter(e.target.value as "all" | MuscleGroup)} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2">
+              <option value="all">All</option>
+              {(Object.keys(muscleGroupLabels) as MuscleGroup[]).map((group) => (
+                <option key={group} value={group}>{muscleGroupLabels[group]}</option>
+              ))}
+            </select>
+          </label>
+
+          <label className="text-sm text-slate-700">Specify Muscle
+            <select value={specifyFilter} onChange={(e) => setSpecifyFilter(e.target.value as "all" | SpecifyMuscle)} disabled={muscleFilter === "all"} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 disabled:bg-slate-100 disabled:text-slate-400">
+              <option value="all">All</option>
+              {availableSpecifyOptions.map((item) => (
+                <option key={item} value={item}>{specifyMuscleLabels[item]}</option>
+              ))}
+            </select>
+          </label>
+
+          <label className="text-sm text-slate-700">Exercise Name
+            <select value={exerciseFilter} onChange={(e) => setExerciseFilter(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2">
+              <option value="all">All</option>
+              {exerciseOptions.map((name) => (
+                <option key={name} value={name}>{name}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        <div className="mt-4 rounded-xl border border-slate-200 p-3">
+          <LineCompareChart
+            points={progressTrend.map((point) => ({ date: point.date, actual: point.value, target: 0 }))}
+            actualColor="#0ea5e9"
+            targetColor="#cbd5e1"
+            valueFormatter={(value) => String(Math.round(value))}
+          />
+        </div>
+      </ChartCard>
+
+      <ChartCard title="Training Balance Insights">
+        <div className="grid gap-4 lg:grid-cols-[1.5fr,1fr]">
+          <BarChart bars={trainingBalanceBars.map((bar) => ({ ...bar, color: "#10b981" }))} />
+          <div className="rounded-xl border border-slate-200 p-4 text-sm text-slate-600">
+            <p className="font-semibold text-slate-900">Deep dive notes</p>
+            <p className="mt-2">Filters from the Exercise Progress section also apply here, so you can inspect balance by workout type, muscle group, specify muscle, and exercise name.</p>
+            <p className="mt-2">Use this to spot imbalances like low legs volume or chest-heavy programming versus back.</p>
+          </div>
+        </div>
+      </ChartCard>
+
+      <ChartCard title="Smart Coaching Insights">
+        <ul className="space-y-2">
+          {coachingInsights.map((insight, index) => (
+            <li key={`${insight}-${index}`} className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+              {insight}
+            </li>
+          ))}
+        </ul>
+      </ChartCard>
     </main>
   );
+}
+
+function toRecord(date: string, exercise: WorkoutExercise): ExerciseRecord {
+  return {
+    date,
+    type: exercise.type,
+    exerciseName: exercise.name,
+    muscleGroup: exercise.muscleGroup,
+    specifyMuscle: exercise.specifyMuscle,
+    weight: "weight" in exercise ? exercise.weight ?? 0 : 0,
+    reps: "reps" in exercise ? exercise.reps ?? 0 : 0,
+    volume: exercise.trainingVolume,
+    duration: "durationMinutes" in exercise ? exercise.durationMinutes : 0,
+    calories: exercise.estimatedCalories
+  };
 }
