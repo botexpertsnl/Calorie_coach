@@ -6,7 +6,7 @@ import { InsightsLineChart } from "@/components/InsightsLineChart";
 import { STORAGE_KEYS, readJson } from "@/lib/local-data";
 import { TARGETS_UPDATED_EVENT } from "@/lib/daily-targets";
 import { ensureDemoSeedData } from "@/lib/demo-seed";
-import { buildEffectiveWorkoutInstances, buildWorkoutAdjustedSummary, deriveWeeklyWorkoutTargets, getCurrentWeekDateKeys, getDateKeysInRange } from "@/lib/workout-execution";
+import { buildEffectiveWorkoutInstances, buildWorkoutAdjustedSummary, getCurrentWeekDateKeys, getDateKeysInRange } from "@/lib/workout-execution";
 import { DailyTargets, MacroKey, MacroTotals, ProfileInput, StoredMealLog, WorkoutException, WorkoutWeekPlan } from "@/lib/types";
 
 type RangePreset = "7d" | "1m" | "3m" | "6m" | "custom";
@@ -34,7 +34,6 @@ export default function InsightsPage() {
   const [workoutExceptions, setWorkoutExceptions] = useState<WorkoutException[]>([]);
   const [nutritionTargets, setNutritionTargets] = useState<DailyTargets | null>(null);
   const [profile, setProfile] = useState<ProfileInput | null>(null);
-  const [workoutTargets, setWorkoutTargets] = useState(() => deriveWeeklyWorkoutTargets(readJson(STORAGE_KEYS.profile)));
   const weekDateKeys = useMemo(() => getCurrentWeekDateKeys(), []);
 
   useEffect(() => {
@@ -46,7 +45,6 @@ export default function InsightsPage() {
       setNutritionTargets(readJson<DailyTargets>(STORAGE_KEYS.targets));
       const savedProfile = readJson<ProfileInput>(STORAGE_KEYS.profile);
       setProfile(savedProfile);
-      setWorkoutTargets(deriveWeeklyWorkoutTargets(savedProfile));
       setDisabledMacros(readJson<MacroKey[]>(STORAGE_KEYS.disabledMacros) ?? []);
     };
 
@@ -184,23 +182,33 @@ export default function InsightsPage() {
   }, [filteredMeals, points.length]);
 
   const adherence = useMemo(() => {
-    const strengthHit = Math.min(100, Math.round((workoutSummary.strengthPoints / Math.max(workoutTargets.strengthPoints, 1)) * 100));
-    const cardioHit = Math.min(100, Math.round((workoutSummary.cardioPoints / Math.max(workoutTargets.cardioPoints, 1)) * 100));
+    const consistency = workoutSummary.plannedSessions
+      ? Math.min(100, Math.round((workoutSummary.completedSessions / workoutSummary.plannedSessions) * 100))
+      : 0;
 
-    const consistency = Math.min(100, Math.round((workoutSummary.completedSessions / Math.max(workoutSummary.plannedSessions, 1)) * 100));
+    const proteinTarget = nutritionTargets?.protein ?? null;
+    const calorieTarget = nutritionTargets?.calories ?? null;
 
-    const proteinHitRate = nutritionTargets?.protein ? Math.min(100, Math.round((summary.averages.protein / nutritionTargets.protein) * 100)) : null;
-    const calorieHitRate = nutritionTargets?.calories ? Math.min(150, Math.round((summary.averages.calories / nutritionTargets.calories) * 100)) : null;
+    const proteinHitRate =
+      proteinTarget && proteinTarget > 0
+        ? Math.min(100, Math.round((summary.averages.protein / proteinTarget) * 100))
+        : null;
 
-    const combinedScore = Math.round((strengthHit + cardioHit + consistency + (proteinHitRate ?? consistency)) / 4);
+    const calorieHitRate =
+      calorieTarget && calorieTarget > 0
+        ? Math.max(0, 100 - Math.abs(Math.round(((summary.averages.calories - calorieTarget) / calorieTarget) * 100)))
+        : null;
 
-    let narrative = "You are following your workout plan consistently.";
-    if (strengthHit < 80) narrative = "Strength progress is below your weekly point target; consider adding a heavier fitness or CrossFit session.";
-    else if (cardioHit < 80) narrative = "Cardio progress is below target this period.";
-    else if (proteinHitRate !== null && proteinHitRate < 90) narrative = "Workout consistency is strong; improving protein adherence could boost results.";
+    const combinedScore = Math.round((consistency + (proteinHitRate ?? consistency) + (calorieHitRate ?? consistency)) / 3);
 
-    return { strengthHit, cardioHit, consistency, proteinHitRate, calorieHitRate, combinedScore, narrative };
-  }, [nutritionTargets, summary.averages.calories, summary.averages.protein, workoutSummary, workoutTargets]);
+    let narrative = "Your training consistency and nutrition adherence look balanced.";
+
+    if (consistency < 70) narrative = "Workout consistency is trending low this period. Aim to complete more planned sessions.";
+    else if ((proteinHitRate ?? 100) < 80) narrative = "Protein intake is below target on average; consider adding a protein-rich meal.";
+    else if ((calorieHitRate ?? 100) < 75) narrative = "Average calories are drifting away from your target range.";
+
+    return { consistency, proteinHitRate, calorieHitRate, combinedScore, narrative };
+  }, [nutritionTargets, summary.averages.calories, summary.averages.protein, workoutSummary]);
 
   return (
     <main className="mx-auto w-full max-w-6xl space-y-6 px-4 py-8 md:px-8">
@@ -215,9 +223,7 @@ export default function InsightsPage() {
         <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200"><p className="text-xs text-slate-500">Workout Minutes</p><p className="mt-1 text-2xl font-semibold text-slate-900">{workoutSummary.totalMinutes}</p></div>
         <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200"><p className="text-xs text-slate-500">Workout Calories</p><p className="mt-1 text-2xl font-semibold text-slate-900">{workoutSummary.totalCalories}</p></div>
         <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200"><p className="text-xs text-slate-500">Fitness Volume</p><p className="mt-1 text-2xl font-semibold text-slate-900">{workoutSummary.totalFitnessVolume}</p></div>
-        <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200"><p className="text-xs text-slate-500">Strength Points</p><p className="mt-1 text-2xl font-semibold text-slate-900">{workoutSummary.strengthPoints}</p></div>
-        <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200"><p className="text-xs text-slate-500">Cardio Points</p><p className="mt-1 text-2xl font-semibold text-slate-900">{workoutSummary.cardioPoints}</p></div>
-      </section>
+              </section>
 
       <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -268,10 +274,9 @@ export default function InsightsPage() {
         </div>
       </section>
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200"><p className="text-xs text-slate-500">Strength Target Hit</p><p className="text-2xl font-semibold text-slate-900">{adherence.strengthHit}%</p><p className="text-xs text-slate-500">{workoutSummary.strengthPoints} / {workoutTargets.strengthPoints} points</p></div>
-        <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200"><p className="text-xs text-slate-500">Cardio Target Hit</p><p className="text-2xl font-semibold text-slate-900">{adherence.cardioHit}%</p><p className="text-xs text-slate-500">{workoutSummary.cardioPoints} / {workoutTargets.cardioPoints} points</p></div>
+      <section className="grid gap-4 md:grid-cols-3">
         <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200"><p className="text-xs text-slate-500">Workout Consistency</p><p className="text-2xl font-semibold text-slate-900">{adherence.consistency}%</p></div>
+        <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200"><p className="text-xs text-slate-500">Protein Target Hit</p><p className="text-2xl font-semibold text-slate-900">{adherence.proteinHitRate ?? "n/a"}{adherence.proteinHitRate !== null ? "%" : ""}</p></div>
         <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200"><p className="text-xs text-slate-500">Combined Weekly Goal Score</p><p className="text-2xl font-semibold text-slate-900">{adherence.combinedScore}%</p></div>
       </section>
 
@@ -302,7 +307,7 @@ export default function InsightsPage() {
               <div key={dateKey} className="rounded-xl border border-slate-200 p-3">
                 <p className="text-xs text-slate-500">{dateKey}</p>
                 <p className="text-sm font-semibold text-slate-900">{daySummary.completedSessions} sessions</p>
-                <p className="text-xs text-slate-500">{daySummary.strengthPoints} STR pts · {daySummary.cardioPoints} CAR pts</p>
+                <p className="text-xs text-slate-500">{daySummary.totalExercises} exercises · {daySummary.totalMinutes} min</p>
               </div>
             );
           })}

@@ -72,9 +72,9 @@ export function estimateCaloriesForType(params: {
 }
 
 function stepRangeToActivity(range: DailyStepsRange) {
-  if (range === "1-5000") return { durationMinutes: 25, cardioPoints: 3, intensity: "low" as const };
-  if (range === "5000-10000") return { durationMinutes: 45, cardioPoints: 5, intensity: "moderate" as const };
-  return { durationMinutes: 65, cardioPoints: 7, intensity: "moderate" as const };
+  if (range === "1-5000") return { durationMinutes: 25, intensity: "low" as const };
+  if (range === "5000-10000") return { durationMinutes: 45, intensity: "moderate" as const };
+  return { durationMinutes: 65, intensity: "moderate" as const };
 }
 
 export function applySystemDailyStepsToPlan(plan: WorkoutWeekPlan | null, profile: ProfileInput | null): WorkoutWeekPlan | null {
@@ -99,8 +99,8 @@ export function applySystemDailyStepsToPlan(plan: WorkoutWeekPlan | null, profil
       intensity: stepsActivity.intensity,
       trainingVolume: 0,
       estimatedCalories,
-      strengthPoints: 1,
-      cardioPoints: stepsActivity.cardioPoints,
+      strengthPoints: 0,
+      cardioPoints: 0,
       notes: "Auto-generated from Average Daily Steps profile setting.",
       progressHistory: [],
       createdAt: now,

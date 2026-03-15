@@ -6,7 +6,7 @@ import { STORAGE_KEYS, readJson, writeJson } from "@/lib/local-data";
 import { recalculateAndPersistTodayTargets } from "@/lib/daily-targets";
 import { ensureDemoSeedData } from "@/lib/demo-seed";
 import { calculateTrainingVolume, estimateCaloriesForType } from "@/lib/workouts";
-import { buildWorkoutAdjustedSummary, calculateWorkoutPoints, deriveWeeklyWorkoutTargets, getCurrentWeekDateKeys, withStoredWorkoutPoints } from "@/lib/workout-execution";
+import { withStoredWorkoutPoints } from "@/lib/workout-execution";
 import {
   CardioExercise,
   CrossfitExercise,
@@ -571,22 +571,12 @@ export default function WorkoutsPage() {
   const selectedDaySummary = useMemo(() => {
     return selectedExercises.reduce(
       (sum, exercise) => ({
-        strengthPoints: sum.strengthPoints + exercise.strengthPoints,
-        cardioPoints: sum.cardioPoints + exercise.cardioPoints,
         calories: sum.calories + ensureCalories(exercise, profileWeight)
       }),
-      { strengthPoints: 0, cardioPoints: 0, calories: 0 }
+      { calories: 0 }
     );
   }, [profileWeight, selectedExercises]);
 
-  const weekDateKeys = useMemo(() => getCurrentWeekDateKeys(), []);
-
-  const adjustedSummary = useMemo(
-    () => buildWorkoutAdjustedSummary(plan, exceptions, weekDateKeys),
-    [plan, exceptions, weekDateKeys]
-  );
-
-  const weeklyTargets = useMemo(() => deriveWeeklyWorkoutTargets(profile), [profile]);
 
   const plannedOptionsForExceptionDay = useMemo(() => {
     const day = new Date(`${exceptionDate}T00:00:00`).toLocaleDateString("en-US", { weekday: "long" }).toLowerCase() as WorkoutDay;
@@ -657,7 +647,7 @@ export default function WorkoutsPage() {
         ? plan[selectedDay].exercises.find((exercise) => exercise.id === editingExerciseId && exercise.type === "cardio")
         : null;
 
-      const points = calculateWorkoutPoints({
+      nextExercise = {
         id: editingExerciseId ?? crypto.randomUUID(),
         type: "cardio",
         durationMinutes: draft.durationMinutes,
@@ -665,19 +655,6 @@ export default function WorkoutsPage() {
         trainingVolume: 0,
         strengthPoints: 0,
         cardioPoints: 0,
-        createdAt: existing?.createdAt ?? now,
-        progressHistory: existing ? [...getHistory(existing), toProgressEntry(existing)] : [],
-        ...shared
-      } as CardioExercise);
-
-      nextExercise = {
-        id: editingExerciseId ?? crypto.randomUUID(),
-        type: "cardio",
-        durationMinutes: draft.durationMinutes,
-        estimatedCalories,
-        trainingVolume: 0,
-        strengthPoints: points.strengthPoints,
-        cardioPoints: points.cardioPoints,
         createdAt: existing?.createdAt ?? now,
         progressHistory: existing ? [...getHistory(existing), toProgressEntry(existing)] : [],
         ...shared
@@ -702,7 +679,7 @@ export default function WorkoutsPage() {
         ? plan[selectedDay].exercises.find((exercise) => exercise.id === editingExerciseId && exercise.type === "crossfit")
         : null;
 
-      const points = calculateWorkoutPoints({
+      nextExercise = {
         id: editingExerciseId ?? crypto.randomUUID(),
         type: "crossfit",
         durationMinutes: duration,
@@ -713,22 +690,6 @@ export default function WorkoutsPage() {
         estimatedCalories,
         strengthPoints: 0,
         cardioPoints: 0,
-        createdAt: existing?.createdAt ?? now,
-        progressHistory: existing ? [...getHistory(existing), toProgressEntry(existing)] : [],
-        ...shared
-      } as CrossfitExercise);
-
-      nextExercise = {
-        id: editingExerciseId ?? crypto.randomUUID(),
-        type: "crossfit",
-        durationMinutes: duration,
-        weight,
-        sets,
-        reps,
-        trainingVolume,
-        estimatedCalories,
-        strengthPoints: points.strengthPoints,
-        cardioPoints: points.cardioPoints,
         createdAt: existing?.createdAt ?? now,
         progressHistory: existing ? [...getHistory(existing), toProgressEntry(existing)] : [],
         ...shared
@@ -749,7 +710,7 @@ export default function WorkoutsPage() {
         ? plan[selectedDay].exercises.find((exercise) => exercise.id === editingExerciseId && exercise.type === "fitness")
         : null;
 
-      const points = calculateWorkoutPoints({
+      nextExercise = {
         id: editingExerciseId ?? crypto.randomUUID(),
         type: "fitness",
         sets: draft.sets,
@@ -759,21 +720,6 @@ export default function WorkoutsPage() {
         estimatedCalories,
         strengthPoints: 0,
         cardioPoints: 0,
-        createdAt: existing?.createdAt ?? now,
-        progressHistory: existing ? [...getHistory(existing), toProgressEntry(existing)] : [],
-        ...shared
-      } as FitnessExercise);
-
-      nextExercise = {
-        id: editingExerciseId ?? crypto.randomUUID(),
-        type: "fitness",
-        sets: draft.sets,
-        reps: draft.reps,
-        weight: draft.weight,
-        trainingVolume,
-        estimatedCalories,
-        strengthPoints: points.strengthPoints,
-        cardioPoints: points.cardioPoints,
         createdAt: existing?.createdAt ?? now,
         progressHistory: existing ? [...getHistory(existing), toProgressEntry(existing)] : [],
         ...shared
@@ -878,8 +824,7 @@ export default function WorkoutsPage() {
         isPaused: false
       } as CardioExercise;
 
-      const points = calculateWorkoutPoints(baseExercise);
-      return { ...baseExercise, ...points };
+      return baseExercise;
     }
 
     if (type === "crossfit") {
@@ -917,8 +862,7 @@ export default function WorkoutsPage() {
         isPaused: false
       } as CrossfitExercise;
 
-      const points = calculateWorkoutPoints(baseExercise);
-      return { ...baseExercise, ...points };
+      return baseExercise;
     }
 
     const baseExercise = {
@@ -951,8 +895,7 @@ export default function WorkoutsPage() {
       isPaused: false
     } as FitnessExercise;
 
-    const points = calculateWorkoutPoints(baseExercise);
-    return { ...baseExercise, ...points };
+    return baseExercise;
   }
 
   function saveException(event: FormEvent) {
@@ -1239,19 +1182,6 @@ export default function WorkoutsPage() {
       <main className="mx-auto w-full max-w-6xl space-y-6 px-4 py-8 md:px-8">
         <AppHeaderNav />
 
-        <section className="grid gap-4 md:grid-cols-2">
-          <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
-            <p className="text-xs text-slate-500">Strength Progress</p>
-            <p className="text-lg font-semibold text-slate-900">{adjustedSummary.strengthPoints} / {weeklyTargets.strengthPoints} points</p>
-            <div className="mt-2 h-1.5 rounded-full bg-slate-200"><div className="h-1.5 rounded-full bg-emerald-500" style={{ width: `${Math.min(100, (adjustedSummary.strengthPoints / Math.max(weeklyTargets.strengthPoints, 1)) * 100)}%` }} /></div>
-          </div>
-          <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
-            <p className="text-xs text-slate-500">Cardio Progress</p>
-            <p className="text-lg font-semibold text-slate-900">{adjustedSummary.cardioPoints} / {weeklyTargets.cardioPoints} points</p>
-            <div className="mt-2 h-1.5 rounded-full bg-slate-200"><div className="h-1.5 rounded-full bg-sky-500" style={{ width: `${Math.min(100, (adjustedSummary.cardioPoints / Math.max(weeklyTargets.cardioPoints, 1)) * 100)}%` }} /></div>
-          </div>
-        </section>
-
         <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
@@ -1520,9 +1450,7 @@ export default function WorkoutsPage() {
 
             <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
               <h3 className="text-sm font-semibold text-slate-900">Workout Summary</h3>
-              <div className="mt-2 grid gap-2 sm:grid-cols-3">
-                <p className="text-sm text-slate-600">Strength Points: <span className="font-semibold text-slate-900">{selectedDaySummary.strengthPoints}</span></p>
-                <p className="text-sm text-slate-600">Cardio Points: <span className="font-semibold text-slate-900">{selectedDaySummary.cardioPoints}</span></p>
+              <div className="mt-2 grid gap-2 sm:grid-cols-1">
                 <p className="text-sm text-slate-600">Calories Burned: <span className="font-semibold text-slate-900">{selectedDaySummary.calories} kcal</span></p>
               </div>
             </div>

@@ -27,9 +27,9 @@ export function getDailyMacroTargets(
   const base = getBaseMacroTargets(profile);
   const load = getWorkoutLoadForDate(dateKey, plan, exceptions);
 
-  const caloriesDelta = Math.round(load.totalCalories * 0.6 + load.strengthPoints * 3 + load.cardioPoints * 4);
-  const proteinDelta = Math.max(0, Math.round(load.strengthPoints * 0.25 + (load.totalExercises > 0 ? 5 : 0)));
-  const carbsDelta = Math.max(0, Math.round(load.cardioPoints * 0.6 + load.totalMinutes * 0.2));
+  const caloriesDelta = Math.round(load.totalCalories * 0.6);
+  const proteinDelta = Math.max(0, Math.round((load.totalExercises > 0 ? 5 : 0) + load.totalFitnessVolume / 600));
+  const carbsDelta = Math.max(0, Math.round(load.totalMinutes * 0.2));
   const fatDelta = Math.max(0, Math.round(caloriesDelta * 0.15 / 9));
 
   return {

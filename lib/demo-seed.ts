@@ -1,7 +1,6 @@
 import { calculateDailyTargets } from "@/lib/nutrition";
 import { ALL_WEEKDAYS, applyDailyMealsForDate } from "@/lib/meals";
 import { STORAGE_KEYS, readJson, writeJson } from "@/lib/local-data";
-import { calculateWorkoutPoints } from "@/lib/workout-execution";
 import { calculateTrainingVolume, estimateFitnessCalories } from "@/lib/workouts";
 import { DailyTargets, MacroKey, ProfileInput, QuickMeal, StoredMealLog, WorkoutDay, WorkoutWeekPlan } from "@/lib/types";
 
@@ -101,8 +100,7 @@ function toFitnessExercise(spec: DemoExerciseSpec, day: WorkoutDay, profile: Pro
     muscleGroup: spec.muscleGroup
   };
 
-  const points = calculateWorkoutPoints(base);
-  return { ...base, ...points };
+  return base;
 }
 
 function createDemoWorkoutPlan(profile: ProfileInput): WorkoutWeekPlan {
