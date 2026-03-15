@@ -129,6 +129,34 @@ export type MuscleGroup =
   | "arms"
   | "core";
 
+export type SpecifyMuscle =
+  | "upper_chest"
+  | "mid_chest"
+  | "lower_chest"
+  | "inner_chest"
+  | "lats"
+  | "upper_back"
+  | "mid_back"
+  | "lower_back"
+  | "traps"
+  | "quads"
+  | "hamstrings"
+  | "glutes"
+  | "calves"
+  | "adductors"
+  | "hip_flexors"
+  | "front_delts"
+  | "side_delts"
+  | "rear_delts"
+  | "biceps"
+  | "triceps"
+  | "forearms"
+  | "brachialis"
+  | "upper_abs"
+  | "lower_abs"
+  | "obliques"
+  | "deep_core";
+
 export type MovementType = "powerlifting" | "gymnastics" | "conditioning" | "functional";
 
 export type CardioExercise = {
@@ -150,6 +178,7 @@ export type CardioExercise = {
   sourceType?: "user" | "system";
   systemTag?: "daily_steps";
   muscleGroup: MuscleGroup;
+  specifyMuscle?: SpecifyMuscle;
   movementType?: MovementType;
 };
 
@@ -174,6 +203,7 @@ export type FitnessExercise = {
   sourceType?: "user" | "system";
   systemTag?: "daily_steps";
   muscleGroup: MuscleGroup;
+  specifyMuscle?: SpecifyMuscle;
   movementType?: MovementType;
 };
 
@@ -199,6 +229,7 @@ export type CrossfitExercise = {
   sourceType?: "user" | "system";
   systemTag?: "daily_steps";
   muscleGroup: MuscleGroup;
+  specifyMuscle?: SpecifyMuscle;
   movementType?: MovementType;
 };
 
