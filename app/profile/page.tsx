@@ -37,12 +37,37 @@ const primaryGoalOptions = [
   "General Health & Longevity"
 ] as const;
 
-const secondaryGoalOptionsByPrimary: Record<(typeof primaryGoalOptions)[number], string[]> = {
-  "Fat Loss": ["Improve Energy", "Better Sleep", "Build Healthy Habits", "Maintain Muscle"],
-  "Muscle Gain": ["Strength", "Improve Recovery", "Maintain Leanness", "Improve Energy"],
-  Strength: ["Muscle Gain", "Power", "Injury Prevention", "Mobility"],
-  Endurance: ["Improve Cardiovascular Fitness", "Fat Loss", "Build Consistency", "Recovery"],
-  "General Health & Longevity": ["Improve Energy", "Weight Maintenance", "Mobility", "Stress Management"]
+const goalIntensityOptionsByMainGoal: Record<(typeof primaryGoalOptions)[number], Array<{ value: "slow" | "medium" | "medium_fast" | "fast"; label: string }>> = {
+  "Fat Loss": [
+    { value: "slow", label: "Slow — Fat loss with muscle gain" },
+    { value: "medium", label: "Medium — Fat loss with muscle maintenance" },
+    { value: "medium_fast", label: "Medium/Fast — Faster fat loss with light muscle loss" },
+    { value: "fast", label: "Fast — Fast fat loss with muscle loss" }
+  ],
+  "Muscle Gain": [
+    { value: "slow", label: "Slow — Lean muscle gain with minimal fat gain" },
+    { value: "medium", label: "Medium — Muscle gain with light fat gain" },
+    { value: "medium_fast", label: "Medium/Fast — Faster muscle gain with moderate fat gain" },
+    { value: "fast", label: "Fast — Aggressive muscle gain with clear fat gain" }
+  ],
+  Strength: [
+    { value: "slow", label: "Slow — Gradual strength gain with balanced recovery" },
+    { value: "medium", label: "Medium — Steady strength gain with moderate load" },
+    { value: "medium_fast", label: "Medium/Fast — Faster strength gain with higher fatigue" },
+    { value: "fast", label: "Fast — Aggressive strength progression with high recovery demand" }
+  ],
+  Endurance: [
+    { value: "slow", label: "Slow — Build endurance gradually with low fatigue" },
+    { value: "medium", label: "Medium — Improve endurance with balanced load" },
+    { value: "medium_fast", label: "Medium/Fast — Faster endurance progress with moderate fatigue" },
+    { value: "fast", label: "Fast — Aggressive endurance progression with high fatigue" }
+  ],
+  "General Health & Longevity": [
+    { value: "slow", label: "Slow — Easy sustainable health improvement" },
+    { value: "medium", label: "Medium — Balanced lifestyle improvement" },
+    { value: "medium_fast", label: "Medium/Fast — Stronger health focus with more structure" },
+    { value: "fast", label: "Fast — Highly disciplined health optimization" }
+  ]
 };
 
 const weekDayOrder: WorkoutDay[] = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
@@ -84,11 +109,11 @@ function createDefaultWeekMacroScheme(targets: DailyTargets): Record<WorkoutDay,
   }, {} as Record<WorkoutDay, Record<MacroKey, number>>);
 }
 
-function composeGoalText(mainGoal: string, secondaryGoal: string, goalDescription: string) {
+function composeGoalText(mainGoal: string, goalIntensity: string, goalDescription: string) {
   const parts: string[] = [];
 
   if (mainGoal) parts.push(`Main goal: ${mainGoal}.`);
-  if (secondaryGoal) parts.push(`Secondary goal: ${secondaryGoal}.`);
+  if (goalIntensity) parts.push(`Goal intensity: ${goalIntensity}.`);
   if (goalDescription.trim()) parts.push(`Goal details: ${goalDescription.trim()}.`);
 
   if (!parts.length) {
@@ -100,12 +125,12 @@ function composeGoalText(mainGoal: string, secondaryGoal: string, goalDescriptio
 
 function parseGoalsFromText(goalText: string) {
   const mainMatch = goalText.match(/Main goal:\s*([^\.]+)\.?/i);
-  const secondaryMatch = goalText.match(/Secondary goal:\s*([^\.]+)\.?/i);
+  const intensityMatch = goalText.match(/Goal intensity:\s*([^\.]+)\.?/i);
   const detailsMatch = goalText.match(/Goal details:\s*([^\.]+)\.?/i);
 
   return {
     mainGoal: mainMatch?.[1]?.trim() ?? "",
-    secondaryGoal: secondaryMatch?.[1]?.trim() ?? "",
+    goalIntensity: intensityMatch?.[1]?.trim() ?? "",
     goalDescription: detailsMatch?.[1]?.trim() ?? ""
   };
 }
@@ -116,7 +141,7 @@ export default function ProfilePage() {
   const [disabledMacros, setDisabledMacros] = useState<MacroKey[]>([]);
   const [message, setMessage] = useState<string | null>(null);
   const [mainGoal, setMainGoal] = useState("");
-  const [secondaryGoal, setSecondaryGoal] = useState("");
+  const [goalIntensity, setGoalIntensity] = useState("");
   const [goalDescription, setGoalDescription] = useState("");
   const [isManualMode, setIsManualMode] = useState(false);
   const [saveConfirmation, setSaveConfirmation] = useState<string | null>(null);
@@ -139,7 +164,7 @@ export default function ProfilePage() {
       setProfile({ ...defaultProfile, ...savedProfile });
       const parsedGoals = parseGoalsFromText(savedProfile.goalText ?? "");
       setMainGoal(parsedGoals.mainGoal);
-      setSecondaryGoal(parsedGoals.secondaryGoal);
+      setGoalIntensity(parsedGoals.goalIntensity || (savedProfile.goalIntensity ?? ""));
       setGoalDescription(parsedGoals.goalDescription);
     }
 
@@ -178,21 +203,21 @@ export default function ProfilePage() {
   }, []);
 
   const builtGoalText = useMemo(
-    () => composeGoalText(mainGoal.trim(), secondaryGoal.trim(), goalDescription.trim()),
-    [mainGoal, secondaryGoal, goalDescription]
+    () => composeGoalText(mainGoal.trim(), goalIntensity.trim(), goalDescription.trim()),
+    [mainGoal, goalIntensity, goalDescription]
   );
 
-  const secondaryOptions = useMemo(() => {
+  const goalIntensityOptions = useMemo(() => {
     if (!mainGoal || !primaryGoalOptions.includes(mainGoal as (typeof primaryGoalOptions)[number])) return [];
-    return secondaryGoalOptionsByPrimary[mainGoal as (typeof primaryGoalOptions)[number]];
+    return goalIntensityOptionsByMainGoal[mainGoal as (typeof primaryGoalOptions)[number]];
   }, [mainGoal]);
 
   useEffect(() => {
-    if (!secondaryGoal) return;
-    if (secondaryOptions.length && !secondaryOptions.includes(secondaryGoal)) {
-      setSecondaryGoal("");
+    if (!goalIntensity) return;
+    if (goalIntensityOptions.length && !goalIntensityOptions.some((option) => option.value === goalIntensity)) {
+      setGoalIntensity("");
     }
-  }, [secondaryGoal, secondaryOptions]);
+  }, [goalIntensity, goalIntensityOptions]);
 
   const calculatedWeekScheme = useMemo(() => {
     const weekKeys = getCurrentWeekDateKeys();
@@ -254,15 +279,20 @@ export default function ProfilePage() {
   }
 
   function saveProfile() {
-    if (!mainGoal.trim() && !secondaryGoal.trim()) {
-      setMessage("Please add at least a Main goal or Secondary goal before saving.");
+    if (!mainGoal.trim()) {
+      setMessage("Please select a Main goal before saving.");
+      return;
+    }
+
+    if (!goalIntensity.trim()) {
+      setMessage("Please select a Goal intensity before saving.");
       return;
     }
 
     const profileToSave = {
       ...profile,
       primaryGoal: mainGoal,
-      secondaryGoal,
+      goalIntensity: goalIntensity as ProfileInput["goalIntensity"],
       goalDescription,
       goalText: builtGoalText
     };
@@ -354,16 +384,16 @@ export default function ProfilePage() {
 
       <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
         <h2 className="text-2xl font-semibold text-slate-900">Goals</h2>
-        <p className="mt-1 text-sm text-slate-500">Main goal is recommended. At least one of the two goals is required.</p>
+        <p className="mt-1 text-sm text-slate-500">Select your main goal and intensity to personalize nutrition, workouts, and insights.</p>
 
         <div className="mt-4 grid gap-4 md:grid-cols-2">
-          <label className="text-sm text-slate-700">Main goal (required if no secondary goal)
+          <label className="text-sm text-slate-700">Main goal
             <select
               className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2"
               value={mainGoal}
               onChange={(e) => {
                 setMainGoal(e.target.value);
-                setSecondaryGoal("");
+                setGoalIntensity("");
               }}
             >
               <option value="">Select main goal</option>
@@ -373,16 +403,16 @@ export default function ProfilePage() {
             </select>
           </label>
 
-          <label className="text-sm text-slate-700">Secondary goal (optional)
+          <label className="text-sm text-slate-700">Goal intensity
             <select
               className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2"
-              value={secondaryGoal}
-              onChange={(e) => setSecondaryGoal(e.target.value)}
+              value={goalIntensity}
+              onChange={(e) => setGoalIntensity(e.target.value)}
               disabled={!mainGoal}
             >
-              <option value="">Select secondary goal</option>
-              {secondaryOptions.map((option) => (
-                <option key={option} value={option}>{option}</option>
+              <option value="">Select goal intensity</option>
+              {goalIntensityOptions.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
               ))}
             </select>
           </label>

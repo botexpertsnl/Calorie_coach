@@ -37,6 +37,8 @@ export type DailyStepsRange = "1-5000" | "5000-10000" | "10000+";
 
 export type WorkType = "sedentary" | "light" | "moderate" | "heavy";
 
+export type GoalIntensity = "slow" | "medium" | "medium_fast" | "fast";
+
 export type ProfileInput = {
   age: number;
   gender: Gender;
@@ -47,7 +49,7 @@ export type ProfileInput = {
   averageDailySteps: DailyStepsRange;
   workType: WorkType;
   primaryGoal?: string;
-  secondaryGoal?: string;
+  goalIntensity?: GoalIntensity;
   goalDescription?: string;
   goalText: string;
 };

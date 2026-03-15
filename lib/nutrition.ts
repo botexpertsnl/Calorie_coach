@@ -1,4 +1,4 @@
-import { DailyStepsRange, DailyTargets, GoalType, ProfileInput, TrainingExperience, WorkType } from "@/lib/types";
+import { DailyStepsRange, DailyTargets, GoalIntensity, GoalType, ProfileInput, TrainingExperience, WorkType } from "@/lib/types";
 
 const stepActivityMultipliers: Record<DailyStepsRange, number> = {
   "1-5000": 1.3,
@@ -30,6 +30,22 @@ export function inferGoalCategoryFromText(goalText: string): GoalType {
   if (mentionsFatLoss) return "fat_loss";
   if (mentionsMuscleGain) return "muscle_gain";
   return "maintenance";
+}
+
+function inferGoalCategoryFromProfile(profile: ProfileInput): GoalType {
+  const primary = profile.primaryGoal?.toLowerCase() ?? "";
+
+  if (primary.includes("fat loss")) return "fat_loss";
+  if (primary.includes("muscle gain")) return "muscle_gain";
+  if (primary.includes("strength")) return "muscle_gain";
+  if (primary.includes("endurance")) return "maintenance";
+  if (primary.includes("general health")) return "maintenance";
+
+  return inferGoalCategoryFromText(profile.goalText);
+}
+
+function getGoalIntensity(profile: ProfileInput): GoalIntensity {
+  return profile.goalIntensity ?? "medium";
 }
 
 function bmrMifflinStJeor(profile: ProfileInput): number {
@@ -77,7 +93,8 @@ export function calculateDailyTargets(
   preferredGoalCategory?: GoalType,
   aiReasoning?: string
 ): DailyTargets {
-  const goalCategory = preferredGoalCategory ?? inferGoalCategoryFromText(profile.goalText);
+  const goalCategory = preferredGoalCategory ?? inferGoalCategoryFromProfile(profile);
+  const intensity = getGoalIntensity(profile);
 
   const bmr = bmrMifflinStJeor(profile);
   const activityFactor = getBackgroundActivityFactor(profile);
@@ -91,19 +108,33 @@ export function calculateDailyTargets(
 
   if (goalCategory === "fat_loss") {
     calorieMultiplier = waistSignal === "high" ? 0.82 : waistSignal === "moderate" ? 0.85 : 0.88;
+    if (intensity === "slow") calorieMultiplier += 0.04;
+    if (intensity === "medium_fast") calorieMultiplier -= 0.03;
+    if (intensity === "fast") calorieMultiplier -= 0.06;
     calorieStrategy = `${Math.round((1 - calorieMultiplier) * 100)}% deficit`;
     proteinPerKg = 2.2;
     fatPerKg = 0.8;
   } else if (goalCategory === "muscle_gain") {
     calorieMultiplier = profile.trainingExperience === "advanced" ? 1.12 : 1.08;
+    if (intensity === "slow") calorieMultiplier -= 0.03;
+    if (intensity === "medium_fast") calorieMultiplier += 0.03;
+    if (intensity === "fast") calorieMultiplier += 0.06;
     calorieStrategy = `${Math.round((calorieMultiplier - 1) * 100)}% surplus`;
     proteinPerKg = 1.9;
     fatPerKg = 0.9;
   } else if (goalCategory === "recomposition") {
     calorieMultiplier = waistSignal === "high" ? 0.95 : 0.98;
+    if (intensity === "slow") calorieMultiplier += 0.02;
+    if (intensity === "medium_fast") calorieMultiplier -= 0.015;
+    if (intensity === "fast") calorieMultiplier -= 0.03;
     calorieStrategy = waistSignal === "high" ? "5% deficit" : "near-maintenance";
     proteinPerKg = 2.2;
     fatPerKg = 0.85;
+  } else {
+    if (intensity === "slow") calorieMultiplier -= 0.02;
+    if (intensity === "medium_fast") calorieMultiplier += 0.02;
+    if (intensity === "fast") calorieMultiplier += 0.04;
+    calorieStrategy = intensity === "slow" ? "light conservative" : intensity === "fast" ? "high progression" : "maintenance calories";
   }
 
   proteinPerKg += experienceProteinBump[profile.trainingExperience];

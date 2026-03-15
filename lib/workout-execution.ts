@@ -1,5 +1,5 @@
 import { inferGoalCategoryFromText } from "@/lib/nutrition";
-import { ProfileInput, WorkoutDay, WorkoutException, WorkoutExercise, WorkoutWeekPlan } from "@/lib/types";
+import { GoalIntensity, ProfileInput, WorkoutDay, WorkoutException, WorkoutExercise, WorkoutWeekPlan } from "@/lib/types";
 
 const dayOrder: WorkoutDay[] = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
 
@@ -322,35 +322,42 @@ export function deriveWeeklyWorkoutTargets(profile: ProfileInput | null): Workou
     };
   }
 
-  const goal = inferGoalCategoryFromText(profile.goalText);
+  const goalFromPrimary = profile.primaryGoal?.toLowerCase() ?? "";
+  const goal = goalFromPrimary.includes("fat loss")
+    ? "fat_loss"
+    : goalFromPrimary.includes("muscle gain") || goalFromPrimary.includes("strength")
+      ? "muscle_gain"
+      : inferGoalCategoryFromText(profile.goalText);
+  const intensity: GoalIntensity = profile.goalIntensity ?? "medium";
+  const intensityFactor = intensity === "slow" ? 0.9 : intensity === "medium_fast" ? 1.08 : intensity === "fast" ? 1.16 : 1;
   const experienceFactor = profile.trainingExperience === "advanced" ? 1.2 : profile.trainingExperience === "intermediate" ? 1 : 0.82;
   const stepsCardioBump = profile.averageDailySteps === "10000+" ? 8 : profile.averageDailySteps === "5000-10000" ? 4 : 0;
   const workTypeRecoveryAdjustment = profile.workType === "heavy" ? 0.9 : profile.workType === "moderate" ? 0.95 : 1;
 
   if (goal === "fat_loss") {
     return {
-      strengthPoints: Math.round(36 * experienceFactor * workTypeRecoveryAdjustment),
-      cardioPoints: Math.round((62 + stepsCardioBump) * experienceFactor * workTypeRecoveryAdjustment)
+      strengthPoints: Math.round(36 * experienceFactor * workTypeRecoveryAdjustment * intensityFactor),
+      cardioPoints: Math.round((62 + stepsCardioBump) * experienceFactor * workTypeRecoveryAdjustment * intensityFactor)
     };
   }
 
   if (goal === "muscle_gain") {
     return {
-      strengthPoints: Math.round(74 * experienceFactor * workTypeRecoveryAdjustment),
-      cardioPoints: Math.round((18 + Math.round(stepsCardioBump / 2)) * experienceFactor * workTypeRecoveryAdjustment)
+      strengthPoints: Math.round(74 * experienceFactor * workTypeRecoveryAdjustment * intensityFactor),
+      cardioPoints: Math.round((18 + Math.round(stepsCardioBump / 2)) * experienceFactor * workTypeRecoveryAdjustment * intensityFactor)
     };
   }
 
   if (goal === "recomposition") {
     return {
-      strengthPoints: Math.round(58 * experienceFactor * workTypeRecoveryAdjustment),
-      cardioPoints: Math.round((44 + stepsCardioBump) * experienceFactor * workTypeRecoveryAdjustment)
+      strengthPoints: Math.round(58 * experienceFactor * workTypeRecoveryAdjustment * intensityFactor),
+      cardioPoints: Math.round((44 + stepsCardioBump) * experienceFactor * workTypeRecoveryAdjustment * intensityFactor)
     };
   }
 
   return {
-    strengthPoints: Math.round(42 * experienceFactor * workTypeRecoveryAdjustment),
-    cardioPoints: Math.round((52 + stepsCardioBump) * experienceFactor * workTypeRecoveryAdjustment)
+    strengthPoints: Math.round(42 * experienceFactor * workTypeRecoveryAdjustment * intensityFactor),
+    cardioPoints: Math.round((52 + stepsCardioBump) * experienceFactor * workTypeRecoveryAdjustment * intensityFactor)
   };
 }
 

@@ -6,7 +6,7 @@ import { InsightsLineChart } from "@/components/InsightsLineChart";
 import { STORAGE_KEYS, readJson } from "@/lib/local-data";
 import { TARGETS_UPDATED_EVENT } from "@/lib/daily-targets";
 import { buildWorkoutAdjustedSummary, deriveWeeklyWorkoutTargets, getCurrentWeekDateKeys, getDateKeysInRange } from "@/lib/workout-execution";
-import { DailyTargets, MacroKey, MacroTotals, StoredMealLog, WorkoutException, WorkoutWeekPlan } from "@/lib/types";
+import { DailyTargets, MacroKey, MacroTotals, ProfileInput, StoredMealLog, WorkoutException, WorkoutWeekPlan } from "@/lib/types";
 
 type RangePreset = "7d" | "1m" | "3m" | "6m" | "custom";
 
@@ -32,6 +32,7 @@ export default function InsightsPage() {
   const [workouts, setWorkouts] = useState<WorkoutWeekPlan | null>(null);
   const [workoutExceptions, setWorkoutExceptions] = useState<WorkoutException[]>([]);
   const [nutritionTargets, setNutritionTargets] = useState<DailyTargets | null>(null);
+  const [profile, setProfile] = useState<ProfileInput | null>(null);
   const [workoutTargets, setWorkoutTargets] = useState(() => deriveWeeklyWorkoutTargets(readJson(STORAGE_KEYS.profile)));
   const weekDateKeys = useMemo(() => getCurrentWeekDateKeys(), []);
 
@@ -41,7 +42,9 @@ export default function InsightsPage() {
       setWorkouts(readJson<WorkoutWeekPlan>(STORAGE_KEYS.workouts));
       setWorkoutExceptions(readJson<WorkoutException[]>(STORAGE_KEYS.workoutExceptions) ?? []);
       setNutritionTargets(readJson<DailyTargets>(STORAGE_KEYS.targets));
-      setWorkoutTargets(deriveWeeklyWorkoutTargets(readJson(STORAGE_KEYS.profile)));
+      const savedProfile = readJson<ProfileInput>(STORAGE_KEYS.profile);
+      setProfile(savedProfile);
+      setWorkoutTargets(deriveWeeklyWorkoutTargets(savedProfile));
       setDisabledMacros(readJson<MacroKey[]>(STORAGE_KEYS.disabledMacros) ?? []);
     };
 
@@ -257,6 +260,15 @@ export default function InsightsPage() {
         <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200"><p className="text-xs text-slate-500">Cardio Target Hit</p><p className="text-2xl font-semibold text-slate-900">{adherence.cardioHit}%</p><p className="text-xs text-slate-500">{workoutSummary.cardioPoints} / {workoutTargets.cardioPoints} points</p></div>
         <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200"><p className="text-xs text-slate-500">Workout Consistency</p><p className="text-2xl font-semibold text-slate-900">{adherence.consistency}%</p></div>
         <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200"><p className="text-xs text-slate-500">Combined Weekly Goal Score</p><p className="text-2xl font-semibold text-slate-900">{adherence.combinedScore}%</p></div>
+      </section>
+
+      <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
+        <h3 className="text-lg font-semibold text-slate-900">Goal Context</h3>
+        <p className="mt-2 text-sm text-slate-600">
+          Main goal: <span className="font-semibold text-slate-900">{profile?.primaryGoal ?? "Not set"}</span>
+          {" · "}
+          Intensity: <span className="font-semibold text-slate-900">{profile?.goalIntensity ?? "medium"}</span>
+        </p>
       </section>
 
       <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
