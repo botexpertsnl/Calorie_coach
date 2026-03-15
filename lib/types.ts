@@ -54,6 +54,18 @@ export type ProfileInput = {
   goalText: string;
 };
 
+export type BodyMetricProgressEntry = {
+  id: string;
+  value: number;
+  recordedAt: string;
+  createdAt: string;
+};
+
+export type BodyProgressHistory = {
+  weight: BodyMetricProgressEntry[];
+  waist: BodyMetricProgressEntry[];
+};
+
 export type GoalType =
   | "fat_loss"
   | "muscle_gain"

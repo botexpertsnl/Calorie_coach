@@ -7,7 +7,7 @@ import { TARGETS_UPDATED_EVENT, getDailyMacroTargets, recalculateAndPersistToday
 import { ensureDemoSeedData } from "@/lib/demo-seed";
 import { calculateDailyTargets } from "@/lib/nutrition";
 import { getCurrentWeekDateKeys } from "@/lib/workout-execution";
-import { DailyTargets, MacroKey, ProfileInput, WorkoutDay, WorkoutException, WorkoutWeekPlan } from "@/lib/types";
+import { BodyMetricProgressEntry, BodyProgressHistory, DailyTargets, MacroKey, ProfileInput, WorkoutDay, WorkoutException, WorkoutWeekPlan } from "@/lib/types";
 
 const defaultProfile: ProfileInput = {
   heightCm: 170,
@@ -136,6 +136,79 @@ function parseGoalsFromText(goalText: string) {
   };
 }
 
+function getAmsterdamNowInputValues() {
+  const now = new Date();
+  const date = new Intl.DateTimeFormat("sv-SE", {
+    timeZone: "Europe/Amsterdam",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).format(now);
+  const time = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/Amsterdam",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false
+  }).format(now);
+  return { date, time };
+}
+
+function getAmsterdamOffsetMs(date: Date) {
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Europe/Amsterdam",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false
+  });
+
+  const parts = formatter.formatToParts(date);
+  const getPart = (type: Intl.DateTimeFormatPartTypes) => Number(parts.find((part) => part.type === type)?.value ?? 0);
+  const asUtc = Date.UTC(
+    getPart("year"),
+    getPart("month") - 1,
+    getPart("day"),
+    getPart("hour"),
+    getPart("minute"),
+    getPart("second")
+  );
+
+  return asUtc - date.getTime();
+}
+
+function toIsoFromAmsterdamDateTime(date: string, time: string) {
+  const [year, month, day] = date.split("-").map(Number);
+  const [hour, minute] = time.split(":").map(Number);
+  if ([year, month, day, hour, minute].some((value) => Number.isNaN(value))) return new Date().toISOString();
+
+  const utcGuess = new Date(Date.UTC(year, month - 1, day, hour, minute, 0));
+  const offsetMs = getAmsterdamOffsetMs(utcGuess);
+  return new Date(utcGuess.getTime() - offsetMs).toISOString();
+}
+
+function formatAmsterdamDateTime(iso?: string) {
+  if (!iso) return "n/a";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "n/a";
+  const formatted = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/Amsterdam",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false
+  }).format(date);
+  return `${formatted} (CEST/CET)`;
+}
+
+function getLatestProgressEntry(entries: BodyMetricProgressEntry[]) {
+  return [...entries].sort((a, b) => new Date(b.recordedAt).getTime() - new Date(a.recordedAt).getTime())[0] ?? null;
+}
+
 export default function ProfilePage() {
   const [profile, setProfile] = useState<ProfileInput>(defaultProfile);
   const [targets, setTargets] = useState<DailyTargets>(defaultTargets);
@@ -151,6 +224,11 @@ export default function ProfilePage() {
   const [manualWeekScheme, setManualWeekScheme] = useState<Record<WorkoutDay, Record<MacroKey, number>>>(
     createDefaultWeekMacroScheme(defaultTargets)
   );
+  const [bodyProgress, setBodyProgress] = useState<BodyProgressHistory>({ weight: [], waist: [] });
+  const [isWeightModalOpen, setIsWeightModalOpen] = useState(false);
+  const [isWaistModalOpen, setIsWaistModalOpen] = useState(false);
+  const [weightEntry, setWeightEntry] = useState({ value: 0, ...getAmsterdamNowInputValues() });
+  const [waistEntry, setWaistEntry] = useState({ value: 0, ...getAmsterdamNowInputValues() });
 
   useEffect(() => {
     ensureDemoSeedData();
@@ -162,6 +240,7 @@ export default function ProfilePage() {
     const savedWorkouts = readJson<WorkoutWeekPlan>(STORAGE_KEYS.workouts);
     const savedExceptions = readJson<WorkoutException[]>(STORAGE_KEYS.workoutExceptions) ?? [];
     const savedWeekScheme = readJson<Record<WorkoutDay, Record<MacroKey, number>>>(STORAGE_KEYS.weeklyMacroScheme);
+    const savedBodyProgress = readJson<BodyProgressHistory>(STORAGE_KEYS.bodyProgress);
 
     if (savedProfile) {
       setProfile({ ...defaultProfile, ...savedProfile });
@@ -177,6 +256,14 @@ export default function ProfilePage() {
     if (savedWorkouts) setWorkouts(savedWorkouts);
     setExceptions(savedExceptions);
     if (savedWeekScheme) setManualWeekScheme(savedWeekScheme);
+
+    const initialProgress = savedBodyProgress ?? {
+      weight: [{ id: crypto.randomUUID(), value: (savedProfile?.weightKg ?? defaultProfile.weightKg), recordedAt: new Date().toISOString(), createdAt: new Date().toISOString() }],
+      waist: [{ id: crypto.randomUUID(), value: (savedProfile?.waistCm ?? defaultProfile.waistCm), recordedAt: new Date().toISOString(), createdAt: new Date().toISOString() }]
+    };
+    setBodyProgress(initialProgress);
+    setWeightEntry({ value: (savedProfile?.weightKg ?? defaultProfile.weightKg), ...getAmsterdamNowInputValues() });
+    setWaistEntry({ value: (savedProfile?.waistCm ?? defaultProfile.waistCm), ...getAmsterdamNowInputValues() });
   }, []);
 
 
@@ -268,6 +355,42 @@ export default function ProfilePage() {
     }
   }
 
+
+  const latestWeightEntry = useMemo(() => getLatestProgressEntry(bodyProgress.weight), [bodyProgress.weight]);
+  const latestWaistEntry = useMemo(() => getLatestProgressEntry(bodyProgress.waist), [bodyProgress.waist]);
+
+  function openWeightModal() {
+    setWeightEntry({ value: profile.weightKg, ...getAmsterdamNowInputValues() });
+    setIsWeightModalOpen(true);
+  }
+
+  function openWaistModal() {
+    setWaistEntry({ value: profile.waistCm, ...getAmsterdamNowInputValues() });
+    setIsWaistModalOpen(true);
+  }
+
+  function saveWeightProgress() {
+    const recordedAt = toIsoFromAmsterdamDateTime(weightEntry.date, weightEntry.time);
+    const createdAt = new Date().toISOString();
+    const entry: BodyMetricProgressEntry = { id: crypto.randomUUID(), value: Number(weightEntry.value), recordedAt, createdAt };
+    const next = { ...bodyProgress, weight: [...bodyProgress.weight, entry] };
+    setBodyProgress(next);
+    writeJson(STORAGE_KEYS.bodyProgress, next);
+    updateProfile("weightKg", Number(weightEntry.value));
+    setIsWeightModalOpen(false);
+  }
+
+  function saveWaistProgress() {
+    const recordedAt = toIsoFromAmsterdamDateTime(waistEntry.date, waistEntry.time);
+    const createdAt = new Date().toISOString();
+    const entry: BodyMetricProgressEntry = { id: crypto.randomUUID(), value: Number(waistEntry.value), recordedAt, createdAt };
+    const next = { ...bodyProgress, waist: [...bodyProgress.waist, entry] };
+    setBodyProgress(next);
+    writeJson(STORAGE_KEYS.bodyProgress, next);
+    updateProfile("waistCm", Number(waistEntry.value));
+    setIsWaistModalOpen(false);
+  }
+
   function updateProfile<K extends keyof ProfileInput>(key: K, value: ProfileInput[K]) {
     setProfile((prev) => ({ ...prev, [key]: value }));
   }
@@ -305,6 +428,7 @@ export default function ProfilePage() {
     writeJson(STORAGE_KEYS.disabledMacros, disabledMacros);
     writeJson(STORAGE_KEYS.macroManualMode, isManualMode);
     writeJson(STORAGE_KEYS.weeklyMacroScheme, manualWeekScheme);
+    writeJson(STORAGE_KEYS.bodyProgress, bodyProgress);
 
     if (!isManualMode) {
       const nextTargets = recalculateAndPersistTodayTargets({ profile: profileToSave, workouts, exceptions, disabledMacros, force: true });
@@ -330,16 +454,31 @@ export default function ProfilePage() {
       <AppHeaderNav />
 
       <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
+        <h1 className="text-2xl font-semibold text-slate-900">Progress Metrics</h1>
+        <p className="mt-1 text-sm text-slate-500">Track body changes over time (Europe/Amsterdam timezone).</p>
+
+        <div className="mt-4 grid gap-4 md:grid-cols-2">
+          <div className="rounded-xl border border-slate-200 p-4">
+            <p className="text-xs uppercase tracking-wide text-slate-500">Current Weight</p>
+            <p className="mt-1 text-2xl font-semibold text-slate-900">{profile.weightKg} kg</p>
+            <p className="mt-1 text-xs text-slate-500">Last updated: {formatAmsterdamDateTime(latestWeightEntry?.recordedAt ?? latestWeightEntry?.createdAt)}</p>
+            <button type="button" onClick={openWeightModal} className="mt-3 rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Register Weight Progress</button>
+          </div>
+
+          <div className="rounded-xl border border-slate-200 p-4">
+            <p className="text-xs uppercase tracking-wide text-slate-500">Current Waist</p>
+            <p className="mt-1 text-2xl font-semibold text-slate-900">{profile.waistCm} cm</p>
+            <p className="mt-1 text-xs text-slate-500">Last updated: {formatAmsterdamDateTime(latestWaistEntry?.recordedAt ?? latestWaistEntry?.createdAt)}</p>
+            <button type="button" onClick={openWaistModal} className="mt-3 rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Register Waist Progress</button>
+          </div>
+        </div>
+      </section>
+
+      <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
         <h1 className="text-2xl font-semibold text-slate-900">Body Profile</h1>
         <div className="mt-4 grid gap-4 md:grid-cols-2">
           <label className="text-sm text-slate-700">Height (cm)
             <input type="number" className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={profile.heightCm} onChange={(e) => updateProfile("heightCm", Number(e.target.value))} />
-          </label>
-          <label className="text-sm text-slate-700">Weight (kg)
-            <input type="number" className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={profile.weightKg} onChange={(e) => updateProfile("weightKg", Number(e.target.value))} />
-          </label>
-          <label className="text-sm text-slate-700">Waist (cm)
-            <input type="number" className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={profile.waistCm} onChange={(e) => updateProfile("waistCm", Number(e.target.value))} />
           </label>
           <label className="text-sm text-slate-700">Age
             <input type="number" className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={profile.age} onChange={(e) => updateProfile("age", Number(e.target.value))} />
@@ -529,6 +668,61 @@ export default function ProfilePage() {
         <p className="text-sm text-slate-500">Save Profile stores body profile, goals, and macro targets together.</p>
         <button onClick={saveProfile} className="rounded-xl bg-emerald-500 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-400">Save Profile</button>
       </section>
+
+
+      {isWeightModalOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl ring-1 ring-slate-200">
+            <h3 className="text-lg font-semibold text-slate-900">Register Weight Progress</h3>
+            <p className="mt-2 text-sm text-slate-600">Previous value: <span className="font-semibold text-slate-900">{latestWeightEntry?.value ?? profile.weightKg} kg</span></p>
+            <p className="text-xs text-slate-500">Saved on: {formatAmsterdamDateTime(latestWeightEntry?.recordedAt ?? latestWeightEntry?.createdAt)}</p>
+            <div className="mt-4 space-y-3">
+              <label className="block text-sm text-slate-700">New Weight value
+                <input type="number" className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={weightEntry.value} onChange={(e) => setWeightEntry((prev) => ({ ...prev, value: Number(e.target.value) }))} />
+              </label>
+              <div className="grid gap-3 md:grid-cols-2">
+                <label className="text-sm text-slate-700">Date
+                  <input type="date" className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={weightEntry.date} onChange={(e) => setWeightEntry((prev) => ({ ...prev, date: e.target.value }))} />
+                </label>
+                <label className="text-sm text-slate-700">Time
+                  <input type="time" className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={weightEntry.time} onChange={(e) => setWeightEntry((prev) => ({ ...prev, time: e.target.value }))} />
+                </label>
+              </div>
+            </div>
+            <div className="mt-5 flex justify-end gap-2">
+              <button type="button" onClick={() => setIsWeightModalOpen(false)} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700">Cancel</button>
+              <button type="button" onClick={saveWeightProgress} className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-400">Save Weight Progress</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {isWaistModalOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl ring-1 ring-slate-200">
+            <h3 className="text-lg font-semibold text-slate-900">Register Waist Progress</h3>
+            <p className="mt-2 text-sm text-slate-600">Previous value: <span className="font-semibold text-slate-900">{latestWaistEntry?.value ?? profile.waistCm} cm</span></p>
+            <p className="text-xs text-slate-500">Saved on: {formatAmsterdamDateTime(latestWaistEntry?.recordedAt ?? latestWaistEntry?.createdAt)}</p>
+            <div className="mt-4 space-y-3">
+              <label className="block text-sm text-slate-700">New Waist value
+                <input type="number" className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={waistEntry.value} onChange={(e) => setWaistEntry((prev) => ({ ...prev, value: Number(e.target.value) }))} />
+              </label>
+              <div className="grid gap-3 md:grid-cols-2">
+                <label className="text-sm text-slate-700">Date
+                  <input type="date" className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={waistEntry.date} onChange={(e) => setWaistEntry((prev) => ({ ...prev, date: e.target.value }))} />
+                </label>
+                <label className="text-sm text-slate-700">Time
+                  <input type="time" className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={waistEntry.time} onChange={(e) => setWaistEntry((prev) => ({ ...prev, time: e.target.value }))} />
+                </label>
+              </div>
+            </div>
+            <div className="mt-5 flex justify-end gap-2">
+              <button type="button" onClick={() => setIsWaistModalOpen(false)} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700">Cancel</button>
+              <button type="button" onClick={saveWaistProgress} className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-400">Save Waist Progress</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
 
       {saveConfirmation ? (

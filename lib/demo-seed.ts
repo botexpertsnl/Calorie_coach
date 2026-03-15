@@ -2,7 +2,7 @@ import { calculateDailyTargets } from "@/lib/nutrition";
 import { ALL_WEEKDAYS, applyDailyMealsForDate } from "@/lib/meals";
 import { STORAGE_KEYS, readJson, writeJson } from "@/lib/local-data";
 import { calculateTrainingVolume, estimateFitnessCalories } from "@/lib/workouts";
-import { DailyTargets, MacroKey, ProfileInput, QuickMeal, StoredMealLog, WorkoutDay, WorkoutWeekPlan } from "@/lib/types";
+import { BodyProgressHistory, DailyTargets, MacroKey, ProfileInput, QuickMeal, StoredMealLog, WorkoutDay, WorkoutWeekPlan } from "@/lib/types";
 
 const DEMO_SEED_VERSION = "v1";
 const DEMO_SEED_KEY = "ai-calorie-coach-demo-seed-version";
@@ -47,6 +47,14 @@ function toIsoFromAmsterdamDateAndTime(dateKey: string, time: string) {
   return new Date(utcGuess.getTime() - offsetMs).toISOString();
 }
 
+
+function createInitialBodyProgress(profile: ProfileInput): BodyProgressHistory {
+  const now = new Date().toISOString();
+  return {
+    weight: [{ id: "demo-weight-initial", value: profile.weightKg, recordedAt: now, createdAt: now }],
+    waist: [{ id: "demo-waist-initial", value: profile.waistCm, recordedAt: now, createdAt: now }]
+  };
+}
 function createDemoProfile(): ProfileInput {
   return {
     age: 34,
@@ -294,6 +302,7 @@ export function ensureDemoSeedData() {
   const targets = readJson<DailyTargets>(STORAGE_KEYS.targets);
   const disabledMacros = readJson<MacroKey[]>(STORAGE_KEYS.disabledMacros);
   const manualMode = readJson<boolean>(STORAGE_KEYS.macroManualMode);
+  const bodyProgress = readJson<BodyProgressHistory>(STORAGE_KEYS.bodyProgress);
 
   const demoProfile = profile ?? createDemoProfile();
   if (!profile) writeJson(STORAGE_KEYS.profile, demoProfile);
@@ -322,6 +331,7 @@ export function ensureDemoSeedData() {
 
   if (!disabledMacros) writeJson(STORAGE_KEYS.disabledMacros, [] as MacroKey[]);
   if (manualMode === null) writeJson(STORAGE_KEYS.macroManualMode, false);
+  if (!bodyProgress) writeJson(STORAGE_KEYS.bodyProgress, createInitialBodyProgress(demoProfile));
 
   window.localStorage.setItem(DEMO_SEED_KEY, DEMO_SEED_VERSION);
 }

@@ -5,9 +5,9 @@ import { AppHeaderNav } from "@/components/AppHeaderNav";
 import { TARGETS_UPDATED_EVENT, getDailyMacroTargets } from "@/lib/daily-targets";
 import { ensureDemoSeedData } from "@/lib/demo-seed";
 import { STORAGE_KEYS, readJson } from "@/lib/local-data";
-import { getLocalDateKey } from "@/lib/meals";
 import { buildEffectiveWorkoutInstances, buildWorkoutAdjustedSummary, getCurrentWeekDateKeys, getDateKeysInRange } from "@/lib/workout-execution";
 import {
+  BodyProgressHistory,
   DailyTargets,
   MacroKey,
   MacroTotals,
@@ -204,6 +204,39 @@ function BarChart({ bars }: { bars: Array<{ label: string; value: number; color?
   );
 }
 
+
+function SimpleTrendChart({ points, color, unit }: { points: Array<{ x: string; y: number }>; color: string; unit: string }) {
+  if (!points.length) return <p className="text-sm text-slate-500">No progress entries in this range.</p>;
+
+  const width = 520;
+  const height = 210;
+  const padding = 30;
+  const max = Math.max(...points.map((p) => p.y), 1);
+  const min = Math.min(...points.map((p) => p.y), max);
+  const range = Math.max(max - min, 1);
+
+  const toX = (index: number) => padding + (index / Math.max(points.length - 1, 1)) * (width - padding * 2);
+  const toY = (value: number) => height - padding - ((value - min) / range) * (height - padding * 2);
+  const path = points.map((point, index) => `${index === 0 ? "M" : "L"}${toX(index)} ${toY(point.y)}`).join(" ");
+
+  return (
+    <div>
+      <svg viewBox={`0 0 ${width} ${height}`} className="h-52 w-full">
+        <line x1={padding} y1={height - padding} x2={width - padding} y2={height - padding} stroke="#cbd5e1" strokeWidth="1" />
+        <line x1={padding} y1={padding} x2={padding} y2={height - padding} stroke="#cbd5e1" strokeWidth="1" />
+        <path d={path} fill="none" stroke={color} strokeWidth="2.5" />
+        {points.map((point, index) => (
+          <circle key={`${point.x}-${index}`} cx={toX(index)} cy={toY(point.y)} r="2.5" fill={color} />
+        ))}
+      </svg>
+      <div className="mt-2 flex items-center justify-between text-xs text-slate-500">
+        <span>{points[0].x.slice(0, 16).replace("T", " ")}</span>
+        <span>{Math.round(min)}–{Math.round(max)} {unit}</span>
+        <span>{points[points.length - 1].x.slice(0, 16).replace("T", " ")}</span>
+      </div>
+    </div>
+  );
+}
 export default function InsightsPage() {
   const [rangePreset, setRangePreset] = useState<RangePreset>("7d");
   const [customStart, setCustomStart] = useState("");
@@ -215,6 +248,7 @@ export default function InsightsPage() {
   const [workoutExceptions, setWorkoutExceptions] = useState<WorkoutException[]>([]);
   const [nutritionTargets, setNutritionTargets] = useState<DailyTargets | null>(null);
   const [profile, setProfile] = useState<ProfileInput | null>(null);
+  const [bodyProgress, setBodyProgress] = useState<BodyProgressHistory>({ weight: [], waist: [] });
 
   const [progressMetric, setProgressMetric] = useState<ProgressMetric>("volume");
   const [typeFilter, setTypeFilter] = useState<"all" | WorkoutExerciseType>("all");
@@ -232,6 +266,7 @@ export default function InsightsPage() {
       setWorkoutExceptions(readJson<WorkoutException[]>(STORAGE_KEYS.workoutExceptions) ?? []);
       setNutritionTargets(readJson<DailyTargets>(STORAGE_KEYS.targets));
       setProfile(readJson<ProfileInput>(STORAGE_KEYS.profile));
+      setBodyProgress(readJson<BodyProgressHistory>(STORAGE_KEYS.bodyProgress) ?? { weight: [], waist: [] });
       setDisabledMacros(readJson<MacroKey[]>(STORAGE_KEYS.disabledMacros) ?? []);
     };
 
@@ -247,7 +282,8 @@ export default function InsightsPage() {
         STORAGE_KEYS.workoutExceptions,
         STORAGE_KEYS.targets,
         STORAGE_KEYS.profile,
-        STORAGE_KEYS.disabledMacros
+        STORAGE_KEYS.disabledMacros,
+        STORAGE_KEYS.bodyProgress
       ]);
 
       if (watchKeys.has(event.key)) sync();
@@ -281,6 +317,17 @@ export default function InsightsPage() {
     const start = startDateFromPreset(rangePreset);
     return getDateKeysInRange(start, end);
   }, [customEnd, customStart, rangePreset, weekDateKeys]);
+
+
+  const rangeStart = useMemo(() => {
+    if (!rangeDateKeys.length) return new Date(0);
+    return new Date(`${rangeDateKeys[0]}T00:00:00`);
+  }, [rangeDateKeys]);
+
+  const rangeEnd = useMemo(() => {
+    if (!rangeDateKeys.length) return new Date();
+    return new Date(`${rangeDateKeys[rangeDateKeys.length - 1]}T23:59:59`);
+  }, [rangeDateKeys]);
 
   const mealsByDate = useMemo(() => {
     const map = new Map<string, MacroTotals>();
@@ -494,6 +541,27 @@ export default function InsightsPage() {
     };
   }, [nutritionPoints, workoutSummary]);
 
+
+  const weightSeries = useMemo(() => {
+    return bodyProgress.weight
+      .filter((entry) => {
+        const d = new Date(entry.recordedAt);
+        return d >= rangeStart && d <= rangeEnd;
+      })
+      .sort((a, b) => new Date(a.recordedAt).getTime() - new Date(b.recordedAt).getTime())
+      .map((entry) => ({ x: entry.recordedAt, y: entry.value }));
+  }, [bodyProgress.weight, rangeEnd, rangeStart]);
+
+  const waistSeries = useMemo(() => {
+    return bodyProgress.waist
+      .filter((entry) => {
+        const d = new Date(entry.recordedAt);
+        return d >= rangeStart && d <= rangeEnd;
+      })
+      .sort((a, b) => new Date(a.recordedAt).getTime() - new Date(b.recordedAt).getTime())
+      .map((entry) => ({ x: entry.recordedAt, y: entry.value }));
+  }, [bodyProgress.waist, rangeEnd, rangeStart]);
+
   const coachingInsights = useMemo(() => {
     const tips: string[] = [];
     const goal = (profile?.primaryGoal ?? "").toLowerCase();
@@ -536,10 +604,17 @@ export default function InsightsPage() {
       tips.push("For your fat-loss goal, higher protein intake could better support muscle retention.");
     }
 
+    if (waistSeries.length >= 2 && weightSeries.length >= 2) {
+      const waistDelta = waistSeries[waistSeries.length - 1].y - waistSeries[0].y;
+      const weightDelta = weightSeries[weightSeries.length - 1].y - weightSeries[0].y;
+      if (waistDelta < 0 && Math.abs(weightDelta) < 1) tips.push("Waist is trending down while weight is stable — this can indicate body recomposition progress.");
+      if (goal.includes("fat loss") && waistDelta >= 0) tips.push("Waist is not trending downward in this range. Consider tightening calorie adherence and training consistency.");
+    }
+
     if (!tips.length) tips.push("Great consistency so far. Keep progressive overload and steady nutrition adherence.");
 
     return tips.slice(0, 5);
-  }, [exerciseProgressRows, profile, summary, trainingBalanceBars]);
+  }, [exerciseProgressRows, profile, summary, trainingBalanceBars, waistSeries, weightSeries]);
 
   return (
     <main className="mx-auto w-full max-w-7xl space-y-6 px-4 py-8 md:px-8">
@@ -704,6 +779,20 @@ export default function InsightsPage() {
             <p className="font-semibold text-slate-900">Deep dive notes</p>
             <p className="mt-2">Filters from the Exercise Progress section also apply here, so you can inspect balance by workout type, muscle group, specify muscle, and exercise name.</p>
             <p className="mt-2">Use this to spot imbalances like low legs volume or chest-heavy programming versus back.</p>
+          </div>
+        </div>
+      </ChartCard>
+
+
+      <ChartCard title="Body Progress Insights">
+        <div className="grid gap-4 lg:grid-cols-2">
+          <div className="rounded-xl border border-slate-200 p-3">
+            <p className="mb-2 text-sm font-semibold text-slate-800">Weight Progress</p>
+            <SimpleTrendChart points={weightSeries} color="#0ea5e9" unit="kg" />
+          </div>
+          <div className="rounded-xl border border-slate-200 p-3">
+            <p className="mb-2 text-sm font-semibold text-slate-800">Waist Progress</p>
+            <SimpleTrendChart points={waistSeries} color="#8b5cf6" unit="cm" />
           </div>
         </div>
       </ChartCard>

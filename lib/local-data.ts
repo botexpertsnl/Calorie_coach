@@ -9,7 +9,8 @@ export const STORAGE_KEYS = {
   macroManualMode: "ai-calorie-coach-macro-manual-mode",
   weeklyMacroScheme: "ai-calorie-coach-weekly-macro-scheme",
   workouts: "ai-calorie-coach-workouts",
-  workoutExceptions: "ai-calorie-coach-workout-exceptions"
+  workoutExceptions: "ai-calorie-coach-workout-exceptions",
+  bodyProgress: "ai-calorie-coach-body-progress"
 } as const;
 
 export function readJson<T>(key: string): T | null {
