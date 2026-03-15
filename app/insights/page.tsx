@@ -5,7 +5,7 @@ import { AppHeaderNav } from "@/components/AppHeaderNav";
 import { TARGETS_UPDATED_EVENT, getDailyMacroTargets } from "@/lib/daily-targets";
 import { ensureDemoSeedData } from "@/lib/demo-seed";
 import { STORAGE_KEYS, readJson } from "@/lib/local-data";
-import { buildEffectiveWorkoutInstances, buildWorkoutAdjustedSummary, getCurrentWeekDateKeys, getDateKeysInRange } from "@/lib/workout-execution";
+import { buildEffectiveWorkoutInstances, buildWorkoutAdjustedSummary, getDateKeysInRange } from "@/lib/workout-execution";
 import {
   BodyProgressHistory,
   DailyTargets,
@@ -21,8 +21,7 @@ import {
   WorkoutWeekPlan
 } from "@/lib/types";
 
-type RangePreset = "7d" | "1m" | "3m" | "6m" | "custom";
-type ProgressMetric = "weight" | "reps" | "volume" | "duration" | "calories";
+type RangePreset = "7d" | "30d" | "90d" | "custom";
 
 type NutritionPoint = {
   date: string;
@@ -33,22 +32,25 @@ type NutritionPoint = {
 type ExerciseRecord = {
   date: string;
   type: WorkoutExerciseType;
-  exerciseName: string;
   muscleGroup: MuscleGroup;
   specifyMuscle?: SpecifyMuscle;
   weight: number;
   reps: number;
+  sets: number;
   volume: number;
   duration: number;
   calories: number;
 };
 
+type TrendPoint = { x: string; y: number; tooltipLabel?: string };
+type MultiSeriesPoint = { x: string; y: number; tooltipLabel?: string };
+type MultiSeries = { key: string; label: string; color: string; points: MultiSeriesPoint[] };
+
 const rangeOptions: Array<{ value: RangePreset; label: string }> = [
-  { value: "7d", label: "7 days" },
-  { value: "1m", label: "1 month" },
-  { value: "3m", label: "3 months" },
-  { value: "6m", label: "6 months" },
-  { value: "custom", label: "Custom" }
+  { value: "7d", label: "Last 7 Days" },
+  { value: "30d", label: "Last 30 Days" },
+  { value: "90d", label: "Last 90 Days" },
+  { value: "custom", label: "Custom Range" }
 ];
 
 const macroConfigs: Array<{ key: MacroKey; label: string; unit: string; color: string }> = [
@@ -105,16 +107,7 @@ const specifyMuscleByGroup: Record<MuscleGroup, SpecifyMuscle[]> = {
   core: ["upper_abs", "lower_abs", "obliques", "lower_back", "deep_core"]
 };
 
-function startDateFromPreset(preset: Exclude<RangePreset, "custom">) {
-  const now = new Date();
-  const start = new Date(now);
-  if (preset === "7d") start.setDate(now.getDate() - 6);
-  if (preset === "1m") start.setMonth(now.getMonth() - 1);
-  if (preset === "3m") start.setMonth(now.getMonth() - 3);
-  if (preset === "6m") start.setMonth(now.getMonth() - 6);
-  start.setHours(0, 0, 0, 0);
-  return start;
-}
+const lineColors = ["#0ea5e9", "#22c55e", "#a855f7", "#f97316", "#ef4444", "#14b8a6", "#6366f1", "#f59e0b"];
 
 function toDateKey(input: string) {
   return input.slice(0, 10);
@@ -122,6 +115,39 @@ function toDateKey(input: string) {
 
 function formatShortDate(dateKey: string) {
   return dateKey.slice(5);
+}
+
+function formatDateTime(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat("en-GB", {
+    year: "numeric",
+    month: "short",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false
+  }).format(date);
+}
+
+function formatDateOnly(value: string) {
+  const date = new Date(`${value}T12:00:00`);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat("en-GB", { year: "numeric", month: "short", day: "2-digit" }).format(date);
+}
+
+function getRangeWindow(rangePreset: RangePreset, customStart: string, customEnd: string) {
+  const end = rangePreset === "custom" && customEnd ? new Date(customEnd) : new Date();
+  if (rangePreset !== "custom") {
+    const start = new Date(end);
+    const daysBack = rangePreset === "7d" ? 6 : rangePreset === "30d" ? 29 : 89;
+    start.setDate(end.getDate() - daysBack);
+    return { start, end };
+  }
+
+  const start = customStart ? new Date(customStart) : new Date(end);
+  if (!customStart) start.setDate(end.getDate() - 6);
+  return start <= end ? { start, end } : { start: end, end: start };
 }
 
 function ChartCard({ title, children }: { title: string; children: ReactNode }) {
@@ -137,11 +163,13 @@ function LineCompareChart({
   points,
   actualColor,
   targetColor,
+  metricLabel,
   valueFormatter
 }: {
   points: Array<{ date: string; actual: number; target: number }>;
   actualColor: string;
   targetColor: string;
+  metricLabel: string;
   valueFormatter: (n: number) => string;
 }) {
   if (!points.length) return <p className="text-sm text-slate-500">No data in this range yet.</p>;
@@ -168,7 +196,9 @@ function LineCompareChart({
         <path d={actualPath} fill="none" stroke={actualColor} strokeWidth="2.5" />
 
         {points.map((point, index) => (
-          <circle key={`${point.date}-${index}`} cx={toX(index)} cy={toY(point.actual)} r="2.5" fill={actualColor} />
+          <circle key={`${point.date}-${index}`} cx={toX(index)} cy={toY(point.actual)} r="3" fill={actualColor}>
+            <title>{`${formatDateOnly(point.date)}\n${metricLabel}: ${valueFormatter(point.actual)}`}</title>
+          </circle>
         ))}
       </svg>
       <div className="mt-2 flex items-center justify-between text-xs text-slate-500">
@@ -204,8 +234,7 @@ function BarChart({ bars }: { bars: Array<{ label: string; value: number; color?
   );
 }
 
-
-function SimpleTrendChart({ points, color, unit }: { points: Array<{ x: string; y: number }>; color: string; unit: string }) {
+function SimpleTrendChart({ points, color, unit, metricLabel }: { points: TrendPoint[]; color: string; unit: string; metricLabel: string }) {
   if (!points.length) return <p className="text-sm text-slate-500">No progress entries in this range.</p>;
 
   const width = 520;
@@ -226,17 +255,65 @@ function SimpleTrendChart({ points, color, unit }: { points: Array<{ x: string; 
         <line x1={padding} y1={padding} x2={padding} y2={height - padding} stroke="#cbd5e1" strokeWidth="1" />
         <path d={path} fill="none" stroke={color} strokeWidth="2.5" />
         {points.map((point, index) => (
-          <circle key={`${point.x}-${index}`} cx={toX(index)} cy={toY(point.y)} r="2.5" fill={color} />
+          <circle key={`${point.x}-${index}`} cx={toX(index)} cy={toY(point.y)} r="3" fill={color}>
+            <title>{`${formatDateTime(point.x)}\n${metricLabel}: ${point.y.toFixed(1)} ${unit}`}</title>
+          </circle>
         ))}
       </svg>
       <div className="mt-2 flex items-center justify-between text-xs text-slate-500">
-        <span>{points[0].x.slice(0, 16).replace("T", " ")}</span>
+        <span>{formatDateTime(points[0].x)}</span>
         <span>{Math.round(min)}–{Math.round(max)} {unit}</span>
-        <span>{points[points.length - 1].x.slice(0, 16).replace("T", " ")}</span>
+        <span>{formatDateTime(points[points.length - 1].x)}</span>
       </div>
     </div>
   );
 }
+
+function MultiLineChart({ series }: { series: MultiSeries[] }) {
+  const nonEmpty = series.filter((item) => item.points.some((point) => point.y > 0));
+  if (!nonEmpty.length) return <p className="text-sm text-slate-500">No exercise progression in this range for the selected filters.</p>;
+
+  const width = 960;
+  const height = 280;
+  const padding = 38;
+  const maxValue = Math.max(...nonEmpty.flatMap((item) => item.points.map((point) => point.y)), 1);
+  const pointCount = Math.max(...nonEmpty.map((item) => item.points.length));
+
+  const toX = (index: number) => padding + (index / Math.max(pointCount - 1, 1)) * (width - padding * 2);
+  const toY = (value: number) => height - padding - (value / maxValue) * (height - padding * 2);
+
+  return (
+    <div>
+      <svg viewBox={`0 0 ${width} ${height}`} className="h-64 w-full">
+        <line x1={padding} y1={height - padding} x2={width - padding} y2={height - padding} stroke="#cbd5e1" strokeWidth="1" />
+        <line x1={padding} y1={padding} x2={padding} y2={height - padding} stroke="#cbd5e1" strokeWidth="1" />
+
+        {nonEmpty.map((line) => {
+          const path = line.points.map((point, index) => `${index === 0 ? "M" : "L"}${toX(index)} ${toY(point.y)}`).join(" ");
+          return <path key={line.key} d={path} fill="none" stroke={line.color} strokeWidth="2.4" />;
+        })}
+
+        {nonEmpty.map((line) =>
+          line.points.map((point, index) => (
+            <circle key={`${line.key}-${point.x}`} cx={toX(index)} cy={toY(point.y)} r="3" fill={line.color}>
+              <title>{`${point.tooltipLabel ?? formatDateOnly(point.x)}\n${line.label}: ${Math.round(point.y).toLocaleString()}`}</title>
+            </circle>
+          ))
+        )}
+      </svg>
+
+      <div className="mt-3 flex flex-wrap gap-3 text-xs text-slate-700">
+        {nonEmpty.map((line) => (
+          <span key={`legend-${line.key}`} className="inline-flex items-center gap-2 rounded-full border border-slate-200 px-2.5 py-1">
+            <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: line.color }} />
+            {line.label}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function InsightsPage() {
   const [rangePreset, setRangePreset] = useState<RangePreset>("7d");
   const [customStart, setCustomStart] = useState("");
@@ -250,13 +327,8 @@ export default function InsightsPage() {
   const [profile, setProfile] = useState<ProfileInput | null>(null);
   const [bodyProgress, setBodyProgress] = useState<BodyProgressHistory>({ weight: [], waist: [] });
 
-  const [progressMetric, setProgressMetric] = useState<ProgressMetric>("volume");
-  const [typeFilter, setTypeFilter] = useState<"all" | WorkoutExerciseType>("all");
+  const [typeFilter, setTypeFilter] = useState<WorkoutExerciseType>("fitness");
   const [muscleFilter, setMuscleFilter] = useState<"all" | MuscleGroup>("all");
-  const [specifyFilter, setSpecifyFilter] = useState<"all" | SpecifyMuscle>("all");
-  const [exerciseFilter, setExerciseFilter] = useState<"all" | string>("all");
-
-  const weekDateKeys = useMemo(() => getCurrentWeekDateKeys(), []);
 
   useEffect(() => {
     const sync = () => {
@@ -304,30 +376,14 @@ export default function InsightsPage() {
     };
   }, []);
 
-  const rangeDateKeys = useMemo(() => {
-    if (rangePreset === "custom") {
-      const start = customStart ? new Date(customStart) : startDateFromPreset("7d");
-      const end = customEnd ? new Date(customEnd) : new Date();
-      return getDateKeysInRange(start, end);
-    }
-
-    if (rangePreset === "7d") return weekDateKeys;
-
-    const end = new Date();
-    const start = startDateFromPreset(rangePreset);
-    return getDateKeysInRange(start, end);
-  }, [customEnd, customStart, rangePreset, weekDateKeys]);
-
-
-  const rangeStart = useMemo(() => {
-    if (!rangeDateKeys.length) return new Date(0);
-    return new Date(`${rangeDateKeys[0]}T00:00:00`);
-  }, [rangeDateKeys]);
-
-  const rangeEnd = useMemo(() => {
-    if (!rangeDateKeys.length) return new Date();
-    return new Date(`${rangeDateKeys[rangeDateKeys.length - 1]}T23:59:59`);
-  }, [rangeDateKeys]);
+  const { rangeStart, rangeEnd, rangeDateKeys } = useMemo(() => {
+    const { start, end } = getRangeWindow(rangePreset, customStart, customEnd);
+    return {
+      rangeStart: start,
+      rangeEnd: end,
+      rangeDateKeys: getDateKeysInRange(start, end)
+    };
+  }, [customEnd, customStart, rangePreset]);
 
   const mealsByDate = useMemo(() => {
     const map = new Map<string, MacroTotals>();
@@ -398,11 +454,11 @@ export default function InsightsPage() {
         rows.push({
           date,
           type: exercise.type,
-          exerciseName: exercise.name,
           muscleGroup: exercise.muscleGroup,
           specifyMuscle: exercise.specifyMuscle,
           weight: entry.weight ?? ("weight" in exercise ? exercise.weight ?? 0 : 0),
           reps: entry.reps ?? ("reps" in exercise ? exercise.reps ?? 0 : 0),
+          sets: entry.sets ?? ("sets" in exercise ? exercise.sets ?? 0 : 0),
           volume: entry.trainingVolume ?? exercise.trainingVolume,
           duration: entry.durationMinutes ?? ("durationMinutes" in exercise ? exercise.durationMinutes : 0),
           calories: entry.estimatedCalories ?? exercise.estimatedCalories
@@ -413,66 +469,57 @@ export default function InsightsPage() {
     return rows.filter((row) => rangeDateKeys.includes(row.date));
   }, [effectiveWorkouts, rangeDateKeys]);
 
-  const availableSpecifyOptions = useMemo(() => {
-    if (muscleFilter === "all") return [] as SpecifyMuscle[];
-    return specifyMuscleByGroup[muscleFilter];
-  }, [muscleFilter]);
-
-  useEffect(() => {
-    if (muscleFilter === "all") setSpecifyFilter("all");
-    if (specifyFilter !== "all" && muscleFilter !== "all" && !specifyMuscleByGroup[muscleFilter].includes(specifyFilter)) {
-      setSpecifyFilter("all");
-    }
-  }, [muscleFilter, specifyFilter]);
-
   const filteredRecords = useMemo(() => {
     return exerciseRecords.filter((record) => {
-      const typeOk = typeFilter === "all" ? true : record.type === typeFilter;
+      const typeOk = record.type === typeFilter;
       const muscleOk = muscleFilter === "all" ? true : record.muscleGroup === muscleFilter;
-      const specifyOk = specifyFilter === "all" ? true : record.specifyMuscle === specifyFilter;
-      const exerciseOk = exerciseFilter === "all" ? true : record.exerciseName === exerciseFilter;
-      return typeOk && muscleOk && specifyOk && exerciseOk;
+      return typeOk && muscleOk;
     });
-  }, [exerciseFilter, exerciseRecords, muscleFilter, specifyFilter, typeFilter]);
+  }, [exerciseRecords, muscleFilter, typeFilter]);
 
-  const exerciseOptions = useMemo(() => {
-    const names = new Set(filteredRecords.map((record) => record.exerciseName));
-    return Array.from(names).sort((a, b) => a.localeCompare(b));
-  }, [filteredRecords]);
+  const exerciseProgressSeries = useMemo<MultiSeries[]>(() => {
+    const dateOrder = rangeDateKeys;
+    const byLine = new Map<string, Map<string, number>>();
 
-  useEffect(() => {
-    if (exerciseFilter === "all") return;
-    if (!exerciseOptions.includes(exerciseFilter)) setExerciseFilter("all");
-  }, [exerciseFilter, exerciseOptions]);
+    const getLineKey = (record: ExerciseRecord) => {
+      if (muscleFilter === "all") return record.muscleGroup;
+      if (record.specifyMuscle && specifyMuscleByGroup[muscleFilter].includes(record.specifyMuscle)) return record.specifyMuscle;
+      return "general";
+    };
 
-  const exerciseProgressRows = useMemo(() => {
-    const bucket = new Map<string, number>();
+    const getWorkloadScore = (record: ExerciseRecord) => {
+      const baseVolume = record.volume > 0 ? record.volume : record.weight * record.reps * Math.max(record.sets, 1);
+      return baseVolume + record.reps * Math.max(record.sets, 1) + record.duration * 5;
+    };
 
     filteredRecords.forEach((record) => {
-      const value =
-        progressMetric === "weight"
-          ? record.weight
-          : progressMetric === "reps"
-            ? record.reps
-            : progressMetric === "duration"
-              ? record.duration
-              : progressMetric === "calories"
-                ? record.calories
-                : record.volume;
-
-      bucket.set(record.date, (bucket.get(record.date) ?? 0) + value);
+      const lineKey = getLineKey(record);
+      if (!byLine.has(lineKey)) byLine.set(lineKey, new Map<string, number>());
+      const line = byLine.get(lineKey)!;
+      line.set(record.date, (line.get(record.date) ?? 0) + getWorkloadScore(record));
     });
 
-    let previous = 0;
+    const orderedKeys = Array.from(byLine.keys()).sort((a, b) => a.localeCompare(b));
+    return orderedKeys.map((key, index) => {
+      const lineData = byLine.get(key)!;
+      const label = key === "general"
+        ? `${muscleFilter === "all" ? "General" : muscleGroupLabels[muscleFilter]} (unspecified)`
+        : muscleFilter === "all"
+          ? muscleGroupLabels[key as MuscleGroup]
+          : specifyMuscleLabels[key as SpecifyMuscle];
 
-    return rangeDateKeys.map((date) => {
-      const value = bucket.get(date) ?? 0;
-      const delta = value - previous;
-      const trend = delta > 0 ? "up" : delta < 0 ? "down" : "flat";
-      previous = value;
-      return { date, value, delta, trend } as const;
+      return {
+        key,
+        label,
+        color: lineColors[index % lineColors.length],
+        points: dateOrder.map((dateKey) => ({
+          x: dateKey,
+          y: lineData.get(dateKey) ?? 0,
+          tooltipLabel: formatDateOnly(dateKey)
+        }))
+      };
     });
-  }, [filteredRecords, progressMetric, rangeDateKeys]);
+  }, [filteredRecords, muscleFilter, rangeDateKeys]);
 
   const trainingBalanceBars = useMemo(() => {
     const volumeByGroup: Record<MuscleGroup, number> = {
@@ -495,7 +542,6 @@ export default function InsightsPage() {
     }));
   }, [filteredRecords]);
 
-
   const summary = useMemo(() => {
     const days = Math.max(nutritionPoints.length, 1);
 
@@ -509,16 +555,17 @@ export default function InsightsPage() {
       { calories: 0, protein: 0, carbs: 0, fat: 0 }
     );
 
-    const calorieAdherence =
-      nutritionPoints.length > 0
-        ? Math.round(
-            nutritionPoints.reduce((sum, point) => {
-              if (point.target.calories <= 0) return sum;
-              const adherence = Math.max(0, 100 - Math.abs(((point.actual.calories - point.target.calories) / point.target.calories) * 100));
-              return sum + adherence;
-            }, 0) / nutritionPoints.length
-          )
-        : 0;
+    const calorieAdherence = nutritionPoints.length
+      ? Math.round(
+          (nutritionPoints.reduce((score, point) => {
+            const target = Math.max(point.target.calories, 1);
+            const diffRatio = Math.abs(point.actual.calories - target) / target;
+            return score + Math.max(0, 1 - diffRatio);
+          }, 0) /
+            nutritionPoints.length) *
+            100
+        )
+      : 0;
 
     const proteinDaysHit = nutritionPoints.filter((point) => point.target.protein > 0 && point.actual.protein >= point.target.protein).length;
 
@@ -541,8 +588,7 @@ export default function InsightsPage() {
     };
   }, [nutritionPoints, workoutSummary]);
 
-
-  const weightSeries = useMemo(() => {
+  const weightSeries = useMemo<TrendPoint[]>(() => {
     return bodyProgress.weight
       .filter((entry) => {
         const d = new Date(entry.recordedAt);
@@ -552,7 +598,7 @@ export default function InsightsPage() {
       .map((entry) => ({ x: entry.recordedAt, y: entry.value }));
   }, [bodyProgress.weight, rangeEnd, rangeStart]);
 
-  const waistSeries = useMemo(() => {
+  const waistSeries = useMemo<TrendPoint[]>(() => {
     return bodyProgress.waist
       .filter((entry) => {
         const d = new Date(entry.recordedAt);
@@ -591,13 +637,13 @@ export default function InsightsPage() {
       tips.push("Chest volume is notably higher than back volume. More pulling work may improve posture and shoulder balance.");
     }
 
-    const trendValues = exerciseProgressRows.map((point) => point.value).filter((value) => value > 0);
-    if (trendValues.length >= 4) {
-      const half = Math.floor(trendValues.length / 2);
-      const firstAvg = trendValues.slice(0, half).reduce((a, b) => a + b, 0) / Math.max(half, 1);
-      const secondAvg = trendValues.slice(half).reduce((a, b) => a + b, 0) / Math.max(trendValues.length - half, 1);
-      if (secondAvg > firstAvg * 1.08) tips.push("Exercise performance trend is improving steadily in the selected range.");
-      else if (secondAvg < firstAvg * 0.95) tips.push("Exercise progress appears to be stalling. Consider adjusting load, reps, or recovery.");
+    const seriesTotals = exerciseProgressSeries.map((line) => line.points.reduce((sum, point) => sum + point.y, 0)).filter((total) => total > 0);
+    if (seriesTotals.length >= 2) {
+      const firstHalf = seriesTotals.slice(0, Math.ceil(seriesTotals.length / 2));
+      const secondHalf = seriesTotals.slice(Math.floor(seriesTotals.length / 2));
+      const firstAvg = firstHalf.reduce((a, b) => a + b, 0) / firstHalf.length;
+      const secondAvg = secondHalf.reduce((a, b) => a + b, 0) / secondHalf.length;
+      if (secondAvg > firstAvg * 1.08) tips.push("Exercise workload is progressing steadily in the selected range.");
     }
 
     if (goal.includes("fat loss") && summary.averages.protein < (profile?.weightKg ?? 0) * 1.8) {
@@ -614,7 +660,7 @@ export default function InsightsPage() {
     if (!tips.length) tips.push("Great consistency so far. Keep progressive overload and steady nutrition adherence.");
 
     return tips.slice(0, 5);
-  }, [exerciseProgressRows, profile, summary, trainingBalanceBars, waistSeries, weightSeries]);
+  }, [exerciseProgressSeries, profile, summary, trainingBalanceBars, waistSeries, weightSeries]);
 
   return (
     <main className="mx-auto w-full max-w-7xl space-y-6 px-4 py-8 md:px-8">
@@ -642,20 +688,20 @@ export default function InsightsPage() {
         </div>
 
         {rangePreset === "custom" ? (
-          <div className="mt-4 grid gap-3 md:grid-cols-2">
-            <label className="text-sm text-slate-700">Start date
-              <input type="date" value={customStart} onChange={(event) => setCustomStart(event.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" />
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:max-w-lg">
+            <label className="text-sm text-slate-700">Start date & time
+              <input type="datetime-local" value={customStart} onChange={(e) => setCustomStart(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" />
             </label>
-            <label className="text-sm text-slate-700">End date
-              <input type="date" value={customEnd} onChange={(event) => setCustomEnd(event.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" />
+            <label className="text-sm text-slate-700">End date & time
+              <input type="datetime-local" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" />
             </label>
           </div>
         ) : null}
       </section>
 
-      <section className="rounded-2xl bg-gradient-to-r from-emerald-50 to-sky-50 p-6 shadow-sm ring-1 ring-emerald-100">
+      <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
         <h2 className="text-xl font-semibold text-slate-900">Weekly Summary</h2>
-        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
           <p className="text-sm text-slate-700">Calories adherence: <span className="font-semibold text-slate-900">{summary.calorieAdherence}%</span></p>
           <p className="text-sm text-slate-700">Protein target reached: <span className="font-semibold text-slate-900">{summary.proteinDaysHit} / {summary.days} days</span></p>
           <p className="text-sm text-slate-700">Workout completion rate: <span className="font-semibold text-slate-900">{summary.workoutCompletion}%</span></p>
@@ -664,138 +710,6 @@ export default function InsightsPage() {
           <p className="text-sm text-slate-700">Training volume: <span className="font-semibold text-slate-900">{Math.round(workoutSummary.totalFitnessVolume).toLocaleString()} kg</span></p>
         </div>
       </section>
-
-      <ChartCard title="Nutrition Insights">
-        <div className="grid gap-5 lg:grid-cols-2">
-          {macroConfigs
-            .filter((macro) => !disabledMacros.includes(macro.key))
-            .map((macro) => {
-              const points = nutritionPoints.map((point) => ({ date: point.date, actual: point.actual[macro.key], target: point.target[macro.key] }));
-              return (
-                <div key={macro.key} className="rounded-xl border border-slate-200 p-3">
-                  <p className="mb-2 text-sm font-semibold text-slate-800">{macro.label} vs Target</p>
-                  <LineCompareChart points={points} actualColor={macro.color} targetColor="#64748b" valueFormatter={(value) => `${Math.round(value)} ${macro.unit}`} />
-                </div>
-              );
-            })}
-        </div>
-      </ChartCard>
-
-      <ChartCard title="Exercise Progress Insights">
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-          <label className="text-sm text-slate-700">Progress view
-            <select value={progressMetric} onChange={(e) => setProgressMetric(e.target.value as ProgressMetric)} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2">
-              <option value="weight">Weight lifted</option>
-              <option value="reps">Total reps</option>
-              <option value="volume">Training volume</option>
-              <option value="duration">Duration</option>
-              <option value="calories">Estimated calories</option>
-            </select>
-          </label>
-
-          <label className="text-sm text-slate-700">Workout Type
-            <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value as "all" | WorkoutExerciseType)} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2">
-              <option value="all">All</option>
-              <option value="fitness">Fitness</option>
-              <option value="cardio">Cardio</option>
-              <option value="crossfit">CrossFit</option>
-            </select>
-          </label>
-
-          <label className="text-sm text-slate-700">Muscle Group
-            <select value={muscleFilter} onChange={(e) => setMuscleFilter(e.target.value as "all" | MuscleGroup)} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2">
-              <option value="all">All</option>
-              {(Object.keys(muscleGroupLabels) as MuscleGroup[]).map((group) => (
-                <option key={group} value={group}>{muscleGroupLabels[group]}</option>
-              ))}
-            </select>
-          </label>
-
-          <label className="text-sm text-slate-700">Specify Muscle
-            <select value={specifyFilter} onChange={(e) => setSpecifyFilter(e.target.value as "all" | SpecifyMuscle)} disabled={muscleFilter === "all"} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 disabled:bg-slate-100 disabled:text-slate-400">
-              <option value="all">All</option>
-              {availableSpecifyOptions.map((item) => (
-                <option key={item} value={item}>{specifyMuscleLabels[item]}</option>
-              ))}
-            </select>
-          </label>
-
-          <label className="text-sm text-slate-700">Exercise Name
-            <select value={exerciseFilter} onChange={(e) => setExerciseFilter(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2">
-              <option value="all">All</option>
-              {exerciseOptions.map((name) => (
-                <option key={name} value={name}>{name}</option>
-              ))}
-            </select>
-          </label>
-        </div>
-
-        <div className="mt-4 overflow-x-auto rounded-xl border border-slate-200">
-          <table className="min-w-full text-sm">
-            <thead className="bg-slate-50 text-slate-600">
-              <tr>
-                <th className="px-3 py-2 text-left font-semibold">Date</th>
-                <th className="px-3 py-2 text-left font-semibold">Value</th>
-                <th className="px-3 py-2 text-left font-semibold">Change vs previous day</th>
-              </tr>
-            </thead>
-            <tbody>
-              {exerciseProgressRows.map((row) => (
-                <tr key={row.date} className="border-t border-slate-100">
-                  <td className="px-3 py-2 text-slate-600">{row.date}</td>
-                  <td
-                    className={`px-3 py-2 font-semibold ${
-                      row.trend === "up"
-                        ? "text-emerald-600"
-                        : row.trend === "down"
-                          ? "text-rose-600"
-                          : "text-slate-400"
-                    }`}
-                  >
-                    {Math.round(row.value).toLocaleString()}
-                  </td>
-                  <td
-                    className={`px-3 py-2 ${
-                      row.trend === "up"
-                        ? "text-emerald-600"
-                        : row.trend === "down"
-                          ? "text-rose-600"
-                          : "text-slate-400"
-                    }`}
-                  >
-                    {row.delta > 0 ? "+" : ""}{Math.round(row.delta).toLocaleString()}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </ChartCard>
-
-      <ChartCard title="Training Balance Insights">
-        <div className="grid gap-4 lg:grid-cols-[1.5fr,1fr]">
-          <BarChart bars={trainingBalanceBars.map((bar) => ({ ...bar, color: "#10b981" }))} />
-          <div className="rounded-xl border border-slate-200 p-4 text-sm text-slate-600">
-            <p className="font-semibold text-slate-900">Deep dive notes</p>
-            <p className="mt-2">Filters from the Exercise Progress section also apply here, so you can inspect balance by workout type, muscle group, specify muscle, and exercise name.</p>
-            <p className="mt-2">Use this to spot imbalances like low legs volume or chest-heavy programming versus back.</p>
-          </div>
-        </div>
-      </ChartCard>
-
-
-      <ChartCard title="Body Progress Insights">
-        <div className="grid gap-4 lg:grid-cols-2">
-          <div className="rounded-xl border border-slate-200 p-3">
-            <p className="mb-2 text-sm font-semibold text-slate-800">Weight Progress</p>
-            <SimpleTrendChart points={weightSeries} color="#0ea5e9" unit="kg" />
-          </div>
-          <div className="rounded-xl border border-slate-200 p-3">
-            <p className="mb-2 text-sm font-semibold text-slate-800">Waist Progress</p>
-            <SimpleTrendChart points={waistSeries} color="#8b5cf6" unit="cm" />
-          </div>
-        </div>
-      </ChartCard>
 
       <ChartCard title="Smart Coaching Insights">
         <ul className="space-y-2">
@@ -806,6 +720,78 @@ export default function InsightsPage() {
           ))}
         </ul>
       </ChartCard>
+
+      <ChartCard title="Nutrition Insights">
+        <div className="grid gap-5 lg:grid-cols-2">
+          {macroConfigs
+            .filter((macro) => !disabledMacros.includes(macro.key))
+            .map((macro) => {
+              const points = nutritionPoints.map((point) => ({ date: point.date, actual: point.actual[macro.key], target: point.target[macro.key] }));
+              return (
+                <div key={macro.key} className="rounded-xl border border-slate-200 p-3">
+                  <p className="mb-2 text-sm font-semibold text-slate-800">{macro.label} vs Target</p>
+                  <LineCompareChart
+                    points={points}
+                    actualColor={macro.color}
+                    targetColor="#64748b"
+                    metricLabel={macro.label}
+                    valueFormatter={(value) => `${Math.round(value)} ${macro.unit}`}
+                  />
+                </div>
+              );
+            })}
+        </div>
+      </ChartCard>
+
+      <ChartCard title="Exercise Progress Insights">
+        <div className="grid gap-3 md:grid-cols-2">
+          <label className="text-sm text-slate-700">Workout Type
+            <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value as WorkoutExerciseType)} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2">
+              <option value="fitness">Fitness</option>
+              <option value="cardio">Cardio</option>
+              <option value="crossfit">CrossFit</option>
+            </select>
+          </label>
+
+          <label className="text-sm text-slate-700">Muscle Group (optional)
+            <select value={muscleFilter} onChange={(e) => setMuscleFilter(e.target.value as "all" | MuscleGroup)} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2">
+              <option value="all">All</option>
+              {(Object.keys(muscleGroupLabels) as MuscleGroup[]).map((group) => (
+                <option key={group} value={group}>{muscleGroupLabels[group]}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        <div className="mt-4 rounded-xl border border-slate-200 p-3">
+          <MultiLineChart series={exerciseProgressSeries} />
+          <p className="mt-3 text-xs text-slate-500">Y-axis uses workload score derived from training volume, sets, reps, weight, and duration over time.</p>
+        </div>
+      </ChartCard>
+
+      <ChartCard title="Training Balance Insights">
+        <div className="grid gap-4 lg:grid-cols-[1.5fr,1fr]">
+          <BarChart bars={trainingBalanceBars.map((bar) => ({ ...bar, color: "#10b981" }))} />
+          <div className="rounded-xl border border-slate-200 p-4 text-sm text-slate-600">
+            <p className="font-semibold text-slate-900">Deep dive notes</p>
+            <p className="mt-2">This balance view follows the Exercise Progress filters, so you can inspect split quality by workout type and optional muscle group.</p>
+            <p className="mt-2">Use this to spot imbalances like low legs volume or chest-heavy programming versus back.</p>
+          </div>
+        </div>
+      </ChartCard>
+
+      <ChartCard title="Body Progress Insights">
+        <div className="grid gap-4 lg:grid-cols-2">
+          <div className="rounded-xl border border-slate-200 p-3">
+            <p className="mb-2 text-sm font-semibold text-slate-800">Weight Progress</p>
+            <SimpleTrendChart points={weightSeries} color="#0ea5e9" unit="kg" metricLabel="Weight" />
+          </div>
+          <div className="rounded-xl border border-slate-200 p-3">
+            <p className="mb-2 text-sm font-semibold text-slate-800">Waist Progress</p>
+            <SimpleTrendChart points={waistSeries} color="#8b5cf6" unit="cm" metricLabel="Waist" />
+          </div>
+        </div>
+      </ChartCard>
     </main>
   );
 }
@@ -814,11 +800,11 @@ function toRecord(date: string, exercise: WorkoutExercise): ExerciseRecord {
   return {
     date,
     type: exercise.type,
-    exerciseName: exercise.name,
     muscleGroup: exercise.muscleGroup,
     specifyMuscle: exercise.specifyMuscle,
     weight: "weight" in exercise ? exercise.weight ?? 0 : 0,
     reps: "reps" in exercise ? exercise.reps ?? 0 : 0,
+    sets: "sets" in exercise ? exercise.sets ?? 0 : 0,
     volume: exercise.trainingVolume,
     duration: "durationMinutes" in exercise ? exercise.durationMinutes : 0,
     calories: exercise.estimatedCalories

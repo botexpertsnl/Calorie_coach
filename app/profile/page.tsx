@@ -206,7 +206,7 @@ function formatAmsterdamDateTime(iso?: string) {
 }
 
 function getLatestProgressEntry(entries: BodyMetricProgressEntry[]) {
-  return [...entries].sort((a, b) => new Date(b.recordedAt).getTime() - new Date(a.recordedAt).getTime())[0] ?? null;
+  return [...entries].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0] ?? null;
 }
 
 export default function ProfilePage() {
