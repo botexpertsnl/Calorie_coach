@@ -124,15 +124,10 @@ export type WorkoutIntensity = "low" | "moderate" | "high";
 export type MuscleGroup =
   | "chest"
   | "back"
+  | "legs"
   | "shoulders"
-  | "biceps"
-  | "triceps"
-  | "quads"
-  | "hamstrings"
-  | "glutes"
-  | "calves"
-  | "core"
-  | "full_body";
+  | "arms"
+  | "core";
 
 export type MovementType = "powerlifting" | "gymnastics" | "conditioning" | "functional";
 
@@ -154,7 +149,7 @@ export type CardioExercise = {
   isPaused: boolean;
   sourceType?: "user" | "system";
   systemTag?: "daily_steps";
-  muscleGroup?: MuscleGroup;
+  muscleGroup: MuscleGroup;
   movementType?: MovementType;
 };
 
@@ -178,7 +173,7 @@ export type FitnessExercise = {
   isPaused: boolean;
   sourceType?: "user" | "system";
   systemTag?: "daily_steps";
-  muscleGroup?: MuscleGroup;
+  muscleGroup: MuscleGroup;
   movementType?: MovementType;
 };
 
@@ -203,7 +198,7 @@ export type CrossfitExercise = {
   isPaused: boolean;
   sourceType?: "user" | "system";
   systemTag?: "daily_steps";
-  muscleGroup?: MuscleGroup;
+  muscleGroup: MuscleGroup;
   movementType?: MovementType;
 };
 

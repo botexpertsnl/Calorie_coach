@@ -5,7 +5,7 @@ import { AppHeaderNav } from "@/components/AppHeaderNav";
 import { InsightsLineChart } from "@/components/InsightsLineChart";
 import { STORAGE_KEYS, readJson } from "@/lib/local-data";
 import { TARGETS_UPDATED_EVENT } from "@/lib/daily-targets";
-import { buildWorkoutAdjustedSummary, deriveWeeklyWorkoutTargets, getCurrentWeekDateKeys, getDateKeysInRange } from "@/lib/workout-execution";
+import { buildEffectiveWorkoutInstances, buildWorkoutAdjustedSummary, deriveWeeklyWorkoutTargets, getCurrentWeekDateKeys, getDateKeysInRange } from "@/lib/workout-execution";
 import { DailyTargets, MacroKey, MacroTotals, ProfileInput, StoredMealLog, WorkoutException, WorkoutWeekPlan } from "@/lib/types";
 
 type RangePreset = "7d" | "1m" | "3m" | "6m" | "custom";
@@ -127,6 +127,17 @@ export default function InsightsPage() {
     () => buildWorkoutAdjustedSummary(workouts, workoutExceptions, workoutDateKeys),
     [workouts, workoutExceptions, workoutDateKeys]
   );
+
+  const muscleGroupBalance = useMemo(() => {
+    const counts = { chest: 0, back: 0, legs: 0, shoulders: 0, arms: 0, core: 0 };
+    const effective = buildEffectiveWorkoutInstances(workouts, workoutExceptions, workoutDateKeys);
+
+    effective.forEach((instance) => {
+      counts[instance.exercise.muscleGroup] += 1;
+    });
+
+    return counts;
+  }, [workouts, workoutExceptions, workoutDateKeys]);
 
   const points = useMemo(() => {
     const bucket = new Map<string, MacroTotals>();
@@ -293,6 +304,18 @@ export default function InsightsPage() {
               </div>
             );
           })}
+        </div>
+      </section>
+
+      <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
+        <h3 className="text-lg font-semibold text-slate-900">Training Balance by Muscle Group</h3>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {Object.entries(muscleGroupBalance).map(([group, count]) => (
+            <div key={group} className="rounded-xl border border-slate-200 p-3">
+              <p className="text-xs uppercase tracking-wide text-slate-500">{group}</p>
+              <p className="text-xl font-semibold text-slate-900">{count} exercises</p>
+            </div>
+          ))}
         </div>
       </section>
 

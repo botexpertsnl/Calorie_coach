@@ -38,15 +38,10 @@ const dayLabels: Record<WorkoutDay, string> = {
 const muscleGroupOptions: Array<{ value: MuscleGroup; label: string }> = [
   { value: "chest", label: "Chest" },
   { value: "back", label: "Back" },
+  { value: "legs", label: "Legs" },
   { value: "shoulders", label: "Shoulders" },
-  { value: "biceps", label: "Biceps" },
-  { value: "triceps", label: "Triceps" },
-  { value: "quads", label: "Quads" },
-  { value: "hamstrings", label: "Hamstrings" },
-  { value: "glutes", label: "Glutes" },
-  { value: "calves", label: "Calves" },
-  { value: "core", label: "Core" },
-  { value: "full_body", label: "Full Body" }
+  { value: "arms", label: "Arms" },
+  { value: "core", label: "Core" }
 ];
 
 const movementTypeOptions: Array<{ value: MovementType; label: string }> = [
@@ -66,15 +61,10 @@ const movementTypeLabels: Record<MovementType, string> = {
 const muscleGroupLabels: Record<MuscleGroup, string> = {
   chest: "Chest",
   back: "Back",
+  legs: "Legs",
   shoulders: "Shoulders",
-  biceps: "Biceps",
-  triceps: "Triceps",
-  quads: "Quads",
-  hamstrings: "Hamstrings",
-  glutes: "Glutes",
-  calves: "Calves",
-  core: "Core",
-  full_body: "Full Body"
+  arms: "Arms",
+  core: "Core"
 };
 
 const typeIcons: Record<WorkoutExerciseType, string> = {
@@ -82,6 +72,25 @@ const typeIcons: Record<WorkoutExerciseType, string> = {
   fitness: "🏋️",
   crossfit: "🔥"
 };
+
+function normalizeMuscleGroup(muscleGroup: string | undefined, exerciseName: string, type: WorkoutExerciseType): MuscleGroup {
+  const value = (muscleGroup ?? "").toLowerCase();
+
+  if (value === "chest" || value === "back" || value === "legs" || value === "shoulders" || value === "arms" || value === "core") {
+    return value as MuscleGroup;
+  }
+
+  if (["biceps", "triceps"].includes(value)) return "arms";
+  if (["quads", "hamstrings", "glutes", "calves", "full_body"].includes(value)) {
+    const inferred = inferExerciseDefaults(exerciseName);
+    if (inferred.muscleGroup) return inferred.muscleGroup;
+    return "legs";
+  }
+
+  if (type === "cardio") return "legs";
+  const inferred = inferExerciseDefaults(exerciseName);
+  return inferred.muscleGroup ?? "legs";
+}
 
 function matchesTypeFilter(exercise: WorkoutExercise, filter: "all" | "fitness" | "cardio" | "crossfit") {
   if (filter === "all") return true;
@@ -101,22 +110,22 @@ function inferExerciseDefaults(name: string): Partial<PlannerDraft> {
   if (!value) return {};
 
   if (/run|jog|bike|cycle|walk|row|swim|elliptical|stair/.test(value)) {
-    return { type: "cardio", movementType: "conditioning", muscleGroup: "full_body" };
+    return { type: "cardio", movementType: "conditioning", muscleGroup: "legs" };
   }
 
   if (/burpee|thruster|snatch|clean|jerk|amrap|metcon|wod|wall ball/.test(value)) {
-    return { type: "crossfit", movementType: "conditioning", muscleGroup: "full_body" };
+    return { type: "crossfit", movementType: "conditioning", muscleGroup: "legs" };
   }
 
   if (/bench|push up|fly|chest press/.test(value)) return { type: "fitness", muscleGroup: "chest" };
   if (/pull|lat|row/.test(value)) return { type: "fitness", muscleGroup: "back" };
   if (/shoulder|overhead press|lateral raise/.test(value)) return { type: "fitness", muscleGroup: "shoulders" };
-  if (/curl/.test(value)) return { type: "fitness", muscleGroup: "biceps" };
-  if (/tricep|dip|pushdown|skull/.test(value)) return { type: "fitness", muscleGroup: "triceps" };
-  if (/squat|leg press|lunge/.test(value)) return { type: "fitness", muscleGroup: "quads" };
-  if (/hamstring|rdl|deadlift/.test(value)) return { type: "fitness", muscleGroup: "hamstrings" };
-  if (/glute|hip thrust/.test(value)) return { type: "fitness", muscleGroup: "glutes" };
-  if (/calf/.test(value)) return { type: "fitness", muscleGroup: "calves" };
+  if (/curl/.test(value)) return { type: "fitness", muscleGroup: "arms" };
+  if (/tricep|dip|pushdown|skull/.test(value)) return { type: "fitness", muscleGroup: "arms" };
+  if (/squat|leg press|lunge/.test(value)) return { type: "fitness", muscleGroup: "legs" };
+  if (/hamstring|rdl|deadlift/.test(value)) return { type: "fitness", muscleGroup: "legs" };
+  if (/glute|hip thrust/.test(value)) return { type: "fitness", muscleGroup: "legs" };
+  if (/calf/.test(value)) return { type: "fitness", muscleGroup: "legs" };
   if (/plank|crunch|core|ab/.test(value)) return { type: "fitness", muscleGroup: "core" };
 
   return {};
@@ -182,7 +191,7 @@ const defaultDraft: PlannerDraft = {
   weight: 20,
   intensity: "moderate",
   notes: "",
-  muscleGroup: "full_body",
+  muscleGroup: "legs",
   movementType: "conditioning",
   crossfitUseDuration: true,
   crossfitUseSets: false,
@@ -254,7 +263,7 @@ function normalizePlanWithMetrics(plan: WorkoutWeekPlan, weightKg: number): Work
         if (exercise.systemTag === "daily_steps") return null;
         const withPoints = withStoredWorkoutPoints(exercise);
         const normalizedLabels = {
-          muscleGroup: withPoints.muscleGroup ?? "full_body",
+          muscleGroup: normalizeMuscleGroup(withPoints.muscleGroup, withPoints.name, withPoints.type),
           movementType: withPoints.type === "cardio" ? "conditioning" : withPoints.movementType
         };
         return {
@@ -352,8 +361,7 @@ export default function WorkoutsPage() {
     const values = new Set<string>();
     for (const exercise of selectedExercises) {
       if (!matchesTypeFilter(exercise, typeFilter)) continue;
-      if (exercise.muscleGroup) values.add(exercise.muscleGroup);
-      if (exercise.movementType) values.add(exercise.movementType);
+      values.add(exercise.muscleGroup);
     }
     return Array.from(values);
   }, [selectedExercises, typeFilter]);
@@ -370,7 +378,7 @@ export default function WorkoutsPage() {
     const sorted = selectedExercises
       .filter((exercise) => {
         const matchType = matchesTypeFilter(exercise, typeFilter);
-        const matchSub = subFilter === "all" ? true : exercise.muscleGroup === subFilter || exercise.movementType === subFilter;
+        const matchSub = subFilter === "all" ? true : exercise.muscleGroup === subFilter;
         return matchType && matchSub;
       })
       .sort((a, b) => {
@@ -380,8 +388,8 @@ export default function WorkoutsPage() {
 
         if (aType !== bType) return typeOrder[aType] - typeOrder[bType];
 
-        const aSub = a.muscleGroup ? muscleGroupLabels[a.muscleGroup] : a.movementType ? movementTypeLabels[a.movementType] : "";
-        const bSub = b.muscleGroup ? muscleGroupLabels[b.muscleGroup] : b.movementType ? movementTypeLabels[b.movementType] : "";
+        const aSub = muscleGroupLabels[a.muscleGroup];
+        const bSub = muscleGroupLabels[b.muscleGroup];
 
         if (aSub !== bSub) return aSub.localeCompare(bSub);
         return a.name.localeCompare(b.name);
@@ -655,7 +663,7 @@ export default function WorkoutsPage() {
       weight: "weight" in exercise && typeof exercise.weight === "number" ? exercise.weight : 0,
       intensity: exercise.intensity ?? "moderate",
       notes: exercise.notes ?? "",
-      muscleGroup: exercise.muscleGroup ?? "full_body",
+      muscleGroup: normalizeMuscleGroup(exercise.muscleGroup, exercise.name, exercise.type),
       movementType: exercise.movementType ?? "conditioning",
       crossfitUseDuration: exercise.type === "crossfit" ? exercise.durationMinutes > 0 : true,
       crossfitUseSets: exercise.type === "crossfit" ? typeof exercise.sets === "number" : false,
@@ -714,7 +722,7 @@ export default function WorkoutsPage() {
         strengthPoints: 0,
         cardioPoints: 0,
         notes: "",
-        muscleGroup: "full_body",
+        muscleGroup: "legs",
         movementType: "conditioning",
         progressHistory: [],
         createdAt: now,
@@ -752,7 +760,7 @@ export default function WorkoutsPage() {
         strengthPoints: 0,
         cardioPoints: 0,
         notes: "",
-        muscleGroup: "full_body",
+        muscleGroup: "legs",
         movementType: "functional",
         intensity: exceptionIntensity,
         progressHistory: [],
@@ -786,7 +794,7 @@ export default function WorkoutsPage() {
       strengthPoints: 0,
       cardioPoints: 0,
       notes: "",
-      muscleGroup: "full_body",
+      muscleGroup: "legs",
       movementType: undefined,
       intensity: exceptionIntensity,
       progressHistory: [],
@@ -1159,13 +1167,13 @@ export default function WorkoutsPage() {
                 </select>
               </label>
 
-              {draft.type === "fitness" ? <label className="block text-sm text-slate-700">Muscle Group
-                <select className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={draft.muscleGroup} onChange={(event) => setDraftField("muscleGroup", event.target.value as MuscleGroup)}>
+              <label className="block text-sm text-slate-700">Muscle Group
+                <select required className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={draft.muscleGroup} onChange={(event) => setDraftField("muscleGroup", event.target.value as MuscleGroup)}>
                   {muscleGroupOptions.map((option) => (
                     <option key={option.value} value={option.value}>{option.label}</option>
                   ))}
                 </select>
-              </label> : null}
+              </label>
 
               {draft.type === "crossfit" ? (
                 <label className="block text-sm text-slate-700">Movement Type
@@ -1288,7 +1296,7 @@ export default function WorkoutsPage() {
                   onClick={() => setSubFilter((prev) => (prev === value ? "all" : value))}
                   className={`rounded-full border px-3 py-1 text-xs font-medium ${subFilter === value ? "border-sky-500 bg-sky-50 text-sky-700" : "border-sky-200 bg-white text-slate-600 hover:bg-sky-50"}`}
                 >
-                  {value in muscleGroupLabels ? muscleGroupLabels[value as MuscleGroup] : movementTypeLabels[value as MovementType]}
+                  {muscleGroupLabels[value as MuscleGroup]}
                 </button>
               ))}
               {(typeFilter !== "all" || subFilter !== "all") ? (
@@ -1319,8 +1327,7 @@ export default function WorkoutsPage() {
                         <p className="flex items-center gap-2 font-semibold text-slate-900"><span className="inline-flex h-5 w-5 items-center justify-center text-sm">{typeIcons[exercise.type]}</span><span>{exercise.name}</span></p>
                         {exercise.sourceType === "system" ? <p className="mt-1 inline-block rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-blue-700">Auto-generated</p> : null}
                         <div className="mt-2 flex flex-wrap gap-1.5">
-                          {exercise.muscleGroup ? <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-slate-700">{muscleGroupLabels[exercise.muscleGroup]}</span> : null}
-                          {exercise.movementType ? <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold uppercase text-emerald-700">{movementTypeLabels[exercise.movementType]}</span> : null}
+                          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-slate-700">{muscleGroupLabels[exercise.muscleGroup]}</span>
                         </div>
                         {exercise.type === "cardio" ? <p className="mt-1 text-sm text-slate-600">Duration: {exercise.durationMinutes} minutes</p> : null}
                         {exercise.type === "fitness" ? <p className="mt-1 text-sm text-slate-600">{exercise.sets} sets × {exercise.reps} reps × {exercise.weight} kg</p> : null}
