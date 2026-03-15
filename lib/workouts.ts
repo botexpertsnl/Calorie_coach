@@ -107,7 +107,9 @@ export function applySystemDailyStepsToPlan(plan: WorkoutWeekPlan | null, profil
       updatedAt: now,
       isPaused: false,
       sourceType: "system",
-      systemTag: "daily_steps"
+      systemTag: "daily_steps",
+      muscleGroup: "legs",
+      movementType: "conditioning"
     };
 
     nextPlan[day] = {
