@@ -398,7 +398,7 @@ export default function InsightsPage() {
     if (!exerciseOptions.includes(exerciseFilter)) setExerciseFilter("all");
   }, [exerciseFilter, exerciseOptions]);
 
-  const progressTrend = useMemo(() => {
+  const exerciseProgressRows = useMemo(() => {
     const bucket = new Map<string, number>();
 
     filteredRecords.forEach((record) => {
@@ -416,7 +416,15 @@ export default function InsightsPage() {
       bucket.set(record.date, (bucket.get(record.date) ?? 0) + value);
     });
 
-    return rangeDateKeys.map((date) => ({ date, value: bucket.get(date) ?? 0 }));
+    let previous = 0;
+
+    return rangeDateKeys.map((date) => {
+      const value = bucket.get(date) ?? 0;
+      const delta = value - previous;
+      const trend = delta > 0 ? "up" : delta < 0 ? "down" : "flat";
+      previous = value;
+      return { date, value, delta, trend } as const;
+    });
   }, [filteredRecords, progressMetric, rangeDateKeys]);
 
   const trainingBalanceBars = useMemo(() => {
@@ -440,24 +448,6 @@ export default function InsightsPage() {
     }));
   }, [filteredRecords]);
 
-  const weeklyConsistencyBars = useMemo(() => {
-    const weekBuckets = new Map<string, { scheduled: number; completed: number }>();
-
-    rangeDateKeys.forEach((dateKey) => {
-      const weekKey = `${dateKey.slice(0, 8)}W${Math.ceil(Number(dateKey.slice(8, 10)) / 7)}`;
-      const daySummary = buildWorkoutAdjustedSummary(workouts, workoutExceptions, [dateKey]);
-      const bucket = weekBuckets.get(weekKey) ?? { scheduled: 0, completed: 0 };
-      bucket.scheduled += daySummary.plannedSessions;
-      bucket.completed += daySummary.completedSessions;
-      weekBuckets.set(weekKey, bucket);
-    });
-
-    return Array.from(weekBuckets.entries()).map(([weekKey, value]) => ({
-      label: weekKey,
-      value: value.scheduled ? (value.completed / value.scheduled) * 100 : 0,
-      color: "#22c55e"
-    }));
-  }, [rangeDateKeys, workoutExceptions, workouts]);
 
   const summary = useMemo(() => {
     const days = Math.max(nutritionPoints.length, 1);
@@ -533,7 +523,7 @@ export default function InsightsPage() {
       tips.push("Chest volume is notably higher than back volume. More pulling work may improve posture and shoulder balance.");
     }
 
-    const trendValues = progressTrend.map((point) => point.value).filter((value) => value > 0);
+    const trendValues = exerciseProgressRows.map((point) => point.value).filter((value) => value > 0);
     if (trendValues.length >= 4) {
       const half = Math.floor(trendValues.length / 2);
       const firstAvg = trendValues.slice(0, half).reduce((a, b) => a + b, 0) / Math.max(half, 1);
@@ -549,7 +539,7 @@ export default function InsightsPage() {
     if (!tips.length) tips.push("Great consistency so far. Keep progressive overload and steady nutrition adherence.");
 
     return tips.slice(0, 5);
-  }, [profile, progressTrend, summary, trainingBalanceBars]);
+  }, [exerciseProgressRows, profile, summary, trainingBalanceBars]);
 
   return (
     <main className="mx-auto w-full max-w-7xl space-y-6 px-4 py-8 md:px-8">
@@ -616,22 +606,6 @@ export default function InsightsPage() {
         </div>
       </ChartCard>
 
-      <ChartCard title="Workout Consistency Insights">
-        <div className="grid gap-4 lg:grid-cols-[1.5fr,1fr]">
-          <BarChart bars={weeklyConsistencyBars} />
-          <div className="rounded-xl border border-slate-200 p-4">
-            <p className="text-sm text-slate-600">Scheduled workouts</p>
-            <p className="text-2xl font-semibold text-slate-900">{workoutSummary.plannedSessions}</p>
-            <p className="mt-2 text-sm text-slate-600">Completed workouts</p>
-            <p className="text-2xl font-semibold text-slate-900">{workoutSummary.completedSessions}</p>
-            <p className="mt-2 text-sm text-slate-600">Missed workouts</p>
-            <p className="text-2xl font-semibold text-slate-900">{workoutSummary.missedSessions}</p>
-            <p className="mt-2 text-sm text-slate-600">Extra workouts</p>
-            <p className="text-2xl font-semibold text-slate-900">{workoutSummary.extraSessions}</p>
-          </div>
-        </div>
-      </ChartCard>
-
       <ChartCard title="Exercise Progress Insights">
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
           <label className="text-sm text-slate-700">Progress view
@@ -681,13 +655,45 @@ export default function InsightsPage() {
           </label>
         </div>
 
-        <div className="mt-4 rounded-xl border border-slate-200 p-3">
-          <LineCompareChart
-            points={progressTrend.map((point) => ({ date: point.date, actual: point.value, target: 0 }))}
-            actualColor="#0ea5e9"
-            targetColor="#cbd5e1"
-            valueFormatter={(value) => String(Math.round(value))}
-          />
+        <div className="mt-4 overflow-x-auto rounded-xl border border-slate-200">
+          <table className="min-w-full text-sm">
+            <thead className="bg-slate-50 text-slate-600">
+              <tr>
+                <th className="px-3 py-2 text-left font-semibold">Date</th>
+                <th className="px-3 py-2 text-left font-semibold">Value</th>
+                <th className="px-3 py-2 text-left font-semibold">Change vs previous day</th>
+              </tr>
+            </thead>
+            <tbody>
+              {exerciseProgressRows.map((row) => (
+                <tr key={row.date} className="border-t border-slate-100">
+                  <td className="px-3 py-2 text-slate-600">{row.date}</td>
+                  <td
+                    className={`px-3 py-2 font-semibold ${
+                      row.trend === "up"
+                        ? "text-emerald-600"
+                        : row.trend === "down"
+                          ? "text-rose-600"
+                          : "text-slate-400"
+                    }`}
+                  >
+                    {Math.round(row.value).toLocaleString()}
+                  </td>
+                  <td
+                    className={`px-3 py-2 ${
+                      row.trend === "up"
+                        ? "text-emerald-600"
+                        : row.trend === "down"
+                          ? "text-rose-600"
+                          : "text-slate-400"
+                    }`}
+                  >
+                    {row.delta > 0 ? "+" : ""}{Math.round(row.delta).toLocaleString()}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </ChartCard>
 
