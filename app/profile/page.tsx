@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { AppHeaderNav } from "@/components/AppHeaderNav";
 import { STORAGE_KEYS, readJson, writeJson } from "@/lib/local-data";
 import { TARGETS_UPDATED_EVENT, getDailyMacroTargets, recalculateAndPersistTodayTargets } from "@/lib/daily-targets";
+import { ensureDemoSeedData } from "@/lib/demo-seed";
 import { calculateDailyTargets } from "@/lib/nutrition";
 import { getCurrentWeekDateKeys } from "@/lib/workout-execution";
 import { DailyTargets, MacroKey, ProfileInput, WorkoutDay, WorkoutException, WorkoutWeekPlan } from "@/lib/types";
@@ -152,6 +153,8 @@ export default function ProfilePage() {
   );
 
   useEffect(() => {
+    ensureDemoSeedData();
+
     const savedProfile = readJson<ProfileInput>(STORAGE_KEYS.profile);
     const savedTargets = readJson<DailyTargets>(STORAGE_KEYS.targets);
     const savedDisabled = readJson<MacroKey[]>(STORAGE_KEYS.disabledMacros);

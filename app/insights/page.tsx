@@ -5,6 +5,7 @@ import { AppHeaderNav } from "@/components/AppHeaderNav";
 import { InsightsLineChart } from "@/components/InsightsLineChart";
 import { STORAGE_KEYS, readJson } from "@/lib/local-data";
 import { TARGETS_UPDATED_EVENT } from "@/lib/daily-targets";
+import { ensureDemoSeedData } from "@/lib/demo-seed";
 import { buildEffectiveWorkoutInstances, buildWorkoutAdjustedSummary, deriveWeeklyWorkoutTargets, getCurrentWeekDateKeys, getDateKeysInRange } from "@/lib/workout-execution";
 import { DailyTargets, MacroKey, MacroTotals, ProfileInput, StoredMealLog, WorkoutException, WorkoutWeekPlan } from "@/lib/types";
 
@@ -38,6 +39,7 @@ export default function InsightsPage() {
 
   useEffect(() => {
     const sync = () => {
+      ensureDemoSeedData();
       setMeals(readJson<StoredMealLog[]>(STORAGE_KEYS.meals) ?? []);
       setWorkouts(readJson<WorkoutWeekPlan>(STORAGE_KEYS.workouts));
       setWorkoutExceptions(readJson<WorkoutException[]>(STORAGE_KEYS.workoutExceptions) ?? []);

@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { AppHeaderNav } from "@/components/AppHeaderNav";
 import { STORAGE_KEYS, readJson, writeJson } from "@/lib/local-data";
 import { recalculateAndPersistTodayTargets } from "@/lib/daily-targets";
+import { ensureDemoSeedData } from "@/lib/demo-seed";
 import { calculateTrainingVolume, estimateCaloriesForType } from "@/lib/workouts";
 import { buildWorkoutAdjustedSummary, calculateWorkoutPoints, deriveWeeklyWorkoutTargets, getCurrentWeekDateKeys, withStoredWorkoutPoints } from "@/lib/workout-execution";
 import {
@@ -306,6 +307,8 @@ export default function WorkoutsPage() {
   const [hasLoadedInitialData, setHasLoadedInitialData] = useState(false);
 
   useEffect(() => {
+    ensureDemoSeedData();
+
     const savedPlan = readJson<WorkoutWeekPlan>(STORAGE_KEYS.workouts);
     const savedProfile = readJson<ProfileInput>(STORAGE_KEYS.profile);
     const savedExceptions = readJson<WorkoutException[]>(STORAGE_KEYS.workoutExceptions) ?? [];

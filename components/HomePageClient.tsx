@@ -6,6 +6,7 @@ import { QuickMealsModal } from "@/components/QuickMealsModal";
 import { Spinner } from "@/components/Spinner";
 import { STORAGE_KEYS, readJson, writeJson } from "@/lib/local-data";
 import { TARGETS_UPDATED_EVENT, recalculateAndPersistTodayTargets } from "@/lib/daily-targets";
+import { ensureDemoSeedData } from "@/lib/demo-seed";
 import { ALL_WEEKDAYS, applyDailyMealsForDate, getLocalDateKey, getMealsForDate, toCalorieResponseFromQuickMeal } from "@/lib/meals";
 import { CalorieResponse, DailyTargets, MacroKey, MealSourceType, MealWeekday, QuickMeal, StoredMealLog } from "@/lib/types";
 
@@ -164,6 +165,8 @@ export function HomePageClient() {
   const [analysisTotals, setAnalysisTotals] = useState({ calories: 0, protein: 0, carbs: 0, fat: 0 });
 
   useEffect(() => {
+    ensureDemoSeedData();
+
     const savedMeals = readJson<StoredMealLog[]>(STORAGE_KEYS.meals);
     const savedTargets = readJson<DailyTargets>(STORAGE_KEYS.targets);
     const savedQuickMeals = readJson<QuickMeal[]>(STORAGE_KEYS.quickMeals);
