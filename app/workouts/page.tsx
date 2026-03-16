@@ -141,11 +141,6 @@ const specifyMuscleLabels: Record<SpecifyMuscle, string> = {
   deep_core: "Deep Core"
 };
 
-const typeIcons: Record<WorkoutExerciseType, string> = {
-  cardio: "🏃",
-  fitness: "🏋️",
-  crossfit: "🔥"
-};
 
 function normalizeMuscleGroup(muscleGroup: string | undefined, exerciseName: string, type: WorkoutExerciseType): MuscleGroup {
   const value = (muscleGroup ?? "").toLowerCase();
@@ -350,6 +345,18 @@ function getHistory(exercise: WorkoutExercise) {
     : [];
 }
 
+function cloneExerciseToDay(exercise: WorkoutExercise, targetDay: WorkoutDay): WorkoutExercise {
+  const now = new Date().toISOString();
+  return {
+    ...exercise,
+    id: crypto.randomUUID(),
+    workoutDayId: targetDay,
+    createdAt: now,
+    updatedAt: now,
+    progressHistory: [...getHistory(exercise)]
+  };
+}
+
 function ensureCalories(exercise: WorkoutExercise, weightKg: number) {
   if (exercise.estimatedCalories > 0) return Math.round(exercise.estimatedCalories);
 
@@ -418,6 +425,8 @@ export default function WorkoutsPage() {
   const [editingExerciseId, setEditingExerciseId] = useState<string | null>(null);
   const [deleteExerciseId, setDeleteExerciseId] = useState<string | null>(null);
   const [progressExerciseId, setProgressExerciseId] = useState<string | null>(null);
+  const [duplicateExerciseId, setDuplicateExerciseId] = useState<string | null>(null);
+  const [duplicateTargets, setDuplicateTargets] = useState<WorkoutDay[]>([]);
   const [profileWeight, setProfileWeight] = useState(70);
   const [profile, setProfile] = useState<ProfileInput | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -436,6 +445,7 @@ export default function WorkoutsPage() {
   const [exceptionIntensity, setExceptionIntensity] = useState<WorkoutIntensity>("moderate");
   const [typeFilter, setTypeFilter] = useState<"all" | "fitness" | "cardio" | "crossfit">("all");
   const [subFilter, setSubFilter] = useState<string>("all");
+  const [specifyFilter, setSpecifyFilter] = useState<"all" | SpecifyMuscle>("all");
   const [hasLoadedInitialData, setHasLoadedInitialData] = useState(false);
 
   useEffect(() => {
@@ -503,8 +513,7 @@ export default function WorkoutsPage() {
 
 
 
-  // Prepared for future filter extension by specific muscle (Specify Muscle).
-  const availableSpecifyMuscleFilters = useMemo(() => {
+    const availableSpecifyMuscleFilters = useMemo(() => {
     const values = new Set<SpecifyMuscle>();
     for (const exercise of selectedExercises) {
       if (!matchesTypeFilter(exercise, typeFilter)) continue;
@@ -520,12 +529,20 @@ export default function WorkoutsPage() {
     }
   }, [availableSubFilters, subFilter]);
 
+  useEffect(() => {
+    if (specifyFilter === "all") return;
+    if (!availableSpecifyMuscleFilters.includes(specifyFilter)) {
+      setSpecifyFilter("all");
+    }
+  }, [availableSpecifyMuscleFilters, specifyFilter]);
+
   const filteredExercises = useMemo(() => {
     const sorted = selectedExercises
       .filter((exercise) => {
         const matchType = matchesTypeFilter(exercise, typeFilter);
         const matchSub = subFilter === "all" ? true : exercise.muscleGroup === subFilter;
-        return matchType && matchSub;
+        const matchSpecify = specifyFilter === "all" ? true : exercise.specifyMuscle === specifyFilter;
+        return matchType && matchSub && matchSpecify;
       })
       .sort((a, b) => {
         const typeOrder: Record<"fitness" | "cardio" | "crossfit", number> = { fitness: 0, cardio: 1, crossfit: 2 };
@@ -542,11 +559,16 @@ export default function WorkoutsPage() {
       });
 
     return sorted;
-  }, [selectedExercises, subFilter, typeFilter]);
+  }, [selectedExercises, specifyFilter, subFilter, typeFilter]);
 
   const progressExercise = useMemo(
     () => selectedExercises.find((exercise) => exercise.id === progressExerciseId) ?? null,
     [selectedExercises, progressExerciseId]
+  );
+
+  const duplicateExercise = useMemo(
+    () => selectedExercises.find((exercise) => exercise.id === duplicateExerciseId) ?? null,
+    [duplicateExerciseId, selectedExercises]
   );
 
   const previousProgresses = useMemo(() => {
@@ -792,6 +814,36 @@ export default function WorkoutsPage() {
     setEditingExerciseId(null);
   }
 
+  function openDuplicateModal(exercise: WorkoutExercise) {
+    setDuplicateExerciseId(exercise.id);
+    setDuplicateTargets([]);
+  }
+
+  function closeDuplicateModal() {
+    setDuplicateExerciseId(null);
+    setDuplicateTargets([]);
+  }
+
+  function toggleDuplicateDay(day: WorkoutDay, checked: boolean) {
+    setDuplicateTargets((prev) => checked ? [...prev, day] : prev.filter((item) => item !== day));
+  }
+
+  function duplicateExerciseToDays() {
+    if (!duplicateExercise || !duplicateTargets.length) return;
+
+    setPlan((prev) => {
+      const next = { ...prev };
+      duplicateTargets.forEach((day) => {
+        const cloned = cloneExerciseToDay(duplicateExercise, day);
+        next[day] = { ...next[day], exercises: [cloned, ...next[day].exercises] };
+      });
+      return next;
+    });
+
+    setMessage(`Exercise duplicated to ${duplicateTargets.length} day${duplicateTargets.length > 1 ? "s" : ""}.`);
+    closeDuplicateModal();
+  }
+
   function createExerciseFromException(type: WorkoutExerciseType): WorkoutExercise {
     const now = new Date().toISOString();
 
@@ -1022,6 +1074,44 @@ export default function WorkoutsPage() {
         </div>
       ) : null}
 
+      {duplicateExercise ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl ring-1 ring-slate-200">
+            <div className="flex items-start justify-between">
+              <div>
+                <h3 className="text-lg font-semibold text-slate-900">Duplicate Exercise</h3>
+                <p className="mt-1 text-sm font-medium text-slate-700">{duplicateExercise.name}</p>
+                <p className="text-xs text-slate-500">Currently on: {dayLabels[selectedDay]}</p>
+              </div>
+              <button type="button" onClick={closeDuplicateModal} className="rounded-md p-1 text-slate-400 hover:bg-slate-100">✕</button>
+            </div>
+
+            <div className="mt-4 space-y-2">
+              <p className="text-sm font-medium text-slate-700">Copy to:</p>
+              {dayOrder.map((day) => {
+                const isSource = day === selectedDay;
+                return (
+                  <label key={day} className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm ${isSource ? "border-slate-100 bg-slate-50 text-slate-400" : "border-slate-200 text-slate-700"}`}>
+                    <input
+                      type="checkbox"
+                      disabled={isSource}
+                      checked={duplicateTargets.includes(day)}
+                      onChange={(event) => toggleDuplicateDay(day, event.target.checked)}
+                    />
+                    {dayLabels[day]}
+                  </label>
+                );
+              })}
+            </div>
+
+            <div className="mt-5 flex justify-end gap-2">
+              <button type="button" onClick={closeDuplicateModal} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700">Cancel</button>
+              <button type="button" onClick={duplicateExerciseToDays} disabled={!duplicateTargets.length} className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-400 disabled:cursor-not-allowed disabled:bg-slate-300">Duplicate Exercise</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {progressExercise ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45 p-4">
           <div className="w-full max-w-2xl rounded-2xl bg-white p-6 shadow-xl ring-1 ring-slate-200">
@@ -1073,6 +1163,32 @@ export default function WorkoutsPage() {
               <label className="block text-sm text-slate-700">Exercise name / description
                 <input className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={draft.name} onChange={(event) => setDraftField("name", event.target.value)} />
               </label>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="block text-sm text-slate-700">Muscle Group
+                  <select className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={draft.muscleGroup} onChange={(event) => {
+                    const nextGroup = event.target.value as MuscleGroup;
+                    const nextOptions = specifyMuscleOptionsByGroup[nextGroup].map((item) => item.value);
+                    const nextSpecific = nextOptions.includes(draft.specifyMuscle as SpecifyMuscle) ? draft.specifyMuscle : "";
+                    setDraft((prev) => ({ ...prev, muscleGroup: nextGroup, specifyMuscle: nextSpecific }));
+                  }}>
+                    {muscleGroupOptions.map((option) => (<option key={option.value} value={option.value}>{option.label}</option>))}
+                  </select>
+                </label>
+
+                <label className="block text-sm text-slate-700">Specify Muscle <span className="text-slate-400">(optional)</span>
+                  <select
+                    className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2"
+                    value={draft.specifyMuscle}
+                    onChange={(event) => setDraftField("specifyMuscle", event.target.value as SpecifyMuscle | "")}
+                  >
+                    <option value="">Select specific muscle</option>
+                    {specifyMuscleOptionsByGroup[draft.muscleGroup].map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
 
               {draft.type === "cardio" ? (
                 <label className="block text-sm text-slate-700">Duration (minutes)
@@ -1400,13 +1516,23 @@ export default function WorkoutsPage() {
                   {muscleGroupLabels[value as MuscleGroup]}
                 </button>
               ))}
-              <p className="sr-only">Specific-muscle filters ready: {availableSpecifyMuscleFilters.length}</p>
-              {(typeFilter !== "all" || subFilter !== "all") ? (
+              {availableSpecifyMuscleFilters.map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setSpecifyFilter((prev) => (prev === value ? "all" : value))}
+                  className={`rounded-full border px-3 py-1 text-xs font-medium ${specifyFilter === value ? "border-indigo-500 bg-indigo-50 text-indigo-700" : "border-indigo-200 bg-white text-slate-600 hover:bg-indigo-50"}`}
+                >
+                  {specifyMuscleLabels[value]}
+                </button>
+              ))}
+              {(typeFilter !== "all" || subFilter !== "all" || specifyFilter !== "all") ? (
                 <button
                   type="button"
                   onClick={() => {
                     setTypeFilter("all");
                     setSubFilter("all");
+                    setSpecifyFilter("all");
                   }}
                   className="rounded-full border border-slate-200 px-3 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50"
                 >
@@ -1426,11 +1552,25 @@ export default function WorkoutsPage() {
                   <li key={exercise.id} className="rounded-xl border border-slate-200 p-4 cursor-pointer hover:bg-slate-50" onClick={() => openProgress(exercise)}>
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div>
-                        <p className="flex items-center gap-2 font-semibold text-slate-900"><span className="inline-flex h-5 w-5 items-center justify-center text-sm">{typeIcons[exercise.type]}</span><span>{exercise.name}</span></p>
+                        <p className="font-semibold text-slate-900">{exercise.name}</p>
                         {exercise.sourceType === "system" ? <p className="mt-1 inline-block rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-blue-700">Auto-generated</p> : null}
                         <div className="mt-2 flex flex-wrap gap-1.5">
-                          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-slate-700">{muscleGroupLabels[exercise.muscleGroup]}</span>
-                          {exercise.specifyMuscle ? <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-semibold uppercase text-indigo-700">{specifyMuscleLabels[exercise.specifyMuscle]}</span> : null}
+                          <button
+                            type="button"
+                            onClick={(event) => { event.stopPropagation(); setSubFilter(exercise.muscleGroup); }}
+                            className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-slate-700 hover:bg-slate-200"
+                          >
+                            {muscleGroupLabels[exercise.muscleGroup]}
+                          </button>
+                          {exercise.specifyMuscle ? (
+                            <button
+                              type="button"
+                              onClick={(event) => { event.stopPropagation(); setSpecifyFilter(exercise.specifyMuscle!); }}
+                              className="rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-semibold uppercase text-indigo-700 hover:bg-indigo-100"
+                            >
+                              {specifyMuscleLabels[exercise.specifyMuscle]}
+                            </button>
+                          ) : null}
                         </div>
                         {exercise.type === "cardio" ? <p className="mt-1 text-sm text-slate-600">Duration: {exercise.durationMinutes} minutes</p> : null}
                         {exercise.type === "fitness" ? <p className="mt-1 text-sm text-slate-600">{exercise.sets} sets × {exercise.reps} reps × {exercise.weight} kg</p> : null}
@@ -1439,8 +1579,9 @@ export default function WorkoutsPage() {
                       </div>
 
                       <div className="flex gap-2">
-                        {exercise.sourceType !== "system" ? <button type="button" onClick={(event) => { event.stopPropagation(); openProgress(exercise); }} className="rounded-lg border border-emerald-200 px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-50">Progress</button> : null}
-                        {exercise.sourceType !== "system" ? <button type="button" onClick={(event) => { event.stopPropagation(); setDeleteExerciseId(exercise.id); }} className="rounded-lg border border-rose-200 px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50">Delete</button> : null}
+                        {exercise.sourceType !== "system" ? <button type="button" aria-label="Edit progress" onClick={(event) => { event.stopPropagation(); openProgress(exercise); }} className="rounded-lg border border-emerald-200 px-2 py-1.5 text-sm text-emerald-700 hover:bg-emerald-50">✎</button> : null}
+                        {exercise.sourceType !== "system" ? <button type="button" aria-label="Duplicate exercise" onClick={(event) => { event.stopPropagation(); openDuplicateModal(exercise); }} className="rounded-lg border border-slate-200 px-2 py-1.5 text-sm text-slate-700 hover:bg-slate-100">⧉</button> : null}
+                        {exercise.sourceType !== "system" ? <button type="button" aria-label="Delete exercise" onClick={(event) => { event.stopPropagation(); setDeleteExerciseId(exercise.id); }} className="rounded-lg border border-rose-200 px-2 py-1.5 text-sm text-rose-700 hover:bg-rose-50">🗑</button> : null}
                       </div>
                     </div>
                   </li>
