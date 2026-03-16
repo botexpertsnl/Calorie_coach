@@ -269,7 +269,16 @@ function SimpleTrendChart({ points, color, unit, metricLabel }: { points: TrendP
   );
 }
 
-function MultiLineChart({ series }: { series: MultiSeries[] }) {
+function MultiLineChart({
+  series,
+  onLabelClick,
+  activeLineKey
+}: {
+  series: MultiSeries[];
+  onLabelClick?: (key: string) => void;
+  activeLineKey?: string;
+}) {
+  const [hoveredPoint, setHoveredPoint] = useState<{ x: number; y: number; date: string; label: string; value: number } | null>(null);
   const nonEmpty = series.filter((item) => item.points.some((point) => point.y > 0));
   if (!nonEmpty.length) return <p className="text-sm text-slate-500">No exercise progression in this range for the selected filters.</p>;
 
@@ -278,41 +287,87 @@ function MultiLineChart({ series }: { series: MultiSeries[] }) {
   const padding = 38;
   const maxValue = Math.max(...nonEmpty.flatMap((item) => item.points.map((point) => point.y)), 1);
   const pointCount = Math.max(...nonEmpty.map((item) => item.points.length));
+  const firstDate = nonEmpty[0]?.points[0]?.x;
+  const lastDate = nonEmpty[0]?.points[nonEmpty[0].points.length - 1]?.x;
 
   const toX = (index: number) => padding + (index / Math.max(pointCount - 1, 1)) * (width - padding * 2);
   const toY = (value: number) => height - padding - (value / maxValue) * (height - padding * 2);
 
   return (
     <div>
-      <svg viewBox={`0 0 ${width} ${height}`} className="h-64 w-full">
-        <line x1={padding} y1={height - padding} x2={width - padding} y2={height - padding} stroke="#cbd5e1" strokeWidth="1" />
-        <line x1={padding} y1={padding} x2={padding} y2={height - padding} stroke="#cbd5e1" strokeWidth="1" />
+      <div className="relative">
+        <svg viewBox={`0 0 ${width} ${height}`} className="h-64 w-full">
+          <line x1={padding} y1={height - padding} x2={width - padding} y2={height - padding} stroke="#cbd5e1" strokeWidth="1" />
+          <line x1={padding} y1={padding} x2={padding} y2={height - padding} stroke="#cbd5e1" strokeWidth="1" />
 
-        {nonEmpty.map((line) => {
-          const path = line.points.map((point, index) => `${index === 0 ? "M" : "L"}${toX(index)} ${toY(point.y)}`).join(" ");
-          return <path key={line.key} d={path} fill="none" stroke={line.color} strokeWidth="2.4" />;
-        })}
+          {nonEmpty.map((line) => {
+            const path = line.points.map((point, index) => `${index === 0 ? "M" : "L"}${toX(index)} ${toY(point.y)}`).join(" ");
+            return <path key={line.key} d={path} fill="none" stroke={line.color} strokeWidth="2.4" />;
+          })}
 
-        {nonEmpty.map((line) =>
-          line.points.map((point, index) => (
-            <circle key={`${line.key}-${point.x}`} cx={toX(index)} cy={toY(point.y)} r="3" fill={line.color}>
-              <title>{`${point.tooltipLabel ?? formatDateOnly(point.x)}\n${line.label}: ${Math.round(point.y).toLocaleString()}`}</title>
-            </circle>
-          ))
-        )}
-      </svg>
+          {nonEmpty.map((line) =>
+            line.points.map((point, index) => (
+              <circle
+                key={`${line.key}-${point.x}`}
+                cx={toX(index)}
+                cy={toY(point.y)}
+                r="4"
+                fill={line.color}
+                onMouseEnter={() =>
+                  setHoveredPoint({
+                    x: toX(index),
+                    y: toY(point.y),
+                    date: point.tooltipLabel ?? formatDateOnly(point.x),
+                    label: line.label,
+                    value: point.y
+                  })
+                }
+                onMouseLeave={() => setHoveredPoint(null)}
+              >
+                <title>{`${point.tooltipLabel ?? formatDateOnly(point.x)}
+${line.label}: ${Math.round(point.y).toLocaleString()}`}</title>
+              </circle>
+            ))
+          )}
+        </svg>
+
+        {hoveredPoint ? (
+          <div
+            className="pointer-events-none absolute z-10 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs shadow"
+            style={{ left: `calc(${(hoveredPoint.x / width) * 100}% + 10px)`, top: `calc(${(hoveredPoint.y / height) * 100}% - 12px)` }}
+          >
+            <p className="font-semibold text-slate-800">{hoveredPoint.date}</p>
+            <p className="text-slate-600">{hoveredPoint.label}: {Math.round(hoveredPoint.value).toLocaleString()}</p>
+          </div>
+        ) : null}
+      </div>
+
+      <div className="mt-2 flex items-center justify-between text-xs text-slate-500">
+        <span>{firstDate ? formatDateOnly(firstDate) : ""}</span>
+        <span>Hover a dot for detailed values</span>
+        <span>{lastDate ? formatDateOnly(lastDate) : ""}</span>
+      </div>
 
       <div className="mt-3 flex flex-wrap gap-3 text-xs text-slate-700">
-        {nonEmpty.map((line) => (
-          <span key={`legend-${line.key}`} className="inline-flex items-center gap-2 rounded-full border border-slate-200 px-2.5 py-1">
-            <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: line.color }} />
-            {line.label}
-          </span>
-        ))}
+        {nonEmpty.map((line) => {
+          const isActive = activeLineKey === line.key;
+          return (
+            <button
+              key={`legend-${line.key}`}
+              type="button"
+              onClick={() => onLabelClick?.(line.key)}
+              className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 ${isActive ? "border-slate-700 bg-slate-100" : "border-slate-200"}`}
+            >
+              <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: line.color }} />
+              {line.label}
+            </button>
+          );
+        })}
       </div>
     </div>
   );
 }
+
 
 export default function InsightsPage() {
   const [rangePreset, setRangePreset] = useState<RangePreset>("7d");
@@ -590,23 +645,17 @@ export default function InsightsPage() {
 
   const weightSeries = useMemo<TrendPoint[]>(() => {
     return bodyProgress.weight
-      .filter((entry) => {
-        const d = new Date(entry.recordedAt);
-        return d >= rangeStart && d <= rangeEnd;
-      })
+      .filter((entry) => rangeDateKeys.includes(toDateKey(entry.recordedAt)))
       .sort((a, b) => new Date(a.recordedAt).getTime() - new Date(b.recordedAt).getTime())
       .map((entry) => ({ x: entry.recordedAt, y: entry.value }));
-  }, [bodyProgress.weight, rangeEnd, rangeStart]);
+  }, [bodyProgress.weight, rangeDateKeys]);
 
   const waistSeries = useMemo<TrendPoint[]>(() => {
     return bodyProgress.waist
-      .filter((entry) => {
-        const d = new Date(entry.recordedAt);
-        return d >= rangeStart && d <= rangeEnd;
-      })
+      .filter((entry) => rangeDateKeys.includes(toDateKey(entry.recordedAt)))
       .sort((a, b) => new Date(a.recordedAt).getTime() - new Date(b.recordedAt).getTime())
       .map((entry) => ({ x: entry.recordedAt, y: entry.value }));
-  }, [bodyProgress.waist, rangeEnd, rangeStart]);
+  }, [bodyProgress.waist, rangeDateKeys]);
 
   const coachingInsights = useMemo(() => {
     const tips: string[] = [];
@@ -764,7 +813,20 @@ export default function InsightsPage() {
         </div>
 
         <div className="mt-4 rounded-xl border border-slate-200 p-3">
-          <MultiLineChart series={exerciseProgressSeries} />
+          <MultiLineChart
+            series={exerciseProgressSeries}
+            activeLineKey={muscleFilter === "all" ? undefined : muscleFilter}
+            onLabelClick={(lineKey) => {
+              if (muscleFilter === "all") {
+                if ((Object.keys(muscleGroupLabels) as MuscleGroup[]).includes(lineKey as MuscleGroup)) {
+                  setMuscleFilter((prev) => (prev === lineKey ? "all" : (lineKey as MuscleGroup)));
+                }
+                return;
+              }
+
+              setMuscleFilter("all");
+            }}
+          />
           <p className="mt-3 text-xs text-slate-500">Y-axis uses workload score derived from training volume, sets, reps, weight, and duration over time.</p>
         </div>
       </ChartCard>
