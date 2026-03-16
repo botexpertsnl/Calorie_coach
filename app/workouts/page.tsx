@@ -452,6 +452,7 @@ export default function WorkoutsPage() {
   const [isAddExerciseOpen, setIsAddExerciseOpen] = useState(false);
   const [addExerciseStep, setAddExerciseStep] = useState<"details" | "schedule">("details");
   const [addExerciseDays, setAddExerciseDays] = useState<WorkoutDay[]>([selectedDay]);
+  const [isPlannerDaysExpanded, setIsPlannerDaysExpanded] = useState(false);
   const [profileWeight, setProfileWeight] = useState(70);
   const [profile, setProfile] = useState<ProfileInput | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -1224,17 +1225,29 @@ export default function WorkoutsPage() {
                 <h3 className="text-xl font-semibold text-slate-900">Exercise Progress</h3>
                 <p className="text-sm text-slate-500">{progressExercise.name}</p>
                 {previousProgresses.length ? (
-                  <div className="mt-2 space-y-1">
-                    {previousProgresses.map((entry, index) => (
-                      <p key={`${entry.recordedAt}-${index}`} className="text-xs text-slate-500">
-                        Previous {index + 1} ({formatRecordedDate(entry.recordedAt)}):
-                        {typeof entry.durationMinutes === "number" ? ` ${entry.durationMinutes} min` : ""}
-                        {typeof entry.sets === "number" ? ` • ${entry.sets} sets` : ""}
-                        {typeof entry.reps === "number" ? ` • ${entry.reps} reps` : ""}
-                        {typeof entry.weight === "number" ? ` • ${entry.weight} kg` : ""}
-                        {entry.notes ? ` • ${entry.notes}` : ""}
-                      </p>
-                    ))}
+                  <div className="mt-3 overflow-x-auto rounded-xl border border-slate-200">
+                    <table className="min-w-full text-xs">
+                      <thead className="bg-slate-50 text-slate-600">
+                        <tr>
+                          <th className="px-3 py-2 text-left font-semibold">Change date</th>
+                          <th className="px-3 py-2 text-left font-semibold">Duration</th>
+                          <th className="px-3 py-2 text-left font-semibold">Sets</th>
+                          <th className="px-3 py-2 text-left font-semibold">Reps</th>
+                          <th className="px-3 py-2 text-left font-semibold">Weight</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {previousProgresses.map((entry, index) => (
+                          <tr key={`${entry.recordedAt}-${index}`} className="border-t border-slate-100 text-slate-600">
+                            <td className="px-3 py-2">{formatRecordedDate(entry.recordedAt)}</td>
+                            <td className="px-3 py-2">{typeof entry.durationMinutes === "number" ? `${entry.durationMinutes} min` : "-"}</td>
+                            <td className="px-3 py-2">{typeof entry.sets === "number" ? entry.sets : "-"}</td>
+                            <td className="px-3 py-2">{typeof entry.reps === "number" ? entry.reps : "-"}</td>
+                            <td className="px-3 py-2">{typeof entry.weight === "number" ? `${entry.weight} kg` : "-"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                 ) : null}
 
@@ -1609,7 +1622,13 @@ export default function WorkoutsPage() {
             </div>
             <button type="button" onClick={openAddExerciseModal} className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-400">Add Exercise</button>
           </div>
-          <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-7">
+          <div className="mt-4 flex items-center justify-between md:hidden">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Planner days</p>
+            <button type="button" onClick={() => setIsPlannerDaysExpanded((prev) => !prev)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700">
+              {isPlannerDaysExpanded ? "Hide days" : "Show days"}
+            </button>
+          </div>
+          <div className={`mt-3 ${isPlannerDaysExpanded ? "grid" : "hidden"} gap-2 sm:grid-cols-2 lg:grid-cols-7 md:grid`}>
             {dayOrder.map((day) => (
               <button
                 key={day}
@@ -1645,28 +1664,39 @@ export default function WorkoutsPage() {
               </div>
             </div>
 
-            <div className="mt-3">
-              <div className="flex flex-wrap gap-2">
-              {availableSubFilters.map((value) => (
-                <button
-                  key={value}
-                  type="button"
-                  onClick={() => setSubFilter((prev) => (prev === value ? "all" : value))}
-                  className={`rounded-full border px-3 py-1 text-xs font-medium ${subFilter === value ? "border-sky-500 bg-sky-50 text-sky-700" : "border-sky-200 bg-white text-slate-600 hover:bg-sky-50"}`}
-                >
-                  {muscleGroupLabels[value as MuscleGroup]}
-                </button>
-              ))}
-              {availableSpecifyMuscleFilters.map((value) => (
-                <button
-                  key={value}
-                  type="button"
-                  onClick={() => setSpecifyFilter((prev) => (prev === value ? "all" : value))}
-                  className={`rounded-full border px-3 py-1 text-xs font-medium ${specifyFilter === value ? "border-indigo-500 bg-indigo-50 text-indigo-700" : "border-indigo-200 bg-white text-slate-600 hover:bg-indigo-50"}`}
-                >
-                  {specifyMuscleLabels[value]}
-                </button>
-              ))}
+            <div className="mt-3 space-y-3">
+              <div>
+                <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Main muscle group</p>
+                <div className="flex flex-wrap gap-2 rounded-xl border border-sky-100 bg-sky-50/40 p-2">
+                {availableSubFilters.map((value) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setSubFilter((prev) => (prev === value ? "all" : value))}
+                    className={`rounded-full border px-3 py-1 text-xs font-semibold ${subFilter === value ? "border-sky-600 bg-sky-100 text-sky-800" : "border-sky-200 bg-white text-slate-600 hover:bg-sky-50"}`}
+                  >
+                    {muscleGroupLabels[value as MuscleGroup]}
+                  </button>
+                ))}
+                </div>
+              </div>
+
+              <div>
+                <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Specific muscle (sub-group)</p>
+                <div className="flex flex-wrap gap-2 rounded-xl border border-indigo-100 bg-indigo-50/40 p-2">
+                {availableSpecifyMuscleFilters.map((value) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setSpecifyFilter((prev) => (prev === value ? "all" : value))}
+                    className={`rounded-full border px-3 py-1 text-xs font-semibold ${specifyFilter === value ? "border-indigo-600 bg-indigo-100 text-indigo-800" : "border-indigo-200 bg-white text-slate-600 hover:bg-indigo-50"}`}
+                  >
+                    {specifyMuscleLabels[value]}
+                  </button>
+                ))}
+                </div>
+              </div>
+
               {(typeFilter !== "all" || subFilter !== "all" || specifyFilter !== "all") ? (
                 <button
                   type="button"
@@ -1680,7 +1710,6 @@ export default function WorkoutsPage() {
                   Clear filters
                 </button>
               ) : null}
-              </div>
             </div>
 
             {selectedExercises.length === 0 ? (
