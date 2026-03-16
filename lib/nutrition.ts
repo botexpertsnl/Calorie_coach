@@ -1,0 +1,209 @@
+import { DailyStepsRange, DailyTargets, GoalIntensity, GoalType, ProfileInput, TrainingExperience, WorkType } from "@/lib/types";
+
+const stepActivityMultipliers: Record<DailyStepsRange, number> = {
+  "1-5000": 1.3,
+  "5000-10000": 1.45,
+  "10000+": 1.6
+};
+
+const workTypeActivityMultipliers: Record<WorkType, number> = {
+  sedentary: 1.2,
+  light: 1.35,
+  moderate: 1.5,
+  heavy: 1.65
+};
+
+const experienceProteinBump: Record<TrainingExperience, number> = {
+  beginner: 0,
+  intermediate: 0.1,
+  advanced: 0.2
+};
+
+export function inferGoalCategoryFromText(goalText: string): GoalType {
+  const text = goalText.toLowerCase();
+
+  const mentionsFatLoss = /lose|cut|fat loss|lean out|slim|belly/.test(text);
+  const mentionsMuscleGain = /gain|bulk|muscle|strength|mass/.test(text);
+  const mentionsRecomp = /recomp|body composition|tone|toning|lose fat and.*muscle/.test(text);
+
+  if (mentionsRecomp || (mentionsFatLoss && mentionsMuscleGain)) return "recomposition";
+  if (mentionsFatLoss) return "fat_loss";
+  if (mentionsMuscleGain) return "muscle_gain";
+  return "maintenance";
+}
+
+function inferGoalCategoryFromProfile(profile: ProfileInput): GoalType {
+  const primary = profile.primaryGoal?.toLowerCase() ?? "";
+
+  if (primary.includes("fat loss")) return "fat_loss";
+  if (primary.includes("muscle gain")) return "muscle_gain";
+  if (primary.includes("strength")) return "muscle_gain";
+  if (primary.includes("endurance")) return "maintenance";
+  if (primary.includes("general health")) return "maintenance";
+
+  return inferGoalCategoryFromText(profile.goalText);
+}
+
+function getGoalIntensity(profile: ProfileInput): GoalIntensity {
+  return profile.goalIntensity ?? "medium";
+}
+
+function bmrMifflinStJeor(profile: ProfileInput): number {
+  const genderConstant =
+    profile.gender === "male" ? 5 : profile.gender === "female" ? -161 : -78;
+  return 10 * profile.weightKg + 6.25 * profile.heightCm - 5 * profile.age + genderConstant;
+}
+
+function waistRiskSignal(profile: ProfileInput): "low" | "moderate" | "high" {
+  const ratio = profile.waistCm / profile.heightCm;
+
+  if (profile.gender === "male") {
+    if (ratio >= 0.57) return "high";
+    if (ratio >= 0.52) return "moderate";
+    return "low";
+  }
+
+  if (profile.gender === "female") {
+    if (ratio >= 0.54) return "high";
+    if (ratio >= 0.49) return "moderate";
+    return "low";
+  }
+
+  if (ratio >= 0.55) return "high";
+  if (ratio >= 0.5) return "moderate";
+  return "low";
+}
+
+function floorCarbsPerKg(steps: DailyStepsRange, experience: TrainingExperience): number {
+  const stepFloor = steps === "1-5000" ? 1.7 : steps === "5000-10000" ? 2.4 : 3.1;
+  const expBump = experience === "advanced" ? 0.35 : experience === "intermediate" ? 0.2 : 0;
+  return stepFloor + expBump;
+}
+
+function getBackgroundActivityFactor(profile: ProfileInput) {
+  const stepsFactor = stepActivityMultipliers[profile.averageDailySteps];
+  const workFactor = workTypeActivityMultipliers[profile.workType];
+
+  // weighted merge to avoid double-counting background movement.
+  return Number((stepsFactor * 0.55 + workFactor * 0.45).toFixed(3));
+}
+
+export function calculateDailyTargets(
+  profile: ProfileInput,
+  preferredGoalCategory?: GoalType,
+  aiReasoning?: string
+): DailyTargets {
+  const goalCategory = preferredGoalCategory ?? inferGoalCategoryFromProfile(profile);
+  const intensity = getGoalIntensity(profile);
+
+  const bmr = bmrMifflinStJeor(profile);
+  const activityFactor = getBackgroundActivityFactor(profile);
+  const tdee = bmr * activityFactor;
+  const waistSignal = waistRiskSignal(profile);
+
+  let calorieMultiplier = 1;
+  let calorieStrategy = "maintenance calories";
+  let proteinPerKg = 1.6;
+  let fatPerKg = 0.9;
+
+  if (goalCategory === "fat_loss") {
+    calorieMultiplier = waistSignal === "high" ? 0.82 : waistSignal === "moderate" ? 0.85 : 0.88;
+    if (intensity === "slow") calorieMultiplier += 0.04;
+    if (intensity === "medium_fast") calorieMultiplier -= 0.03;
+    if (intensity === "fast") calorieMultiplier -= 0.06;
+    calorieStrategy = `${Math.round((1 - calorieMultiplier) * 100)}% deficit`;
+    proteinPerKg = 2.2;
+    fatPerKg = 0.8;
+  } else if (goalCategory === "muscle_gain") {
+    calorieMultiplier = profile.trainingExperience === "advanced" ? 1.12 : 1.08;
+    if (intensity === "slow") calorieMultiplier -= 0.03;
+    if (intensity === "medium_fast") calorieMultiplier += 0.03;
+    if (intensity === "fast") calorieMultiplier += 0.06;
+    calorieStrategy = `${Math.round((calorieMultiplier - 1) * 100)}% surplus`;
+    proteinPerKg = 1.9;
+    fatPerKg = 0.9;
+  } else if (goalCategory === "recomposition") {
+    calorieMultiplier = waistSignal === "high" ? 0.95 : 0.98;
+    if (intensity === "slow") calorieMultiplier += 0.02;
+    if (intensity === "medium_fast") calorieMultiplier -= 0.015;
+    if (intensity === "fast") calorieMultiplier -= 0.03;
+    calorieStrategy = waistSignal === "high" ? "5% deficit" : "near-maintenance";
+    proteinPerKg = 2.2;
+    fatPerKg = 0.85;
+  } else {
+    if (intensity === "slow") calorieMultiplier -= 0.02;
+    if (intensity === "medium_fast") calorieMultiplier += 0.02;
+    if (intensity === "fast") calorieMultiplier += 0.04;
+    calorieStrategy = intensity === "slow" ? "light conservative" : intensity === "fast" ? "high progression" : "maintenance calories";
+  }
+
+  proteinPerKg += experienceProteinBump[profile.trainingExperience];
+
+  const targetCalories = Math.round(tdee * calorieMultiplier);
+  const targetProtein = Math.round(profile.weightKg * proteinPerKg);
+
+  const minFat = profile.weightKg * 0.6;
+  const targetFat = Math.round(Math.max(minFat, profile.weightKg * fatPerKg));
+
+  let remainingCalories = targetCalories - (targetProtein * 4 + targetFat * 9);
+  let targetCarbs = Math.round(remainingCalories / 4);
+
+  const carbFloor = Math.round(
+    profile.weightKg *
+      Math.max(
+        1.2,
+        floorCarbsPerKg(profile.averageDailySteps, profile.trainingExperience) +
+          (goalCategory === "muscle_gain" ? 0.3 : goalCategory === "fat_loss" ? -0.3 : 0)
+      )
+  );
+
+  if (targetCarbs < carbFloor) {
+    targetCarbs = carbFloor;
+    remainingCalories = targetCalories - (targetProtein * 4 + targetCarbs * 4);
+
+    // Rebalance fat so calories stay close to target while respecting minimum healthy fat.
+    const rebalancedFat = Math.floor(Math.max(minFat, remainingCalories / 9));
+    if (Number.isFinite(rebalancedFat) && rebalancedFat > 0) {
+      const cappedFat = Math.min(rebalancedFat, Math.round(profile.weightKg * 1.2));
+      const caloriesAfterRebalance = targetProtein * 4 + targetCarbs * 4 + cappedFat * 9;
+
+      if (caloriesAfterRebalance > targetCalories * 1.05) {
+        targetCarbs = Math.max(carbFloor, targetCarbs - Math.round((caloriesAfterRebalance - targetCalories) / 4));
+      }
+
+      return {
+        goalCategory,
+        goalType: goalCategory,
+        bmr: Math.round(bmr),
+        activityFactor,
+        tdee: Math.round(tdee),
+        calorieStrategy,
+        calories: targetCalories,
+        protein: targetProtein,
+        carbs: targetCarbs,
+        fat: cappedFat,
+        explanation: aiReasoning ?? `Goal set to ${goalCategory.replace("_", " ")} with ${calorieStrategy} based on your profile and activity level.`,
+        macroReasoning:
+          "Protein uses a goal-specific g/kg target, fat keeps a healthy minimum, and carbs are set from remaining calories with activity-aware floors."
+      };
+    }
+  }
+
+  return {
+    goalCategory,
+    goalType: goalCategory,
+    bmr: Math.round(bmr),
+    activityFactor,
+    tdee: Math.round(tdee),
+    calorieStrategy,
+    calories: targetCalories,
+    protein: targetProtein,
+    carbs: Math.max(targetCarbs, carbFloor),
+    fat: targetFat,
+    explanation:
+      aiReasoning ??
+      `Goal set to ${goalCategory.replace("_", " ")} with ${calorieStrategy} based on your profile and activity level.`,
+    macroReasoning:
+      "Protein uses a goal-specific g/kg target, fat keeps a healthy minimum, and carbs are calculated from remaining calories then rebalanced for realism."
+  };
+}
