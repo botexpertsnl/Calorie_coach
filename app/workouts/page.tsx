@@ -1264,7 +1264,6 @@ export default function WorkoutsPage() {
             </div>
 
             <form onSubmit={saveExercise} className="mt-4 space-y-4">
-              <div className={addExerciseStep === "details" ? "space-y-4" : "hidden"}>
               <label className="block text-sm text-slate-700">Exercise name / description
                 <input className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={draft.name} onChange={(event) => setDraftField("name", event.target.value)} />
               </label>
@@ -1564,7 +1563,6 @@ export default function WorkoutsPage() {
               <label className="block text-sm text-slate-700">Notes
                 <textarea className="mt-1 min-h-20 w-full rounded-xl border border-slate-200 px-3 py-2" value={draft.notes} onChange={(event) => setDraftField("notes", event.target.value)} placeholder="Optional notes" />
               </label>
-              </div>
 
               {addExerciseStep === "details" ? (
                 <div className="flex gap-2">
