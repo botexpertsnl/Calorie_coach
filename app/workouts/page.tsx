@@ -255,14 +255,17 @@ function inferExerciseDefaults(name: string): Partial<PlannerDraft> {
   return {};
 }
 
-function formatPercentChange(current: number | undefined, previous: number | undefined) {
+function formatNumericDelta(current: number | undefined, previous: number | undefined) {
   if (typeof current !== "number" || typeof previous !== "number") return null;
-  if (previous === 0) {
-    if (current === 0) return 0;
-    return 100;
-  }
+  const diff = current - previous;
+  if (!Number.isFinite(diff)) return null;
+  return Number(diff.toFixed(2));
+}
 
-  return Math.round(((current - previous) / Math.abs(previous)) * 100);
+function formatRecordedDate(iso: string) {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "n/a";
+  return new Intl.DateTimeFormat("nl-NL", { day: "2-digit", month: "2-digit", year: "numeric" }).format(date);
 }
 
 function getAmsterdamToday(): WorkoutDay {
@@ -447,6 +450,8 @@ export default function WorkoutsPage() {
   const [duplicateExerciseId, setDuplicateExerciseId] = useState<string | null>(null);
   const [duplicateTargets, setDuplicateTargets] = useState<WorkoutDay[]>([]);
   const [isAddExerciseOpen, setIsAddExerciseOpen] = useState(false);
+  const [addExerciseStep, setAddExerciseStep] = useState<"details" | "schedule">("details");
+  const [addExerciseDays, setAddExerciseDays] = useState<WorkoutDay[]>([selectedDay]);
   const [profileWeight, setProfileWeight] = useState(70);
   const [profile, setProfile] = useState<ProfileInput | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -499,6 +504,14 @@ export default function WorkoutsPage() {
       exceptions
     });
   }, [exceptions, hasLoadedInitialData, plan, profile]);
+
+
+  useEffect(() => {
+    if (!isAddExerciseOpen) {
+      setAddExerciseDays([selectedDay]);
+      setAddExerciseStep("details");
+    }
+  }, [isAddExerciseOpen, selectedDay]);
 
   function resetDraft(type: WorkoutExerciseType = "fitness") {
     if (type === "crossfit") {
@@ -600,13 +613,13 @@ export default function WorkoutsPage() {
   const latestPreviousProgress = previousProgresses[0];
 
   const progressComparisons = useMemo(() => {
-    if (!latestPreviousProgress) return [] as Array<{ label: string; value: number | null }>;
+    if (!latestPreviousProgress) return [] as Array<{ label: string; value: number | null; unit: string }>;
 
     return [
-      { label: "Duration", value: formatPercentChange(draft.durationMinutes, latestPreviousProgress.durationMinutes) },
-      { label: "Sets", value: formatPercentChange(draft.sets, latestPreviousProgress.sets) },
-      { label: "Reps", value: formatPercentChange(draft.reps, latestPreviousProgress.reps) },
-      { label: "Weight", value: formatPercentChange(draft.weight, latestPreviousProgress.weight) }
+      { label: "Duration", value: formatNumericDelta(draft.durationMinutes, latestPreviousProgress.durationMinutes), unit: "min" },
+      { label: "Sets", value: formatNumericDelta(draft.sets, latestPreviousProgress.sets), unit: "sets" },
+      { label: "Reps", value: formatNumericDelta(draft.reps, latestPreviousProgress.reps), unit: "reps" },
+      { label: "Weight", value: formatNumericDelta(draft.weight, latestPreviousProgress.weight), unit: "kg" }
     ];
   }, [draft.durationMinutes, draft.reps, draft.sets, draft.weight, latestPreviousProgress]);
 
@@ -652,15 +665,8 @@ export default function WorkoutsPage() {
     return null;
   }
 
-  function saveExercise(event: FormEvent) {
-    event.preventDefault();
 
-    const validationError = validateDraft();
-    if (validationError) {
-      setMessage(validationError);
-      return;
-    }
-
+  function buildExerciseForDay(day: WorkoutDay, existingId?: string | null): WorkoutExercise {
     const now = new Date().toISOString();
     const shared = {
       name: draft.name.trim(),
@@ -669,12 +675,10 @@ export default function WorkoutsPage() {
       muscleGroup: draft.muscleGroup,
       specifyMuscle: draft.specifyMuscle || undefined,
       movementType: draft.type === "cardio" ? "conditioning" : draft.type === "crossfit" ? draft.movementType : undefined,
-      workoutDayId: selectedDay,
+      workoutDayId: day,
       updatedAt: now,
       isPaused: false
     };
-
-    let nextExercise: WorkoutExercise;
 
     if (draft.type === "cardio") {
       const estimatedCalories = estimateCaloriesForType({
@@ -685,12 +689,12 @@ export default function WorkoutsPage() {
         intensity: draft.intensity
       });
 
-      const existing = editingExerciseId
-        ? plan[selectedDay].exercises.find((exercise) => exercise.id === editingExerciseId && exercise.type === "cardio")
+      const existing = existingId
+        ? plan[day].exercises.find((exercise) => exercise.id === existingId && exercise.type === "cardio")
         : null;
 
-      nextExercise = {
-        id: editingExerciseId ?? crypto.randomUUID(),
+      return {
+        id: existingId ?? crypto.randomUUID(),
         type: "cardio",
         durationMinutes: draft.durationMinutes,
         estimatedCalories,
@@ -701,7 +705,9 @@ export default function WorkoutsPage() {
         progressHistory: existing ? [...getHistory(existing), toProgressEntry(existing)] : [],
         ...shared
       } as CardioExercise;
-    } else if (draft.type === "crossfit") {
+    }
+
+    if (draft.type === "crossfit") {
       const duration = draft.durationMinutes > 0 ? draft.durationMinutes : 0;
       const sets = draft.sets > 0 ? draft.sets : undefined;
       const reps = draft.reps > 0 ? draft.reps : undefined;
@@ -717,12 +723,12 @@ export default function WorkoutsPage() {
 
       const trainingVolume = calculateTrainingVolume(sets, reps, weight);
 
-      const existing = editingExerciseId
-        ? plan[selectedDay].exercises.find((exercise) => exercise.id === editingExerciseId && exercise.type === "crossfit")
+      const existing = existingId
+        ? plan[day].exercises.find((exercise) => exercise.id === existingId && exercise.type === "crossfit")
         : null;
 
-      nextExercise = {
-        id: editingExerciseId ?? crypto.randomUUID(),
+      return {
+        id: existingId ?? crypto.randomUUID(),
         type: "crossfit",
         durationMinutes: duration,
         weight,
@@ -736,37 +742,100 @@ export default function WorkoutsPage() {
         progressHistory: existing ? [...getHistory(existing), toProgressEntry(existing)] : [],
         ...shared
       } as CrossfitExercise;
-    } else {
-      const trainingVolume = calculateTrainingVolume(draft.sets, draft.reps, draft.weight);
-      const estimatedCalories = estimateCaloriesForType({
-        type: "fitness",
-        weightKg: profileWeight,
-        name: draft.name,
-        sets: draft.sets,
-        reps: draft.reps,
-        weight: draft.weight,
-        intensity: draft.intensity
-      });
-
-      const existing = editingExerciseId
-        ? plan[selectedDay].exercises.find((exercise) => exercise.id === editingExerciseId && exercise.type === "fitness")
-        : null;
-
-      nextExercise = {
-        id: editingExerciseId ?? crypto.randomUUID(),
-        type: "fitness",
-        sets: draft.sets,
-        reps: draft.reps,
-        weight: draft.weight,
-        trainingVolume,
-        estimatedCalories,
-        strengthPoints: 0,
-        cardioPoints: 0,
-        createdAt: existing?.createdAt ?? now,
-        progressHistory: existing ? [...getHistory(existing), toProgressEntry(existing)] : [],
-        ...shared
-      } as FitnessExercise;
     }
+
+    const trainingVolume = calculateTrainingVolume(draft.sets, draft.reps, draft.weight);
+    const estimatedCalories = estimateCaloriesForType({
+      type: "fitness",
+      weightKg: profileWeight,
+      name: draft.name,
+      sets: draft.sets,
+      reps: draft.reps,
+      weight: draft.weight,
+      intensity: draft.intensity
+    });
+
+    const existing = existingId
+      ? plan[day].exercises.find((exercise) => exercise.id === existingId && exercise.type === "fitness")
+      : null;
+
+    return {
+      id: existingId ?? crypto.randomUUID(),
+      type: "fitness",
+      sets: draft.sets,
+      reps: draft.reps,
+      weight: draft.weight,
+      trainingVolume,
+      estimatedCalories,
+      strengthPoints: 0,
+      cardioPoints: 0,
+      createdAt: existing?.createdAt ?? now,
+      progressHistory: existing ? [...getHistory(existing), toProgressEntry(existing)] : [],
+      ...shared
+    } as FitnessExercise;
+  }
+
+  function openAddExerciseModal() {
+    resetDraft("fitness");
+    setAddExerciseDays([selectedDay]);
+    setAddExerciseStep("details");
+    setIsAddExerciseOpen(true);
+  }
+
+  function closeAddExerciseModal() {
+    setIsAddExerciseOpen(false);
+    setAddExerciseStep("details");
+    setAddExerciseDays([selectedDay]);
+    resetDraft("fitness");
+  }
+
+  function toggleAddExerciseDay(day: WorkoutDay, checked: boolean) {
+    setAddExerciseDays((prev) => checked ? [...prev, day] : prev.filter((item) => item !== day));
+  }
+
+  function goToScheduleStep() {
+    const validationError = validateDraft();
+    if (validationError) {
+      setMessage(validationError);
+      return;
+    }
+    setAddExerciseStep("schedule");
+  }
+
+  function saveExerciseForSelectedDays() {
+    const validationError = validateDraft();
+    if (validationError) {
+      setMessage(validationError);
+      return;
+    }
+    if (!addExerciseDays.length) {
+      setMessage("Please select at least one day.");
+      return;
+    }
+
+    setPlan((prev) => {
+      const next = { ...prev };
+      addExerciseDays.forEach((day) => {
+        const nextExercise = buildExerciseForDay(day);
+        next[day] = { ...next[day], exercises: [nextExercise, ...next[day].exercises] };
+      });
+      return next;
+    });
+
+    setMessage(`Exercise saved for ${addExerciseDays.length} day${addExerciseDays.length > 1 ? "s" : ""}.`);
+    closeAddExerciseModal();
+  }
+
+  function saveExercise(event: FormEvent) {
+    event.preventDefault();
+
+    const validationError = validateDraft();
+    if (validationError) {
+      setMessage(validationError);
+      return;
+    }
+
+    const nextExercise = buildExerciseForDay(selectedDay, editingExerciseId);
 
     setPlan((prev) => {
       const dayLog = prev[selectedDay];
@@ -1158,7 +1227,7 @@ export default function WorkoutsPage() {
                   <div className="mt-2 space-y-1">
                     {previousProgresses.map((entry, index) => (
                       <p key={`${entry.recordedAt}-${index}`} className="text-xs text-slate-500">
-                        Previous {index + 1}:
+                        Previous {index + 1} ({formatRecordedDate(entry.recordedAt)}):
                         {typeof entry.durationMinutes === "number" ? ` ${entry.durationMinutes} min` : ""}
                         {typeof entry.sets === "number" ? ` • ${entry.sets} sets` : ""}
                         {typeof entry.reps === "number" ? ` • ${entry.reps} reps` : ""}
@@ -1171,7 +1240,7 @@ export default function WorkoutsPage() {
 
                 {latestPreviousProgress ? (
                   <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Growth vs previous entry</p>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Current vs previous entry ({formatRecordedDate(latestPreviousProgress.recordedAt)})</p>
                     <div className="mt-2 grid gap-2 sm:grid-cols-4">
                       {progressComparisons.map((item) => {
                         const value = item.value;
@@ -1182,7 +1251,7 @@ export default function WorkoutsPage() {
                           <div key={item.label} className="rounded-lg border border-slate-200 bg-white px-3 py-2">
                             <p className="text-[11px] uppercase tracking-wide text-slate-500">{item.label}</p>
                             <p className={`text-sm font-semibold ${isPositive ? "text-emerald-600" : isNegative ? "text-rose-600" : "text-slate-700"}`}>
-                              {value === null ? "n/a" : `${value > 0 ? "+" : ""}${value}%`}
+                              {value === null ? "n/a" : `${value > 0 ? "+" : ""}${value} ${item.unit}` }
                             </p>
                           </div>
                         );
@@ -1195,6 +1264,7 @@ export default function WorkoutsPage() {
             </div>
 
             <form onSubmit={saveExercise} className="mt-4 space-y-4">
+              <div className={addExerciseStep === "details" ? "space-y-4" : "hidden"}>
               <label className="block text-sm text-slate-700">Exercise name / description
                 <input className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={draft.name} onChange={(event) => setDraftField("name", event.target.value)} />
               </label>
@@ -1339,10 +1409,10 @@ export default function WorkoutsPage() {
                 <h3 className="text-xl font-semibold text-slate-900">{editingExerciseId ? "Edit Exercise" : "Add Exercise"}</h3>
                 <p className="text-sm text-slate-500">{dayLabels[selectedDay]}</p>
               </div>
-              <button type="button" onClick={() => { setIsAddExerciseOpen(false); resetDraft("fitness"); }} className="rounded-md p-1 text-slate-400 hover:bg-slate-100">✕</button>
+              <button type="button" onClick={closeAddExerciseModal} className="rounded-md p-1 text-slate-400 hover:bg-slate-100">✕</button>
             </div>
 
-            <form onSubmit={(event) => { saveExercise(event); if (!progressExerciseId) setIsAddExerciseOpen(false); }} className="mt-4 space-y-4">
+            <form onSubmit={(event) => event.preventDefault()} className="mt-4 space-y-4">
 
               <label className="block text-sm text-slate-700">Exercise name / description
                 <input className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={draft.name} onChange={(event) => {
@@ -1494,11 +1564,34 @@ export default function WorkoutsPage() {
               <label className="block text-sm text-slate-700">Notes
                 <textarea className="mt-1 min-h-20 w-full rounded-xl border border-slate-200 px-3 py-2" value={draft.notes} onChange={(event) => setDraftField("notes", event.target.value)} placeholder="Optional notes" />
               </label>
-
-              <div className="flex gap-2">
-                <button type="submit" className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-400">{editingExerciseId ? "Save Changes" : "Save Exercise"}</button>
-                {editingExerciseId ? <button type="button" onClick={() => resetDraft(draft.type)} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700">Cancel</button> : null}
               </div>
+
+              {addExerciseStep === "details" ? (
+                <div className="flex gap-2">
+                  <button type="button" onClick={closeAddExerciseModal} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700">Cancel</button>
+                  <button type="button" onClick={goToScheduleStep} className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-400">Next: Schedule Days</button>
+                </div>
+              ) : (
+                <div className="space-y-3 rounded-xl border border-slate-200 p-4">
+                  <p className="text-sm font-semibold text-slate-900">Schedule this exercise for days</p>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {dayOrder.map((day) => (
+                      <label key={day} className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700">
+                        <input
+                          type="checkbox"
+                          checked={addExerciseDays.includes(day)}
+                          onChange={(event) => toggleAddExerciseDay(day, event.target.checked)}
+                        />
+                        {dayLabels[day]}
+                      </label>
+                    ))}
+                  </div>
+                  <div className="flex gap-2">
+                    <button type="button" onClick={() => setAddExerciseStep("details")} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700">Back</button>
+                    <button type="button" onClick={saveExerciseForSelectedDays} className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-400">Save Exercise</button>
+                  </div>
+                </div>
+              )}
             </form>
 
             {message ? <p className="mt-3 text-sm text-slate-600">{message}</p> : null}
@@ -1516,7 +1609,7 @@ export default function WorkoutsPage() {
               <h1 className="text-3xl font-semibold text-slate-900">Workouts Planner</h1>
               <p className="mt-2 text-sm text-slate-500">Planned workouts are treated as completed by default. Only log exceptions when reality differed from plan.</p>
             </div>
-            <button type="button" onClick={() => { resetDraft("fitness"); setIsAddExerciseOpen(true); }} className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-400">Add Exercise</button>
+            <button type="button" onClick={openAddExerciseModal} className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-400">Add Exercise</button>
           </div>
           <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-7">
             {dayOrder.map((day) => (
