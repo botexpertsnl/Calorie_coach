@@ -547,6 +547,17 @@ export default function WorkoutsPage() {
 
 
 
+<<<<<<< codex/build-ai-calorie-coach-web-app-aqzgbp
+  const availableSpecifyMuscleFilters = useMemo(() => {
+    const values = new Set<SpecifyMuscle>();
+    for (const exercise of selectedExercises) {
+      if (!matchesTypeFilter(exercise, typeFilter)) continue;
+      if (subFilter !== "all" && exercise.muscleGroup !== subFilter) continue;
+      if (exercise.specifyMuscle) values.add(exercise.specifyMuscle);
+    }
+    return Array.from(values);
+  }, [selectedExercises, subFilter, typeFilter]);
+=======
     const availableSpecifyMuscleFilters = useMemo(() => {
     const values = new Set<SpecifyMuscle>();
     for (const exercise of selectedExercises) {
@@ -555,6 +566,7 @@ export default function WorkoutsPage() {
     }
     return Array.from(values);
   }, [selectedExercises, typeFilter]);
+>>>>>>> main
 
   useEffect(() => {
     if (subFilter === "all") return;
@@ -1577,6 +1589,48 @@ export default function WorkoutsPage() {
                 <textarea className="mt-1 min-h-20 w-full rounded-xl border border-slate-200 px-3 py-2" value={draft.notes} onChange={(event) => setDraftField("notes", event.target.value)} placeholder="Optional notes" />
               </label>
 
+<<<<<<< codex/build-ai-calorie-coach-web-app-aqzgbp
+              <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  <span className={`rounded-full px-2 py-1 ${addExerciseStep === "details" ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-600"}`}>1. Details</span>
+                  <span className="text-slate-400">→</span>
+                  <span className={`rounded-full px-2 py-1 ${addExerciseStep === "schedule" ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-600"}`}>2. Schedule days</span>
+                </div>
+
+                <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+                  <div className={`flex w-[200%] transition-transform duration-300 ease-out ${addExerciseStep === "schedule" ? "-translate-x-1/2" : "translate-x-0"}`}>
+                    <div className="w-1/2 space-y-3 p-4 min-h-[210px]">
+                      <p className="text-sm font-semibold text-slate-900">Exercise details saved in this step</p>
+                      <p className="text-xs text-slate-500">Continue to the right-side scheduling step to pick days and save everything.</p>
+                      <div className="flex gap-2">
+                        <button type="button" onClick={closeAddExerciseModal} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700">Cancel</button>
+                        <button type="button" onClick={goToScheduleStep} className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-400">Next: Schedule Days</button>
+                      </div>
+                    </div>
+
+                    <div className="w-1/2 space-y-3 p-4 min-h-[210px]">
+                      <p className="text-sm font-semibold text-slate-900">Schedule this exercise for days</p>
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        {dayOrder.map((day) => (
+                          <label key={day} className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700">
+                            <input
+                              type="checkbox"
+                              checked={addExerciseDays.includes(day)}
+                              onChange={(event) => toggleAddExerciseDay(day, event.target.checked)}
+                            />
+                            {dayLabels[day]}
+                          </label>
+                        ))}
+                      </div>
+                      <div className="flex gap-2">
+                        <button type="button" onClick={() => setAddExerciseStep("details")} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700">Back</button>
+                        <button type="button" onClick={saveExerciseForSelectedDays} className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-400">Save Exercise</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+=======
               {addExerciseStep === "details" ? (
                 <div className="flex gap-2">
                   <button type="button" onClick={closeAddExerciseModal} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700">Cancel</button>
@@ -1603,6 +1657,7 @@ export default function WorkoutsPage() {
                   </div>
                 </div>
               )}
+>>>>>>> main
             </form>
 
             {message ? <p className="mt-3 text-sm text-slate-600">{message}</p> : null}
@@ -1664,6 +1719,22 @@ export default function WorkoutsPage() {
               </div>
             </div>
 
+<<<<<<< codex/build-ai-calorie-coach-web-app-aqzgbp
+            <div className="mt-3 space-y-3 rounded-xl border border-slate-200 bg-slate-100/70 p-3">
+              <div>
+                <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Main muscle group</p>
+                <div className="flex flex-wrap gap-2">
+                  {availableSubFilters.map((value) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => setSubFilter((prev) => (prev === value ? "all" : value))}
+                      className={`rounded-full border px-3 py-1 text-xs font-semibold ${subFilter === value ? "border-slate-700 bg-slate-700 text-white" : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"}`}
+                    >
+                      {muscleGroupLabels[value as MuscleGroup]}
+                    </button>
+                  ))}
+=======
             <div className="mt-3 space-y-3">
               <div>
                 <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Main muscle group</p>
@@ -1678,11 +1749,32 @@ export default function WorkoutsPage() {
                     {muscleGroupLabels[value as MuscleGroup]}
                   </button>
                 ))}
+>>>>>>> main
                 </div>
               </div>
 
               <div>
                 <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Specific muscle (sub-group)</p>
+<<<<<<< codex/build-ai-calorie-coach-web-app-aqzgbp
+                {subFilter === "all" ? (
+                  <p className="text-xs text-slate-500">Select a main muscle group to show relevant specific muscle filters.</p>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {availableSpecifyMuscleFilters.length ? availableSpecifyMuscleFilters.map((value) => (
+                      <button
+                        key={value}
+                        type="button"
+                        onClick={() => setSpecifyFilter((prev) => (prev === value ? "all" : value))}
+                        className={`rounded-full border px-3 py-1 text-xs font-semibold ${specifyFilter === value ? "border-indigo-600 bg-indigo-100 text-indigo-800" : "border-slate-300 bg-white text-slate-700 hover:bg-indigo-50"}`}
+                      >
+                        {specifyMuscleLabels[value]}
+                      </button>
+                    )) : (
+                      <p className="text-xs text-slate-500">No specific muscle labels for this selection.</p>
+                    )}
+                  </div>
+                )}
+=======
                 <div className="flex flex-wrap gap-2 rounded-xl border border-indigo-100 bg-indigo-50/40 p-2">
                 {availableSpecifyMuscleFilters.map((value) => (
                   <button
@@ -1695,6 +1787,7 @@ export default function WorkoutsPage() {
                   </button>
                 ))}
                 </div>
+>>>>>>> main
               </div>
 
               {(typeFilter !== "all" || subFilter !== "all" || specifyFilter !== "all") ? (
