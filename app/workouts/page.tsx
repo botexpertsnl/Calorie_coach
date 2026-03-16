@@ -357,6 +357,25 @@ function cloneExerciseToDay(exercise: WorkoutExercise, targetDay: WorkoutDay): W
   };
 }
 
+
+function isSameExerciseConfiguration(a: WorkoutExercise, b: WorkoutExercise) {
+  const key = (exercise: WorkoutExercise) => JSON.stringify({
+    type: exercise.type,
+    name: exercise.name.trim().toLowerCase(),
+    muscleGroup: exercise.muscleGroup,
+    specifyMuscle: exercise.specifyMuscle ?? null,
+    intensity: exercise.intensity,
+    movementType: exercise.movementType ?? null,
+    durationMinutes: "durationMinutes" in exercise ? exercise.durationMinutes : null,
+    sets: "sets" in exercise ? exercise.sets ?? null : null,
+    reps: "reps" in exercise ? exercise.reps ?? null : null,
+    weight: "weight" in exercise ? exercise.weight ?? null : null,
+    notes: exercise.notes ?? ""
+  });
+
+  return key(a) === key(b);
+}
+
 function ensureCalories(exercise: WorkoutExercise, weightKg: number) {
   if (exercise.estimatedCalories > 0) return Math.round(exercise.estimatedCalories);
 
@@ -427,6 +446,7 @@ export default function WorkoutsPage() {
   const [progressExerciseId, setProgressExerciseId] = useState<string | null>(null);
   const [duplicateExerciseId, setDuplicateExerciseId] = useState<string | null>(null);
   const [duplicateTargets, setDuplicateTargets] = useState<WorkoutDay[]>([]);
+  const [isAddExerciseOpen, setIsAddExerciseOpen] = useState(false);
   const [profileWeight, setProfileWeight] = useState(70);
   const [profile, setProfile] = useState<ProfileInput | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -816,7 +836,10 @@ export default function WorkoutsPage() {
 
   function openDuplicateModal(exercise: WorkoutExercise) {
     setDuplicateExerciseId(exercise.id);
-    setDuplicateTargets([]);
+    const scheduledDays = dayOrder.filter((day) =>
+      plan[day].exercises.some((candidate) => !candidate.isPaused && isSameExerciseConfiguration(candidate, exercise))
+    );
+    setDuplicateTargets(scheduledDays);
   }
 
   function closeDuplicateModal() {
@@ -829,18 +852,32 @@ export default function WorkoutsPage() {
   }
 
   function duplicateExerciseToDays() {
-    if (!duplicateExercise || !duplicateTargets.length) return;
+    if (!duplicateExercise) return;
 
     setPlan((prev) => {
       const next = { ...prev };
-      duplicateTargets.forEach((day) => {
-        const cloned = cloneExerciseToDay(duplicateExercise, day);
-        next[day] = { ...next[day], exercises: [cloned, ...next[day].exercises] };
+
+      dayOrder.forEach((day) => {
+        const shouldExist = duplicateTargets.includes(day);
+        const existingMatches = next[day].exercises.filter((candidate) => isSameExerciseConfiguration(candidate, duplicateExercise));
+
+        if (shouldExist && existingMatches.length === 0) {
+          const cloned = cloneExerciseToDay(duplicateExercise, day);
+          next[day] = { ...next[day], exercises: [cloned, ...next[day].exercises] };
+        }
+
+        if (!shouldExist && existingMatches.length > 0) {
+          next[day] = {
+            ...next[day],
+            exercises: next[day].exercises.filter((candidate) => !isSameExerciseConfiguration(candidate, duplicateExercise))
+          };
+        }
       });
+
       return next;
     });
 
-    setMessage(`Exercise duplicated to ${duplicateTargets.length} day${duplicateTargets.length > 1 ? "s" : ""}.`);
+    setMessage("Exercise schedule updated across selected days.");
     closeDuplicateModal();
   }
 
@@ -1089,12 +1126,10 @@ export default function WorkoutsPage() {
             <div className="mt-4 space-y-2">
               <p className="text-sm font-medium text-slate-700">Copy to:</p>
               {dayOrder.map((day) => {
-                const isSource = day === selectedDay;
                 return (
-                  <label key={day} className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm ${isSource ? "border-slate-100 bg-slate-50 text-slate-400" : "border-slate-200 text-slate-700"}`}>
+                  <label key={day} className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700">
                     <input
                       type="checkbox"
-                      disabled={isSource}
                       checked={duplicateTargets.includes(day)}
                       onChange={(event) => toggleDuplicateDay(day, event.target.checked)}
                     />
@@ -1295,38 +1330,20 @@ export default function WorkoutsPage() {
         </div>
       ) : null}
 
-      <main className="mx-auto w-full max-w-6xl space-y-6 px-4 py-8 md:px-8">
-        <AppHeaderNav />
 
-        <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h1 className="text-3xl font-semibold text-slate-900">Workouts Planner</h1>
-              <p className="mt-2 text-sm text-slate-500">Planned workouts are treated as completed by default. Only log exceptions when reality differed from plan.</p>
+      {isAddExerciseOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45 p-4">
+          <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white p-6 shadow-xl ring-1 ring-slate-200">
+            <div className="flex items-start justify-between">
+              <div>
+                <h3 className="text-xl font-semibold text-slate-900">{editingExerciseId ? "Edit Exercise" : "Add Exercise"}</h3>
+                <p className="text-sm text-slate-500">{dayLabels[selectedDay]}</p>
+              </div>
+              <button type="button" onClick={() => { setIsAddExerciseOpen(false); resetDraft("fitness"); }} className="rounded-md p-1 text-slate-400 hover:bg-slate-100">✕</button>
             </div>
-            <button type="button" onClick={() => setIsExceptionsOpen(true)} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Workout Exceptions</button>
-          </div>
-          <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-7">
-            {dayOrder.map((day) => (
-              <button
-                key={day}
-                type="button"
-                onClick={() => setSelectedDay(day)}
-                className={`rounded-xl border p-3 text-left transition ${selectedDay === day ? "border-emerald-500 bg-emerald-50" : "border-slate-200 hover:bg-slate-50"}`}
-              >
-                <p className="font-semibold text-slate-900">{dayLabels[day]}</p>
-                <p className="text-xs text-slate-500">{plan[day].exercises.filter((e) => !e.isPaused).length} planned</p>
-              </button>
-            ))}
-          </div>
-        </section>
 
-        <section className="grid gap-6 lg:grid-cols-[1.1fr,1.4fr]">
-          <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
-            <h2 className="text-xl font-semibold text-slate-900">{editingExerciseId ? "Edit Exercise" : "Add Exercise"}</h2>
-            <p className="mt-1 text-sm text-slate-500">{dayLabels[selectedDay]}</p>
+            <form onSubmit={(event) => { saveExercise(event); if (!progressExerciseId) setIsAddExerciseOpen(false); }} className="mt-4 space-y-4">
 
-            <form onSubmit={saveExercise} className="mt-4 space-y-4">
               <label className="block text-sm text-slate-700">Exercise name / description
                 <input className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={draft.name} onChange={(event) => {
                   const value = event.target.value;
@@ -1486,9 +1503,42 @@ export default function WorkoutsPage() {
 
             {message ? <p className="mt-3 text-sm text-slate-600">{message}</p> : null}
           </div>
+        </div>
+      ) : null}
 
+
+      <main className="mx-auto w-full max-w-6xl space-y-6 px-4 py-8 md:px-8">
+        <AppHeaderNav />
+
+        <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h1 className="text-3xl font-semibold text-slate-900">Workouts Planner</h1>
+              <p className="mt-2 text-sm text-slate-500">Planned workouts are treated as completed by default. Only log exceptions when reality differed from plan.</p>
+            </div>
+            <button type="button" onClick={() => { resetDraft("fitness"); setIsAddExerciseOpen(true); }} className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-400">Add Exercise</button>
+          </div>
+          <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-7">
+            {dayOrder.map((day) => (
+              <button
+                key={day}
+                type="button"
+                onClick={() => setSelectedDay(day)}
+                className={`rounded-xl border p-3 text-left transition ${selectedDay === day ? "border-emerald-500 bg-emerald-50" : "border-slate-200 hover:bg-slate-50"}`}
+              >
+                <p className="font-semibold text-slate-900">{dayLabels[day]}</p>
+                <p className="text-xs text-slate-500">{plan[day].exercises.filter((e) => !e.isPaused).length} planned</p>
+              </button>
+            ))}
+          </div>
+        </section>
+
+        <section>
           <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
-            <h2 className="text-xl font-semibold text-slate-900">{dayLabels[selectedDay]} planned exercises</h2>
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="text-xl font-semibold text-slate-900">{dayLabels[selectedDay]} planned exercises</h2>
+              <button type="button" onClick={() => setIsExceptionsOpen(true)} className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Workout Exceptions</button>
+            </div>
             <div className="mt-3">
               <div className="flex flex-wrap gap-2">
               {availableTypeFilters.map((filterType) => (
