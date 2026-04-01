@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
 import { CalorieResponse } from "@/lib/types";
+import { enforceAiRateLimit, jsonError, logApiError } from "@/lib/server/api-security";
+import { requireServerEnv } from "@/lib/server/env";
 
 const systemPrompt = `You are a nutrition assistant. Given a meal description, estimate calories and macros.
 Return ONLY valid JSON with this exact shape:
@@ -28,45 +30,44 @@ Rules:
 - totals values must equal sum of item values.
 - Keep values realistic and rounded to whole numbers.`;
 
-function isValid(data: CalorieResponse) {
-  return (
-    Array.isArray(data.items) &&
-    !!data.totals &&
-    ["calories", "protein", "carbs", "fat"].every(
-      (key) => typeof data.totals[key as keyof typeof data.totals] === "number"
-    )
-  );
-}
-
 function getOpenAIClient() {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) return null;
+  const apiKey = requireServerEnv("OPENAI_API_KEY");
   return new OpenAI({ apiKey });
 }
 
+function validateMealDescription(body: unknown) {
+  const value = typeof body === "object" && body !== null ? (body as { mealDescription?: unknown }).mealDescription : undefined;
+  if (typeof value !== "string") return { ok: false as const, message: "Meal description is required." };
+  const trimmed = value.trim();
+  if (!trimmed) return { ok: false as const, message: "Meal description is required." };
+  if (trimmed.length > 2000) return { ok: false as const, message: "Meal description is too long." };
+  return { ok: true as const, mealDescription: trimmed };
+}
+
+function isValidCalorieResponse(data: unknown): data is CalorieResponse {
+  if (!data || typeof data !== "object") return false;
+  const value = data as CalorieResponse;
+  if (!Array.isArray(value.items) || !value.totals) return false;
+  return ["calories", "protein", "carbs", "fat"].every((key) => typeof value.totals[key as keyof typeof value.totals] === "number");
+}
+
 export async function POST(request: Request) {
-  const openai = getOpenAIClient();
-  if (!openai) {
-    return NextResponse.json(
-      { error: "OPENAI_API_KEY is not configured on the server." },
-      { status: 500 }
-    );
-  }
+  const rateLimitResponse = await enforceAiRateLimit(request, "calories");
+  if (rateLimitResponse) return rateLimitResponse;
 
   try {
-    const body = (await request.json()) as { mealDescription?: string };
-    const mealDescription = body.mealDescription?.trim();
+    const body = await request.json();
+    const validated = validateMealDescription(body);
+    if (!validated.ok) return jsonError(validated.message, 400);
 
-    if (!mealDescription) {
-      return NextResponse.json({ error: "Meal description is required." }, { status: 400 });
-    }
+    const openai = getOpenAIClient();
 
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       response_format: { type: "json_object" },
       messages: [
         { role: "system", content: systemPrompt },
-        { role: "user", content: mealDescription }
+        { role: "user", content: validated.mealDescription }
       ],
       temperature: 0.2
     });
@@ -74,14 +75,12 @@ export async function POST(request: Request) {
     const content = completion.choices[0]?.message?.content;
     if (!content) throw new Error("No content returned from OpenAI.");
 
-    const parsed = JSON.parse(content) as CalorieResponse;
-    if (!isValid(parsed)) throw new Error("AI returned an unexpected response shape.");
+    const parsed = JSON.parse(content);
+    if (!isValidCalorieResponse(parsed)) throw new Error("AI returned an unexpected response shape.");
 
     return NextResponse.json({ data: parsed });
   } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to calculate calories." },
-      { status: 500 }
-    );
+    logApiError("/api/calories", error);
+    return jsonError("Unable to analyze meal right now.", 500);
   }
 }

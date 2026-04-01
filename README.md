@@ -103,3 +103,9 @@ The structure supports easy expansion to:
 
 This app now initializes the OpenAI client at **request time** inside the API handler.
 That means builds won't fail if `OPENAI_API_KEY` is missing during compile, but runtime API calls will return a clear error until you configure the variable in Vercel.
+
+
+## Security hardening
+
+- API routes use schema validation, client-safe error responses, and sanitized server-side logging.
+- AI-backed routes support reusable rate limiting through a centralized server utility to reduce abuse on public endpoints.

@@ -599,8 +599,9 @@ export default function ProfilePage() {
           Daily macros are calculated from your body profile, goals, and today&apos;s planned workout load. They are recalculated when you save your profile.
         </p>
 
-        <div className="overflow-hidden rounded-xl border border-slate-200">
-          <table className="min-w-full divide-y divide-slate-200 text-sm">
+        <div className="relative rounded-xl border border-slate-200">
+          <div className="overflow-x-auto px-1 py-1 md:px-0 md:py-0">
+            <table className="min-w-[760px] divide-y divide-slate-200 text-sm md:min-w-full">
             <thead className="bg-slate-50">
               <tr>
                 <th className="px-3 py-2 text-left font-semibold text-slate-700">Day</th>
@@ -642,7 +643,9 @@ export default function ProfilePage() {
                 ))}
               </tr>
             </tfoot>
-          </table>
+            </table>
+          </div>
+          <div className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-white to-transparent md:hidden" />
         </div>
 
         {disabledMacros.length ? (

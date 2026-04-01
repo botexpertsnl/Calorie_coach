@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
 import { CalorieResponse } from "@/lib/types";
+import { enforceAiRateLimit, jsonError, logApiError } from "@/lib/server/api-security";
+import { requireServerEnv } from "@/lib/server/env";
 
 const systemPrompt = `You are a nutrition assistant analyzing a meal image.
 Return ONLY valid JSON with this exact shape:
@@ -28,19 +30,11 @@ Rules:
 - Be realistic about portions.
 - totals must equal the sum of items.`;
 
-function isValid(data: CalorieResponse) {
-  return (
-    Array.isArray(data.items) &&
-    !!data.totals &&
-    ["calories", "protein", "carbs", "fat"].every(
-      (key) => typeof data.totals[key as keyof typeof data.totals] === "number"
-    )
-  );
-}
+const supportedMimeTypes = ["image/jpeg", "image/png", "image/webp", "image/gif"] as const;
+const maxSizeInBytes = 8 * 1024 * 1024;
 
 function getOpenAIClient() {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) return null;
+  const apiKey = requireServerEnv("OPENAI_API_KEY");
   return new OpenAI({ apiKey });
 }
 
@@ -49,45 +43,34 @@ function parseJsonResponse(content: string): CalorieResponse {
   return JSON.parse(cleaned) as CalorieResponse;
 }
 
+function isValidCalorieResponse(data: unknown): data is CalorieResponse {
+  if (!data || typeof data !== "object") return false;
+  const value = data as CalorieResponse;
+  if (!Array.isArray(value.items) || !value.totals) return false;
+  return ["calories", "protein", "carbs", "fat"].every((key) => typeof value.totals[key as keyof typeof value.totals] === "number");
+}
+
 export async function POST(request: Request) {
-  const openai = getOpenAIClient();
-  if (!openai) {
-    return NextResponse.json({ error: "OPENAI_API_KEY is not configured on the server." }, { status: 500 });
-  }
+  const rateLimitResponse = await enforceAiRateLimit(request, "analyze-image");
+  if (rateLimitResponse) return rateLimitResponse;
 
   try {
     const formData = await request.formData();
     const image = formData.get("image");
 
-    if (!(image instanceof File)) {
-      return NextResponse.json({ error: "Image file is required." }, { status: 400 });
+    if (!(image instanceof File)) return jsonError("Image file is required.", 400);
+    if (!supportedMimeTypes.includes(image.type as (typeof supportedMimeTypes)[number])) {
+      return jsonError("Unsupported image type. Please use JPG, PNG, WEBP, or GIF.", 415);
     }
-
-    if (!image.type.startsWith("image/")) {
-      return NextResponse.json({ error: "Uploaded file must be an image." }, { status: 400 });
-    }
-
-    const supportedMimeTypes = ["image/jpeg", "image/png", "image/webp", "image/gif"];
-    if (!supportedMimeTypes.includes(image.type)) {
-      return NextResponse.json(
-        { error: "Unsupported image type. Please use JPG, PNG, WEBP, or GIF." },
-        { status: 400 }
-      );
-    }
-
-    const mimeType = image.type;
-
-    const maxSizeInBytes = 8 * 1024 * 1024;
     if (image.size > maxSizeInBytes) {
-      return NextResponse.json(
-        { error: "Image is too large. Please upload an image under 8MB." },
-        { status: 400 }
-      );
+      return jsonError("Image is too large. Please upload an image under 8MB.", 413);
     }
 
     const buffer = Buffer.from(await image.arrayBuffer());
     const base64Image = buffer.toString("base64");
-    const dataUrl = `data:${mimeType};base64,${base64Image}`;
+    const dataUrl = `data:${image.type};base64,${base64Image}`;
+
+    const openai = getOpenAIClient();
 
     const response = await openai.responses.create({
       model: "gpt-4o-mini",
@@ -110,13 +93,11 @@ export async function POST(request: Request) {
     if (!outputText) throw new Error("No content returned from OpenAI.");
 
     const parsed = parseJsonResponse(outputText);
-    if (!isValid(parsed)) throw new Error("AI returned an unexpected response shape.");
+    if (!isValidCalorieResponse(parsed)) throw new Error("AI returned an unexpected response shape.");
 
     return NextResponse.json({ data: parsed });
   } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to analyze image." },
-      { status: 500 }
-    );
+    logApiError("/api/analyze-image", error);
+    return jsonError("Unable to analyze image right now.", 500);
   }
 }
