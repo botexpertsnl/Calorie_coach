@@ -56,7 +56,7 @@ npm run dev
 - `lib/workouts.ts`: reusable workout metric calculators (estimated calories and training volume per exercise type).
 - `components/ProfileForm.tsx`: personal profile input UI.
 - `components/ProgressBars.tsx`: progress widgets for calories/protein/carbs/fat.
-- `components/AppHeaderNav.tsx`: reusable top navigation for Meals/Insights/Profile.
+- `components/AppHeaderNav.tsx`: reusable top navigation for Meals/Insights/Profile/Workouts.
 - `components/InsightsLineChart.tsx`: reusable timeline line chart.
 - `components/QuickMealsModal.tsx`: quick-meal list/add/edit/delete modal.
 - `components/QuickMealForm.tsx`: reusable quick-meal create/edit form.
