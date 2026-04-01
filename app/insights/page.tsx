@@ -210,7 +210,7 @@ function LineCompareChart({
   );
 }
 
-function BarChart({ bars }: { bars: Array<{ label: string; value: number; color?: string }> }) {
+function BarChart({ bars, showValues = true }: { bars: Array<{ label: string; value: number; color?: string }>; showValues?: boolean }) {
   if (!bars.length) return <p className="text-sm text-slate-500">No data in this range yet.</p>;
   const maxValue = Math.max(...bars.map((bar) => bar.value), 1);
 
@@ -220,7 +220,7 @@ function BarChart({ bars }: { bars: Array<{ label: string; value: number; color?
         <div key={bar.label}>
           <div className="mb-1 flex items-center justify-between text-sm">
             <span className="font-medium text-slate-700">{bar.label}</span>
-            <span className="text-slate-500">{Math.round(bar.value).toLocaleString()}</span>
+            {showValues ? <span className="text-slate-500">{Math.round(bar.value).toLocaleString()}</span> : null}
           </div>
           <div className="h-2.5 rounded-full bg-slate-200">
             <div
@@ -749,7 +749,7 @@ export default function InsightsPage() {
       </section>
 
       <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
-        <h2 className="text-xl font-semibold text-slate-900">Weekly Summary</h2>
+        <h2 className="text-xl font-semibold text-slate-900">Summary</h2>
         <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
           <p className="text-sm text-slate-700">Calories adherence: <span className="font-semibold text-slate-900">{summary.calorieAdherence}%</span></p>
           <p className="text-sm text-slate-700">Protein target reached: <span className="font-semibold text-slate-900">{summary.proteinDaysHit} / {summary.days} days</span></p>
@@ -833,7 +833,7 @@ export default function InsightsPage() {
 
       <ChartCard title="Training Balance Insights">
         <div className="grid gap-4 lg:grid-cols-[1.5fr,1fr]">
-          <BarChart bars={trainingBalanceBars.map((bar) => ({ ...bar, color: "#10b981" }))} />
+          <BarChart bars={trainingBalanceBars.map((bar) => ({ ...bar, color: "#10b981" }))} showValues={false} />
           <div className="rounded-xl border border-slate-200 p-4 text-sm text-slate-600">
             <p className="font-semibold text-slate-900">Deep dive notes</p>
             <p className="mt-2">This balance view follows the Exercise Progress filters, so you can inspect split quality by workout type and optional muscle group.</p>

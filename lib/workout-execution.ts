@@ -1,4 +1,4 @@
-import { WorkoutDay, WorkoutException, WorkoutExercise, WorkoutWeekPlan } from "@/lib/types";
+import { FULL_DAY_EXCEPTION_ID, WorkoutDay, WorkoutException, WorkoutExercise, WorkoutWeekPlan } from "@/lib/types";
 
 const dayOrder: WorkoutDay[] = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
 
@@ -116,30 +116,63 @@ export function buildEffectiveWorkoutInstances(plan: WorkoutWeekPlan | null, exc
     const planned = getPlannedExercisesForDay(plan, dateKey);
     const todaysExceptions = exceptions.filter((item) => item.date === dateKey);
 
+    const missedWholeDay = todaysExceptions.some(
+      (item) => item.exceptionType === "missed" && item.originalWorkoutId === FULL_DAY_EXCEPTION_ID
+    );
+
+    const replacedWholeDay = todaysExceptions.find(
+      (item) => item.exceptionType === "replaced" && item.originalWorkoutId === FULL_DAY_EXCEPTION_ID && item.replacementWorkoutData
+    );
+
     const missedIds = new Set(
-      todaysExceptions.filter((item) => item.exceptionType === "missed" && item.originalWorkoutId).map((item) => item.originalWorkoutId as string)
+      todaysExceptions
+        .filter((item) => item.exceptionType === "missed" && item.originalWorkoutId && item.originalWorkoutId !== FULL_DAY_EXCEPTION_ID)
+        .map((item) => item.originalWorkoutId as string)
     );
 
     const replacedMap = new Map(
       todaysExceptions
-        .filter((item) => item.exceptionType === "replaced" && item.originalWorkoutId && item.replacementWorkoutData)
+        .filter(
+          (item) =>
+            item.exceptionType === "replaced" &&
+            item.originalWorkoutId &&
+            item.originalWorkoutId !== FULL_DAY_EXCEPTION_ID &&
+            item.replacementWorkoutData
+        )
         .map((item) => [item.originalWorkoutId as string, item.replacementWorkoutData as WorkoutExercise])
     );
 
-    const movedOutIds = new Set(
-      todaysExceptions.filter((item) => item.exceptionType === "rescheduled" && item.originalWorkoutId).map((item) => item.originalWorkoutId as string)
+    const rescheduledWholeDay = todaysExceptions.some(
+      (item) => item.exceptionType === "rescheduled" && item.originalWorkoutId === FULL_DAY_EXCEPTION_ID
     );
 
-    const plannedAfterAdjustments = planned
-      .filter((exercise) => !missedIds.has(exercise.id) && !movedOutIds.has(exercise.id))
-      .map((exercise) => {
-        const replacement = replacedMap.get(exercise.id);
-        return {
-          date: dateKey,
-          source: replacement ? "replacement" : "planned",
-          exercise: replacement ?? exercise
-        } as EffectiveWorkoutInstance;
+    const movedOutIds = new Set(
+      todaysExceptions
+        .filter((item) => item.exceptionType === "rescheduled" && item.originalWorkoutId && item.originalWorkoutId !== FULL_DAY_EXCEPTION_ID)
+        .map((item) => item.originalWorkoutId as string)
+    );
+
+    const plannedAfterAdjustments =
+      missedWholeDay || rescheduledWholeDay
+        ? []
+        : planned
+            .filter((exercise) => !missedIds.has(exercise.id) && !movedOutIds.has(exercise.id))
+            .map((exercise) => {
+              const replacement = replacedMap.get(exercise.id);
+              return {
+                date: dateKey,
+                source: replacement ? "replacement" : "planned",
+                exercise: replacement ?? exercise
+              } as EffectiveWorkoutInstance;
+            });
+
+    if (replacedWholeDay?.replacementWorkoutData) {
+      plannedAfterAdjustments.push({
+        date: dateKey,
+        source: "replacement",
+        exercise: replacedWholeDay.replacementWorkoutData
       });
+    }
 
     const extras = todaysExceptions
       .filter((item) => item.exceptionType === "extra" && item.extraWorkoutData)
@@ -154,17 +187,31 @@ export function buildEffectiveWorkoutInstances(plan: WorkoutWeekPlan | null, exc
 
     const movedIn = exceptions
       .filter((item) => item.exceptionType === "rescheduled" && item.newDate === dateKey && item.originalWorkoutId)
-      .map((item) => {
+      .flatMap((item) => {
         const sourceDayExercises = getPlannedExercisesForDay(plan, item.date);
+
+        if (item.originalWorkoutId === FULL_DAY_EXCEPTION_ID) {
+          return sourceDayExercises.map(
+            (exercise) =>
+              ({
+                date: dateKey,
+                source: "rescheduled",
+                exercise
+              }) as EffectiveWorkoutInstance
+          );
+        }
+
         const original = sourceDayExercises.find((exercise) => exercise.id === item.originalWorkoutId);
-        if (!original) return null;
-        return {
-          date: dateKey,
-          source: "rescheduled",
-          exercise: original
-        } as EffectiveWorkoutInstance;
-      })
-      .filter(Boolean) as EffectiveWorkoutInstance[];
+        if (!original) return [];
+
+        return [
+          {
+            date: dateKey,
+            source: "rescheduled",
+            exercise: original
+          } as EffectiveWorkoutInstance
+        ];
+      });
 
     instances.push(...plannedAfterAdjustments, ...extras, ...movedIn);
   }

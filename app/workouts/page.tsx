@@ -22,7 +22,8 @@ import {
   WorkoutExceptionType,
   WorkoutIntensity,
   WorkoutProgressEntry,
-  WorkoutWeekPlan
+  WorkoutWeekPlan,
+  FULL_DAY_EXCEPTION_ID
 } from "@/lib/types";
 
 const dayOrder: WorkoutDay[] = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
@@ -280,6 +281,26 @@ function getAmsterdamToday(): WorkoutDay {
   return "monday";
 }
 
+function getCurrentWeekDateForDay(day: WorkoutDay) {
+  const now = new Date();
+  const amsterdamText = now.toLocaleString("sv-SE", { timeZone: "Europe/Amsterdam" }).replace(" ", "T");
+  const amsterdamNow = new Date(amsterdamText);
+  const jsDay = amsterdamNow.getDay();
+  const mondayOffset = jsDay === 0 ? -6 : 1 - jsDay;
+  const monday = new Date(amsterdamNow);
+  monday.setDate(amsterdamNow.getDate() + mondayOffset);
+  monday.setHours(0, 0, 0, 0);
+
+  const target = new Date(monday);
+  target.setDate(monday.getDate() + dayOrder.indexOf(day));
+  return target.toISOString().slice(0, 10);
+}
+
+function formatDayDateLabel(dateKey: string) {
+  const [year, month, day] = dateKey.split("-");
+  return `${day}-${month}-${year}`;
+}
+
 function createDefaultPlan(): WorkoutWeekPlan {
   return {
     monday: { notes: "", exercises: [] },
@@ -452,6 +473,7 @@ export default function WorkoutsPage() {
   const [isAddExerciseOpen, setIsAddExerciseOpen] = useState(false);
   const [showScheduleDays, setShowScheduleDays] = useState(false);
   const [addExerciseDays, setAddExerciseDays] = useState<WorkoutDay[]>([selectedDay]);
+  const [addExerciseDateOnly, setAddExerciseDateOnly] = useState(false);
   const [isPlannerDaysExpanded, setIsPlannerDaysExpanded] = useState(false);
   const [profileWeight, setProfileWeight] = useState(70);
   const [profile, setProfile] = useState<ProfileInput | null>(null);
@@ -459,6 +481,7 @@ export default function WorkoutsPage() {
   const [exceptions, setExceptions] = useState<WorkoutException[]>([]);
   const [isExceptionsOpen, setIsExceptionsOpen] = useState(false);
   const [exceptionType, setExceptionType] = useState<WorkoutExceptionType>("missed");
+  const [exceptionScope, setExceptionScope] = useState<"full" | "exercise">("exercise");
   const [exceptionDate, setExceptionDate] = useState(new Date().toISOString().slice(0, 10));
   const [exceptionNewDate, setExceptionNewDate] = useState(new Date().toISOString().slice(0, 10));
   const [exceptionOriginalWorkoutId, setExceptionOriginalWorkoutId] = useState("");
@@ -510,6 +533,7 @@ export default function WorkoutsPage() {
   useEffect(() => {
     if (!isAddExerciseOpen) {
       setAddExerciseDays([selectedDay]);
+      setAddExerciseDateOnly(false);
       setShowScheduleDays(false);
     }
   }, [isAddExerciseOpen, selectedDay]);
@@ -780,6 +804,7 @@ export default function WorkoutsPage() {
   function openAddExerciseModal() {
     resetDraft("fitness");
     setAddExerciseDays([selectedDay]);
+    setAddExerciseDateOnly(false);
     setShowScheduleDays(false);
     setIsAddExerciseOpen(true);
   }
@@ -804,6 +829,23 @@ export default function WorkoutsPage() {
     const targetDays = showScheduleDays ? addExerciseDays : [selectedDay];
     if (!targetDays.length) {
       setMessage("Please select at least one day.");
+      return;
+    }
+
+    if (addExerciseDateOnly) {
+      const selectedDateKey = getCurrentWeekDateForDay(selectedDay);
+      const nowIso = new Date().toISOString();
+      const newException: WorkoutException = {
+        id: crypto.randomUUID(),
+        date: selectedDateKey,
+        exceptionType: "extra",
+        extraWorkoutData: createExerciseFromException(draft.type),
+        createdAt: nowIso,
+        updatedAt: nowIso
+      };
+      setExceptions((prev) => [newException, ...prev]);
+      setMessage(`Exercise added for ${formatDayDateLabel(selectedDateKey)} only.`);
+      closeAddExerciseModal();
       return;
     }
 
@@ -1053,13 +1095,13 @@ export default function WorkoutsPage() {
   function saveException(event: FormEvent) {
     event.preventDefault();
 
-    if ((exceptionType === "missed" || exceptionType === "replaced" || exceptionType === "rescheduled") && !exceptionOriginalWorkoutId) {
+    if (exceptionScope === "exercise" && (exceptionType === "missed" || exceptionType === "replaced" || exceptionType === "rescheduled") && !exceptionOriginalWorkoutId) {
       setMessage("Select a planned workout for this exception.");
       return;
     }
 
-    if ((exceptionType === "extra" || exceptionType === "replaced") && !exceptionExerciseName.trim()) {
-      setMessage("Provide a workout title for extra/replacement workout.");
+    if (exceptionType === "replaced" && !exceptionExerciseName.trim()) {
+      setMessage("Provide a workout title for replacement workout.");
       return;
     }
 
@@ -1073,10 +1115,12 @@ export default function WorkoutsPage() {
       id: crypto.randomUUID(),
       date: exceptionDate,
       exceptionType,
-      originalWorkoutId: exceptionOriginalWorkoutId || undefined,
+      originalWorkoutId: (exceptionType === "missed" || exceptionType === "replaced" || exceptionType === "rescheduled")
+        ? (exceptionScope === "full" ? FULL_DAY_EXCEPTION_ID : exceptionOriginalWorkoutId || undefined)
+        : undefined,
       newDate: exceptionType === "rescheduled" ? exceptionNewDate : undefined,
       replacementWorkoutData: exceptionType === "replaced" ? createExerciseFromException(exceptionExerciseType) : undefined,
-      extraWorkoutData: exceptionType === "extra" ? createExerciseFromException(exceptionExerciseType) : undefined,
+      extraWorkoutData: undefined,
       createdAt: now,
       updatedAt: now
     };
@@ -1118,7 +1162,6 @@ export default function WorkoutsPage() {
               <label className="block text-sm text-slate-700">Exception type
                 <select className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={exceptionType} onChange={(e) => setExceptionType(e.target.value as WorkoutExceptionType)}>
                   <option value="missed">Missed Workout</option>
-                  <option value="extra">Extra Workout</option>
                   <option value="replaced">Replaced Workout</option>
                   <option value="rescheduled">Rescheduled Workout</option>
                 </select>
@@ -1128,7 +1171,14 @@ export default function WorkoutsPage() {
                 <input type="date" className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={exceptionDate} onChange={(e) => setExceptionDate(e.target.value)} />
               </label>
 
-              {(exceptionType === "missed" || exceptionType === "replaced" || exceptionType === "rescheduled") ? (
+              <label className="block text-sm text-slate-700">Apply to
+                <select className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={exceptionScope} onChange={(e) => setExceptionScope(e.target.value as "full" | "exercise")}>
+                  <option value="full">Full workout day</option>
+                  <option value="exercise">Specific exercise</option>
+                </select>
+              </label>
+
+              {(exceptionType === "missed" || exceptionType === "replaced" || exceptionType === "rescheduled") && exceptionScope === "exercise" ? (
                 <label className="block text-sm text-slate-700">Planned workout
                   <select className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={exceptionOriginalWorkoutId} onChange={(e) => setExceptionOriginalWorkoutId(e.target.value)}>
                     <option value="">Select workout</option>
@@ -1143,7 +1193,7 @@ export default function WorkoutsPage() {
                 </label>
               ) : null}
 
-              {(exceptionType === "extra" || exceptionType === "replaced") ? (
+              {(exceptionType === "replaced") ? (
                 <div className="space-y-3 rounded-xl border border-slate-200 p-4">
                   <label className="block text-sm text-slate-700">Workout title
                     <input className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={exceptionExerciseName} onChange={(e) => setExceptionExerciseName(e.target.value)} />
@@ -1574,9 +1624,27 @@ export default function WorkoutsPage() {
                 <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
                   <input
                     type="checkbox"
-                    checked={showScheduleDays}
+                    checked={addExerciseDateOnly}
                     onChange={(event) => {
                       const checked = event.target.checked;
+                      setAddExerciseDateOnly(checked);
+                      if (checked) {
+                        setShowScheduleDays(false);
+                        setAddExerciseDays([selectedDay]);
+                      }
+                    }}
+                  />
+                  Add only for this specific date ({formatDayDateLabel(getCurrentWeekDateForDay(selectedDay))})
+                </label>
+
+                <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={showScheduleDays}
+                    disabled={addExerciseDateOnly}
+                    onChange={(event) => {
+                      const checked = event.target.checked;
+                      if (addExerciseDateOnly) return;
                       setShowScheduleDays(checked);
                       if (!checked) {
                         setAddExerciseDays([selectedDay]);
@@ -1654,7 +1722,7 @@ export default function WorkoutsPage() {
         <section>
           <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
             <div className="flex items-center justify-between gap-3">
-              <h2 className="text-xl font-semibold text-slate-900">{dayLabels[selectedDay]} planned exercises</h2>
+              <h2 className="text-xl font-semibold text-slate-900">{dayLabels[selectedDay]} {formatDayDateLabel(getCurrentWeekDateForDay(selectedDay))}</h2>
               <button type="button" onClick={() => setIsExceptionsOpen(true)} className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Workout Exceptions</button>
             </div>
             <div className="mt-3">
@@ -1689,11 +1757,9 @@ export default function WorkoutsPage() {
                 </div>
               </div>
 
-              <div>
-                <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Specific muscle (sub-group)</p>
-                {subFilter === "all" ? (
-                  <p className="text-xs text-slate-500">Select a main muscle group to show relevant specific muscle filters.</p>
-                ) : (
+              {subFilter !== "all" ? (
+                <div>
+                  <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Specific muscle</p>
                   <div className="flex flex-wrap gap-2">
                     {availableSpecifyMuscleFilters.length ? availableSpecifyMuscleFilters.map((value) => (
                       <button
@@ -1708,8 +1774,8 @@ export default function WorkoutsPage() {
                       <p className="text-xs text-slate-500">No specific muscle labels for this selection.</p>
                     )}
                   </div>
-                )}
-              </div>
+                </div>
+              ) : null}
 
               {(typeFilter !== "all" || subFilter !== "all" || specifyFilter !== "all") ? (
                 <button

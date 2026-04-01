@@ -267,6 +267,8 @@ export type WorkoutDayLog = {
 export type WorkoutWeekPlan = Record<WorkoutDay, WorkoutDayLog>;
 
 
+export const FULL_DAY_EXCEPTION_ID = "__full_day__";
+
 export type WorkoutExceptionType = "missed" | "extra" | "replaced" | "rescheduled";
 
 export type WorkoutException = {
