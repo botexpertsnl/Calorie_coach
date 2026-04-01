@@ -712,7 +712,7 @@ export default function InsightsPage() {
   }, [exerciseProgressSeries, profile, summary, trainingBalanceBars, waistSeries, weightSeries]);
 
   return (
-    <main className="mx-auto w-full max-w-7xl space-y-6 px-4 py-8 md:px-8">
+    <main className="mx-auto w-full max-w-6xl space-y-6 px-4 py-8 md:px-8">
       <AppHeaderNav />
 
       <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
