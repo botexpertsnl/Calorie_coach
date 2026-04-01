@@ -293,7 +293,6 @@ export function ensureDemoSeedData() {
   if (typeof window === "undefined") return;
 
   const alreadySeeded = window.localStorage.getItem(DEMO_SEED_KEY);
-  if (alreadySeeded === DEMO_SEED_VERSION) return;
 
   const profile = readJson<ProfileInput>(STORAGE_KEYS.profile);
   const workouts = readJson<WorkoutWeekPlan>(STORAGE_KEYS.workouts);
@@ -307,8 +306,12 @@ export function ensureDemoSeedData() {
   const demoProfile = profile ?? createDemoProfile();
   if (!profile) writeJson(STORAGE_KEYS.profile, demoProfile);
 
-  if (!workouts) {
+  if (!workouts || !Object.values(workouts).some((day) => day?.exercises?.length)) {
     writeJson(STORAGE_KEYS.workouts, createDemoWorkoutPlan(demoProfile));
+  }
+
+  const workoutExceptions = readJson(STORAGE_KEYS.workoutExceptions);
+  if (!Array.isArray(workoutExceptions)) {
     writeJson(STORAGE_KEYS.workoutExceptions, []);
   }
 
@@ -333,5 +336,7 @@ export function ensureDemoSeedData() {
   if (manualMode === null) writeJson(STORAGE_KEYS.macroManualMode, false);
   if (!bodyProgress) writeJson(STORAGE_KEYS.bodyProgress, createInitialBodyProgress(demoProfile));
 
-  window.localStorage.setItem(DEMO_SEED_KEY, DEMO_SEED_VERSION);
+  if (alreadySeeded !== DEMO_SEED_VERSION) {
+    window.localStorage.setItem(DEMO_SEED_KEY, DEMO_SEED_VERSION);
+  }
 }
