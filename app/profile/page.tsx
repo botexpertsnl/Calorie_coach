@@ -232,10 +232,7 @@ export default function ProfilePage() {
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [showUnsavedChangesPopup, setShowUnsavedChangesPopup] = useState(false);
   const [pendingNavigationUrl, setPendingNavigationUrl] = useState<string | null>(null);
-<<<<<<< codex/update-work-out-delete-confirmation-flow-a1a0r6
   const [suppressBeforeUnload, setSuppressBeforeUnload] = useState(false);
-=======
->>>>>>> main
 
   useEffect(() => {
     ensureDemoSeedData();
@@ -274,11 +271,7 @@ export default function ProfilePage() {
   }, []);
 
   useEffect(() => {
-<<<<<<< codex/update-work-out-delete-confirmation-flow-a1a0r6
     if (!hasUnsavedChanges || suppressBeforeUnload) return;
-=======
-    if (!hasUnsavedChanges) return;
->>>>>>> main
 
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
       event.preventDefault();
@@ -287,11 +280,7 @@ export default function ProfilePage() {
 
     window.addEventListener("beforeunload", handleBeforeUnload);
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
-<<<<<<< codex/update-work-out-delete-confirmation-flow-a1a0r6
   }, [hasUnsavedChanges, suppressBeforeUnload]);
-=======
-  }, [hasUnsavedChanges]);
->>>>>>> main
 
   useEffect(() => {
     const handleDocumentClick = (event: MouseEvent) => {
@@ -311,7 +300,6 @@ export default function ProfilePage() {
     document.addEventListener("click", handleDocumentClick, true);
     return () => document.removeEventListener("click", handleDocumentClick, true);
   }, [hasUnsavedChanges]);
-
 
   useEffect(() => {
     const syncWorkouts = () => {
@@ -400,7 +388,6 @@ export default function ProfilePage() {
       setTargets((prev) => ({ ...prev, [key]: Math.max(0, value) }));
     }
   }
-
 
   const latestWeightEntry = useMemo(() => getLatestProgressEntry(bodyProgress.weight), [bodyProgress.weight]);
   const latestWaistEntry = useMemo(() => getLatestProgressEntry(bodyProgress.waist), [bodyProgress.waist]);
@@ -513,10 +500,7 @@ export default function ProfilePage() {
       setShowUnsavedChangesPopup(false);
       return;
     }
-<<<<<<< codex/update-work-out-delete-confirmation-flow-a1a0r6
     setSuppressBeforeUnload(true);
-=======
->>>>>>> main
     window.location.href = pendingNavigationUrl;
   }
 
@@ -524,13 +508,9 @@ export default function ProfilePage() {
     if (!pendingNavigationUrl) return;
     const saved = saveProfile();
     if (!saved) return;
-<<<<<<< codex/update-work-out-delete-confirmation-flow-a1a0r6
     setSuppressBeforeUnload(true);
-=======
->>>>>>> main
     window.location.href = pendingNavigationUrl;
   }
-
 
   return (
     <main className="mx-auto w-full max-w-6xl space-y-6 px-4 py-8 md:px-8">
@@ -693,50 +673,50 @@ export default function ProfilePage() {
         <div className="relative rounded-xl border border-slate-200">
           <div className="overflow-x-auto px-1 py-1 md:px-0 md:py-0">
             <table className="min-w-[760px] divide-y divide-slate-200 text-sm md:min-w-full">
-            <thead className="bg-slate-50">
-              <tr>
-                <th className="px-3 py-2 text-left font-semibold text-slate-700">Day</th>
-                {macroConfig.filter((macro) => !disabledMacros.includes(macro.key)).map(({ key, label, unit }) => (
-                  <th key={key} className="px-3 py-2 text-left font-semibold text-slate-700">
-                    <div className="flex items-center gap-2">
-                      <span>{label}</span>
-                      <span className="text-xs font-normal text-slate-500">({unit})</span>
-                      <button type="button" onClick={() => disableMacro(key)} className="rounded-md px-1.5 py-0.5 text-xs text-slate-500 hover:bg-slate-100">✕</button>
-                    </div>
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {weekDayOrder.map((day) => (
-                <tr key={day}>
-                  <td className="px-3 py-2 font-medium text-slate-700">{weekDayLabels[day]}</td>
-                  {macroConfig.filter((macro) => !disabledMacros.includes(macro.key)).map(({ key }) => (
-                    <td key={`${day}-${key}`} className="px-3 py-2">
-                      <input
-                        type="number"
-                        min={0}
-                        disabled={!isManualMode}
-                        className="w-full rounded-lg border border-slate-200 px-2 py-1.5 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
-                        value={visibleWeekScheme[day]?.[key] ?? 0}
-                        onChange={(e) => {
-                          updateWeekMacro(day, key, Number(e.target.value));
-                          markUnsavedChanges();
-                        }}
-                      />
-                    </td>
+              <thead className="bg-slate-50">
+                <tr>
+                  <th className="px-3 py-2 text-left font-semibold text-slate-700">Day</th>
+                  {macroConfig.filter((macro) => !disabledMacros.includes(macro.key)).map(({ key, label, unit }) => (
+                    <th key={key} className="px-3 py-2 text-left font-semibold text-slate-700">
+                      <div className="flex items-center gap-2">
+                        <span>{label}</span>
+                        <span className="text-xs font-normal text-slate-500">({unit})</span>
+                        <button type="button" onClick={() => disableMacro(key)} className="rounded-md px-1.5 py-0.5 text-xs text-slate-500 hover:bg-slate-100">✕</button>
+                      </div>
+                    </th>
                   ))}
                 </tr>
-              ))}
-            </tbody>
-            <tfoot className="border-t border-slate-200 bg-slate-50">
-              <tr>
-                <td className="px-3 py-2 font-semibold text-slate-800">Weekly average</td>
-                {macroConfig.filter((macro) => !disabledMacros.includes(macro.key)).map(({ key }) => (
-                  <td key={`avg-${key}`} className="px-3 py-2 font-semibold text-slate-700">{averageWeekMacros[key]}</td>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {weekDayOrder.map((day) => (
+                  <tr key={day}>
+                    <td className="px-3 py-2 font-medium text-slate-700">{weekDayLabels[day]}</td>
+                    {macroConfig.filter((macro) => !disabledMacros.includes(macro.key)).map(({ key }) => (
+                      <td key={`${day}-${key}`} className="px-3 py-2">
+                        <input
+                          type="number"
+                          min={0}
+                          disabled={!isManualMode}
+                          className="w-full rounded-lg border border-slate-200 px-2 py-1.5 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
+                          value={visibleWeekScheme[day]?.[key] ?? 0}
+                          onChange={(e) => {
+                            updateWeekMacro(day, key, Number(e.target.value));
+                            markUnsavedChanges();
+                          }}
+                        />
+                      </td>
+                    ))}
+                  </tr>
                 ))}
-              </tr>
-            </tfoot>
+              </tbody>
+              <tfoot className="border-t border-slate-200 bg-slate-50">
+                <tr>
+                  <td className="px-3 py-2 font-semibold text-slate-800">Weekly average</td>
+                  {macroConfig.filter((macro) => !disabledMacros.includes(macro.key)).map(({ key }) => (
+                    <td key={`avg-${key}`} className="px-3 py-2 font-semibold text-slate-700">{averageWeekMacros[key]}</td>
+                  ))}
+                </tr>
+              </tfoot>
             </table>
           </div>
           <div className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-white to-transparent md:hidden" />
@@ -765,7 +745,6 @@ export default function ProfilePage() {
         <p className="text-sm text-slate-500">Save Profile stores body profile, goals, and macro targets together.</p>
         <button onClick={() => { saveProfile(); }} className="rounded-xl bg-emerald-500 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-400">Save Profile</button>
       </section>
-
 
       {isWeightModalOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-3 sm:p-4">
@@ -820,7 +799,6 @@ export default function ProfilePage() {
           </div>
         </div>
       ) : null}
-
 
       {saveConfirmation ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-3 sm:p-4">
