@@ -1588,9 +1588,8 @@ export default function WorkoutsPage() {
                       </div>
 
                       <div className="flex gap-2">
-                        {exercise.sourceType !== "system" ? <button type="button" aria-label="Edit progress" onClick={(event) => { event.stopPropagation(); openProgress(exercise); }} className="rounded-lg border border-emerald-200 px-2 py-1.5 text-sm text-emerald-700 hover:bg-emerald-50">✎</button> : null}
-                        {exercise.sourceType !== "system" ? <button type="button" aria-label="Duplicate exercise" onClick={(event) => { event.stopPropagation(); openDuplicateModal(exercise); }} className="rounded-lg border border-slate-200 px-2 py-1.5 text-sm text-slate-700 hover:bg-slate-100">⧉</button> : null}
-                        {exercise.sourceType !== "system" ? <button type="button" aria-label="Delete exercise" onClick={(event) => { event.stopPropagation(); setDeleteExerciseId(exercise.id); }} className="rounded-lg border border-rose-200 px-2 py-1.5 text-sm text-rose-700 hover:bg-rose-50">🗑</button> : null}
+                        {exercise.sourceType !== "system" ? <button type="button" aria-label="Duplicate exercise" onClick={(event) => { event.stopPropagation(); openDuplicateModal(exercise); }} className="rounded-lg border border-slate-200 px-2 py-1.5 text-sm text-slate-700 hover:bg-slate-100">(Duplicate)</button> : null}
+                        {exercise.sourceType !== "system" ? <button type="button" aria-label="Delete exercise" onClick={(event) => { event.stopPropagation(); setDeleteExerciseId(exercise.id); }} className="rounded-lg border border-rose-200 px-2 py-1.5 text-sm text-rose-700 hover:bg-rose-50">(Delete)</button> : null}
                       </div>
                     </div>
                   </li>
