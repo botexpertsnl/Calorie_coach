@@ -344,11 +344,12 @@ export function HomePageClient() {
       }
     };
 
-    let quickMealId: string | undefined;
+    let quickMealIdForMealLog: string | undefined;
     if (analysisAsDailyMeal) {
       const now = new Date().toISOString();
       const safeDays = analysisDailyMealDays.length ? analysisDailyMealDays : [...ALL_WEEKDAYS];
-      quickMealId = crypto.randomUUID();
+      const quickMealId = crypto.randomUUID();
+      quickMealIdForMealLog = quickMealId;
 
       setQuickMeals((prev) => [
         {
@@ -369,7 +370,7 @@ export function HomePageClient() {
 
     addMealFromAnalysis(updatedResult, analysisMeta, analysisDate, analysisTime, {
       sourceType: analysisAsDailyMeal ? "daily" : "ai",
-      quickMealId
+      quickMealId: quickMealIdForMealLog
     });
     setAnalysisModalOpen(false);
     setAnalysisMeta(null);
