@@ -163,6 +163,8 @@ export function HomePageClient() {
   const [analysisDate, setAnalysisDate] = useState(getNowDateTimeInputValues().date);
   const [analysisTime, setAnalysisTime] = useState(getNowDateTimeInputValues().time);
   const [analysisTotals, setAnalysisTotals] = useState({ calories: 0, protein: 0, carbs: 0, fat: 0 });
+  const [analysisAsDailyMeal, setAnalysisAsDailyMeal] = useState(false);
+  const [analysisDailyMealDays, setAnalysisDailyMealDays] = useState<MealWeekday[]>([...ALL_WEEKDAYS]);
 
   useEffect(() => {
     ensureDemoSeedData();
@@ -276,7 +278,13 @@ export function HomePageClient() {
     setHistory((prev) => [entry, ...prev]);
   }
 
-  function addMealFromAnalysis(result: CalorieResponse, meta: { text: string; source: "text" | "image" }, date: string, time: string) {
+  function addMealFromAnalysis(
+    result: CalorieResponse,
+    meta: { text: string; source: "text" | "image" },
+    date: string,
+    time: string,
+    options?: { sourceType?: MealSourceType; quickMealId?: string }
+  ) {
     const createdAt = toIsoFromDateTime(date, time);
     const mealDate = date || getNowDateTimeInputValues().date;
 
@@ -285,7 +293,8 @@ export function HomePageClient() {
       title: meta.text,
       text: meta.text,
       source: meta.source,
-      sourceType: "ai",
+      sourceType: options?.sourceType ?? "ai",
+      quickMealId: options?.quickMealId,
       mealDate,
       result,
       createdAt
@@ -311,7 +320,15 @@ export function HomePageClient() {
       carbs: result.totals.carbs,
       fat: result.totals.fat
     });
+    setAnalysisAsDailyMeal(false);
+    setAnalysisDailyMealDays([...ALL_WEEKDAYS]);
     setAnalysisModalOpen(true);
+  }
+
+  function toggleAnalysisDailyMealDay(day: MealWeekday) {
+    setAnalysisDailyMealDays((prev) =>
+      prev.includes(day) ? prev.filter((item) => item !== day) : [...prev, day]
+    );
   }
 
   function addAnalyzedMealFromModal() {
@@ -327,10 +344,39 @@ export function HomePageClient() {
       }
     };
 
-    addMealFromAnalysis(updatedResult, analysisMeta, analysisDate, analysisTime);
+    let quickMealIdForMealLog: string | undefined;
+    if (analysisAsDailyMeal) {
+      const now = new Date().toISOString();
+      const safeDays = analysisDailyMealDays.length ? analysisDailyMealDays : [...ALL_WEEKDAYS];
+      const quickMealId = crypto.randomUUID();
+      quickMealIdForMealLog = quickMealId;
+
+      setQuickMeals((prev) => [
+        {
+          id: quickMealId,
+          title: analysisMeta.text || "Daily Meal",
+          calories: Math.max(0, Number(analysisTotals.calories) || 0),
+          protein: Math.max(0, Number(analysisTotals.protein) || 0),
+          carbs: Math.max(0, Number(analysisTotals.carbs) || 0),
+          fat: Math.max(0, Number(analysisTotals.fat) || 0),
+          isDailyMeal: true,
+          dailyMealDays: safeDays,
+          createdAt: now,
+          updatedAt: now
+        },
+        ...prev
+      ]);
+    }
+
+    addMealFromAnalysis(updatedResult, analysisMeta, analysisDate, analysisTime, {
+      sourceType: analysisAsDailyMeal ? "daily" : "ai",
+      quickMealId: quickMealIdForMealLog
+    });
     setAnalysisModalOpen(false);
     setAnalysisMeta(null);
     setAnalysisResult(null);
+    setAnalysisAsDailyMeal(false);
+    setAnalysisDailyMealDays([...ALL_WEEKDAYS]);
     setMealDescription("");
   }
 
@@ -673,6 +719,28 @@ export function HomePageClient() {
               </label>
             </div>
 
+            <label className="mt-4 flex items-start gap-3 rounded-xl border border-slate-200 p-3 text-sm text-slate-700">
+              <input type="checkbox" checked={analysisAsDailyMeal} onChange={(event) => setAnalysisAsDailyMeal(event.target.checked)} className="mt-0.5 h-4 w-4 rounded border-slate-300 text-emerald-500 focus:ring-emerald-400" />
+              <span>
+                <span className="font-medium text-slate-800">Save as Daily Meal</span>
+                <span className="mt-1 block text-xs text-slate-500">This meal can be auto-added on selected days.</span>
+              </span>
+            </label>
+
+            {analysisAsDailyMeal ? (
+              <div className="mt-3 rounded-xl border border-slate-200 p-3">
+                <p className="text-sm font-medium text-slate-800">Auto-add days</p>
+                <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                  {ALL_WEEKDAYS.map((day) => (
+                    <label key={day} className="inline-flex items-center gap-2 text-sm text-slate-700">
+                      <input type="checkbox" checked={analysisDailyMealDays.includes(day)} onChange={() => toggleAnalysisDailyMealDay(day)} className="h-4 w-4 rounded border-slate-300 text-emerald-500 focus:ring-emerald-400" />
+                      {day.charAt(0).toUpperCase() + day.slice(1)}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
             <div className="mt-4 grid gap-3 md:grid-cols-2">
               <label className="text-sm text-slate-700">Calories
                 <input type="number" min={0} value={analysisTotals.calories} onChange={(event) => setAnalysisTotals((prev) => ({ ...prev, calories: Number(event.target.value) }))} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" />
@@ -734,7 +802,14 @@ export function HomePageClient() {
           <p className="mt-1 text-sm text-slate-500">Describe your meal in detail or take a photo for better accuracy.</p>
 
           <form onSubmit={analyzeMealText} className="mt-4 space-y-4">
-            <textarea className="min-h-36 w-full rounded-2xl border border-slate-200 bg-white p-4 text-slate-800 outline-none transition focus:border-emerald-400" placeholder="e.g., Two scrambled eggs with a slice of whole grain toast and half an avocado..." value={mealDescription} onChange={(event) => setMealDescription(event.target.value)} />
+            <div className="relative">
+              <textarea className="min-h-36 w-full rounded-2xl border border-slate-200 bg-white p-4 pr-14 text-slate-800 outline-none transition focus:border-emerald-400" placeholder="e.g., Two scrambled eggs with a slice of whole grain toast and half an avocado..." value={mealDescription} onChange={(event) => setMealDescription(event.target.value)} />
+              {isImageLoading ? (
+                <div className="pointer-events-none absolute right-4 top-4 inline-flex items-center gap-2 rounded-lg bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700">
+                  <Spinner /> Reading photo...
+                </div>
+              ) : null}
+            </div>
 
             <input ref={fileInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={(event) => {
               const file = event.target.files?.[0];
