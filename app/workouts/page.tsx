@@ -6,7 +6,7 @@ import { STORAGE_KEYS, readJson, writeJson } from "@/lib/local-data";
 import { recalculateAndPersistTodayTargets } from "@/lib/daily-targets";
 import { ensureDemoSeedData } from "@/lib/demo-seed";
 import { calculateTrainingVolume, estimateCaloriesForType } from "@/lib/workouts";
-import { getAmsterdamDateKey, getAmsterdamWeekStartDateKey, withStoredWorkoutPoints } from "@/lib/workout-execution";
+import { getAmsterdamWeekStartDateKey, withStoredWorkoutPoints } from "@/lib/workout-execution";
 import {
   CardioExercise,
   CrossfitExercise,
@@ -796,7 +796,10 @@ export default function WorkoutsPage() {
     resetDraft("fitness");
     setAddExerciseDays([selectedDay]);
     setShowScheduleDays(false);
+<<<<<<< codex/update-work-out-delete-confirmation-flow-a1a0r6
     setAddExerciseTodayOnly(false);
+=======
+>>>>>>> main
     setMessage(null);
     setIsAddExerciseOpen(true);
   }
@@ -825,6 +828,7 @@ export default function WorkoutsPage() {
       return;
     }
 
+<<<<<<< codex/update-work-out-delete-confirmation-flow-a1a0r6
     if (addExerciseTodayOnly) {
       const todayDateKey = getAmsterdamDateKey();
       const todayDay = getAmsterdamToday();
@@ -844,6 +848,8 @@ export default function WorkoutsPage() {
       return;
     }
 
+=======
+>>>>>>> main
     setPlan((prev) => {
       const next = { ...prev };
       targetDays.forEach((day) => {
@@ -1422,6 +1428,7 @@ export default function WorkoutsPage() {
                 <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
                   <input
                     type="checkbox"
+<<<<<<< codex/update-work-out-delete-confirmation-flow-a1a0r6
                     checked={addExerciseTodayOnly}
                     onChange={(event) => {
                       const checked = event.target.checked;
@@ -1443,6 +1450,11 @@ export default function WorkoutsPage() {
                     onChange={(event) => {
                       const checked = event.target.checked;
                       if (addExerciseTodayOnly) return;
+=======
+                    checked={showScheduleDays}
+                    onChange={(event) => {
+                      const checked = event.target.checked;
+>>>>>>> main
                       setShowScheduleDays(checked);
                       if (!checked) {
                         setAddExerciseDays([selectedDay]);

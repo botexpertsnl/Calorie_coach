@@ -232,7 +232,10 @@ export default function ProfilePage() {
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [showUnsavedChangesPopup, setShowUnsavedChangesPopup] = useState(false);
   const [pendingNavigationUrl, setPendingNavigationUrl] = useState<string | null>(null);
+<<<<<<< codex/update-work-out-delete-confirmation-flow-a1a0r6
   const [suppressBeforeUnload, setSuppressBeforeUnload] = useState(false);
+=======
+>>>>>>> main
 
   useEffect(() => {
     ensureDemoSeedData();
@@ -271,7 +274,11 @@ export default function ProfilePage() {
   }, []);
 
   useEffect(() => {
+<<<<<<< codex/update-work-out-delete-confirmation-flow-a1a0r6
     if (!hasUnsavedChanges || suppressBeforeUnload) return;
+=======
+    if (!hasUnsavedChanges) return;
+>>>>>>> main
 
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
       event.preventDefault();
@@ -280,7 +287,11 @@ export default function ProfilePage() {
 
     window.addEventListener("beforeunload", handleBeforeUnload);
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+<<<<<<< codex/update-work-out-delete-confirmation-flow-a1a0r6
   }, [hasUnsavedChanges, suppressBeforeUnload]);
+=======
+  }, [hasUnsavedChanges]);
+>>>>>>> main
 
   useEffect(() => {
     const handleDocumentClick = (event: MouseEvent) => {
@@ -502,7 +513,10 @@ export default function ProfilePage() {
       setShowUnsavedChangesPopup(false);
       return;
     }
+<<<<<<< codex/update-work-out-delete-confirmation-flow-a1a0r6
     setSuppressBeforeUnload(true);
+=======
+>>>>>>> main
     window.location.href = pendingNavigationUrl;
   }
 
@@ -510,7 +524,10 @@ export default function ProfilePage() {
     if (!pendingNavigationUrl) return;
     const saved = saveProfile();
     if (!saved) return;
+<<<<<<< codex/update-work-out-delete-confirmation-flow-a1a0r6
     setSuppressBeforeUnload(true);
+=======
+>>>>>>> main
     window.location.href = pendingNavigationUrl;
   }
 
