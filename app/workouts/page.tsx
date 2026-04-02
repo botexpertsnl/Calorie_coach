@@ -2,9 +2,8 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { AppHeaderNav } from "@/components/AppHeaderNav";
-import { STORAGE_KEYS, readJson, writeJson } from "@/lib/local-data";
 import { recalculateAndPersistTodayTargets } from "@/lib/daily-targets";
-import { ensureDemoSeedData } from "@/lib/demo-seed";
+import { getCurrentUserId, loadProfile, loadWorkoutExceptions, loadWorkoutPlan, replaceWorkoutExceptions, saveDailyTargets, saveWorkoutPlan } from "@/lib/supabase/user-data";
 import { calculateTrainingVolume, estimateCaloriesForType } from "@/lib/workouts";
 import { getAmsterdamWeekStartDateKey, withStoredWorkoutPoints } from "@/lib/workout-execution";
 import {
@@ -468,26 +467,46 @@ export default function WorkoutsPage() {
   const [specifyFilter, setSpecifyFilter] = useState<"all" | SpecifyMuscle>("all");
   const [hasLoadedInitialData, setHasLoadedInitialData] = useState(false);
   const [currentWeekStartDateKey, setCurrentWeekStartDateKey] = useState(getAmsterdamWeekStartDateKey());
+  const [userId, setUserId] = useState<string | null>(null);
 
   useEffect(() => {
-    ensureDemoSeedData();
+    let isMounted = true;
+    async function hydrate() {
+      try {
+        const authUserId = await getCurrentUserId();
+        if (!isMounted) return;
+        setUserId(authUserId);
 
-    const savedPlan = readJson<WorkoutWeekPlan>(STORAGE_KEYS.workouts);
-    const savedProfile = readJson<ProfileInput>(STORAGE_KEYS.profile);
-    const savedExceptions = readJson<WorkoutException[]>(STORAGE_KEYS.workoutExceptions) ?? [];
-    const initialWeekStartDateKey = getAmsterdamWeekStartDateKey();
-    const currentWeekDateKeys = new Set(dayOrder.map((day) => getCurrentWeekDateForDay(day, initialWeekStartDateKey)));
-    const currentWeekExceptions = savedExceptions.filter(
-      (item) => currentWeekDateKeys.has(item.date) || (item.newDate ? currentWeekDateKeys.has(item.newDate) : false)
-    );
+        const [savedPlan, savedProfile, savedExceptions] = await Promise.all([
+          loadWorkoutPlan(authUserId),
+          loadProfile(authUserId),
+          loadWorkoutExceptions(authUserId)
+        ]);
 
-    const profileWeightKg = savedProfile?.weightKg ?? 70;
-    if (savedPlan) setPlan(normalizePlanWithMetrics(savedPlan, profileWeightKg));
-    if (savedProfile?.weightKg) setProfileWeight(savedProfile.weightKg);
-    if (savedProfile) setProfile(savedProfile);
-    setExceptions(currentWeekExceptions);
-    setCurrentWeekStartDateKey(initialWeekStartDateKey);
-    setHasLoadedInitialData(true);
+        if (!isMounted) return;
+        const initialWeekStartDateKey = getAmsterdamWeekStartDateKey();
+        const currentWeekDateKeys = new Set(dayOrder.map((day) => getCurrentWeekDateForDay(day, initialWeekStartDateKey)));
+        const currentWeekExceptions = savedExceptions.filter(
+          (item) => currentWeekDateKeys.has(item.date) || (item.newDate ? currentWeekDateKeys.has(item.newDate) : false)
+        );
+
+        const profileWeightKg = savedProfile?.weightKg ?? 70;
+        if (savedPlan) setPlan(normalizePlanWithMetrics(savedPlan, profileWeightKg));
+        if (savedProfile?.weightKg) setProfileWeight(savedProfile.weightKg);
+        if (savedProfile) setProfile(savedProfile);
+        setExceptions(currentWeekExceptions);
+        setCurrentWeekStartDateKey(initialWeekStartDateKey);
+        setHasLoadedInitialData(true);
+      } catch (error) {
+        if (!isMounted) return;
+        setMessage(error instanceof Error ? error.message : "Unable to load workout data.");
+      }
+    }
+
+    void hydrate();
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -506,21 +525,26 @@ export default function WorkoutsPage() {
   }, [currentWeekStartDateKey]);
 
   useEffect(() => {
-    writeJson(STORAGE_KEYS.workouts, plan);
-  }, [plan]);
+    if (!hasLoadedInitialData || !userId) return;
+    void saveWorkoutPlan(userId, plan);
+  }, [hasLoadedInitialData, plan, userId]);
 
   useEffect(() => {
-    writeJson(STORAGE_KEYS.workoutExceptions, exceptions);
-  }, [exceptions]);
+    if (!hasLoadedInitialData || !userId) return;
+    void replaceWorkoutExceptions(userId, exceptions);
+  }, [exceptions, hasLoadedInitialData, userId]);
 
   useEffect(() => {
     if (!hasLoadedInitialData) return;
-    recalculateAndPersistTodayTargets({
+    const nextTargets = recalculateAndPersistTodayTargets({
       profile,
       workouts: plan,
-      exceptions
+      exceptions,
+      disabledMacros: [],
+      force: true
     });
-  }, [exceptions, hasLoadedInitialData, plan, profile]);
+    if (nextTargets && userId) void saveDailyTargets(userId, nextTargets);
+  }, [exceptions, hasLoadedInitialData, plan, profile, userId]);
 
   useEffect(() => {
     if (!isAddExerciseOpen) {
