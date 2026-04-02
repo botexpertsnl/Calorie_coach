@@ -1054,39 +1054,41 @@ export default function WorkoutsPage() {
               <div>
                 <h3 className="text-xl font-semibold text-slate-900">Exercise Progress</h3>
                 <p className="text-sm text-slate-500">{progressExercise.name}</p>
-                {previousProgresses.length ? (
-                  <div className="mt-3 overflow-x-auto rounded-xl border border-slate-200">
-                    <table className="min-w-full text-xs">
-                      <thead className="bg-slate-50 text-slate-600">
-                        <tr>
-                          <th className="px-3 py-2 text-left font-semibold">Change date</th>
-                          <th className="px-3 py-2 text-left font-semibold">Duration</th>
-                          <th className="px-3 py-2 text-left font-semibold">Sets</th>
-                          <th className="px-3 py-2 text-left font-semibold">Reps</th>
-                          <th className="px-3 py-2 text-left font-semibold">Weight</th>
+                <div className="mt-3 overflow-x-auto rounded-xl border border-slate-200">
+                  <table className="min-w-full text-xs">
+                    <thead className="bg-slate-50 text-slate-600">
+                      <tr>
+                        <th className="px-3 py-2 text-left font-semibold">Change date</th>
+                        <th className="px-3 py-2 text-left font-semibold">Duration</th>
+                        <th className="px-3 py-2 text-left font-semibold">Sets</th>
+                        <th className="px-3 py-2 text-left font-semibold">Reps</th>
+                        <th className="px-3 py-2 text-left font-semibold">Weight</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr className="border-t border-emerald-100 bg-emerald-50 text-slate-700">
+                        <td className="px-3 py-2 font-semibold">Current</td>
+                        <td className="px-3 py-2">{draft.type === "cardio" || (draft.type === "crossfit" && draft.crossfitUseDuration) ? `${draft.durationMinutes} min` : "-"}</td>
+                        <td className="px-3 py-2">{draft.type === "fitness" || (draft.type === "crossfit" && draft.crossfitUseSets) ? draft.sets : "-"}</td>
+                        <td className="px-3 py-2">{draft.type === "fitness" || (draft.type === "crossfit" && draft.crossfitUseReps) ? draft.reps : "-"}</td>
+                        <td className="px-3 py-2">{draft.type === "fitness" || (draft.type === "crossfit" && draft.crossfitUseWeight) ? `${draft.weight} kg` : "-"}</td>
+                      </tr>
+                      {previousProgresses.length ? previousProgresses.map((entry, index) => (
+                        <tr key={`${entry.recordedAt}-${index}`} className="border-t border-slate-100 text-slate-600">
+                          <td className="px-3 py-2">{formatRecordedDate(entry.recordedAt)}</td>
+                          <td className="px-3 py-2">{typeof entry.durationMinutes === "number" ? `${entry.durationMinutes} min` : "-"}</td>
+                          <td className="px-3 py-2">{typeof entry.sets === "number" ? entry.sets : "-"}</td>
+                          <td className="px-3 py-2">{typeof entry.reps === "number" ? entry.reps : "-"}</td>
+                          <td className="px-3 py-2">{typeof entry.weight === "number" ? `${entry.weight} kg` : "-"}</td>
                         </tr>
-                      </thead>
-                      <tbody>
-                        <tr className="border-t border-emerald-100 bg-emerald-50 text-slate-700">
-                          <td className="px-3 py-2 font-semibold">Current</td>
-                          <td className="px-3 py-2">{typeof draft.durationMinutes === "number" ? `${draft.durationMinutes} min` : "-"}</td>
-                          <td className="px-3 py-2">{typeof draft.sets === "number" ? draft.sets : "-"}</td>
-                          <td className="px-3 py-2">{typeof draft.reps === "number" ? draft.reps : "-"}</td>
-                          <td className="px-3 py-2">{typeof draft.weight === "number" ? `${draft.weight} kg` : "-"}</td>
+                      )) : (
+                        <tr className="border-t border-slate-100 text-slate-500">
+                          <td className="px-3 py-2" colSpan={5}>No previous changes yet.</td>
                         </tr>
-                        {previousProgresses.map((entry, index) => (
-                          <tr key={`${entry.recordedAt}-${index}`} className="border-t border-slate-100 text-slate-600">
-                            <td className="px-3 py-2">{formatRecordedDate(entry.recordedAt)}</td>
-                            <td className="px-3 py-2">{typeof entry.durationMinutes === "number" ? `${entry.durationMinutes} min` : "-"}</td>
-                            <td className="px-3 py-2">{typeof entry.sets === "number" ? entry.sets : "-"}</td>
-                            <td className="px-3 py-2">{typeof entry.reps === "number" ? entry.reps : "-"}</td>
-                            <td className="px-3 py-2">{typeof entry.weight === "number" ? `${entry.weight} kg` : "-"}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : null}
+                      )}
+                    </tbody>
+                  </table>
+                </div>
 
               </div>
               <button type="button" onClick={closeProgress} className="rounded-md p-1 text-slate-400 hover:bg-slate-100">✕</button>
@@ -1588,8 +1590,8 @@ export default function WorkoutsPage() {
                       </div>
 
                       <div className="flex gap-2">
-                        {exercise.sourceType !== "system" ? <button type="button" aria-label="Duplicate exercise" onClick={(event) => { event.stopPropagation(); openDuplicateModal(exercise); }} className="rounded-lg border border-slate-200 px-2 py-1.5 text-sm text-slate-700 hover:bg-slate-100">(Duplicate)</button> : null}
-                        {exercise.sourceType !== "system" ? <button type="button" aria-label="Delete exercise" onClick={(event) => { event.stopPropagation(); setDeleteExerciseId(exercise.id); }} className="rounded-lg border border-rose-200 px-2 py-1.5 text-sm text-rose-700 hover:bg-rose-50">(Delete)</button> : null}
+                        {exercise.sourceType !== "system" ? <button type="button" aria-label="Duplicate exercise" onClick={(event) => { event.stopPropagation(); openDuplicateModal(exercise); }} className="rounded-lg border border-slate-200 px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100">Duplicate</button> : null}
+                        {exercise.sourceType !== "system" ? <button type="button" aria-label="Delete exercise" onClick={(event) => { event.stopPropagation(); setDeleteExerciseId(exercise.id); }} className="rounded-lg border border-rose-200 px-2 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-50">Delete</button> : null}
                       </div>
                     </div>
                   </li>
