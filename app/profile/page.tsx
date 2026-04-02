@@ -229,6 +229,10 @@ export default function ProfilePage() {
   const [isWaistModalOpen, setIsWaistModalOpen] = useState(false);
   const [weightEntry, setWeightEntry] = useState({ value: 0, ...getAmsterdamNowInputValues() });
   const [waistEntry, setWaistEntry] = useState({ value: 0, ...getAmsterdamNowInputValues() });
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [showUnsavedChangesPopup, setShowUnsavedChangesPopup] = useState(false);
+  const [pendingNavigationUrl, setPendingNavigationUrl] = useState<string | null>(null);
+  const [suppressBeforeUnload, setSuppressBeforeUnload] = useState(false);
 
   useEffect(() => {
     ensureDemoSeedData();
@@ -265,6 +269,37 @@ export default function ProfilePage() {
     setWeightEntry({ value: (savedProfile?.weightKg ?? defaultProfile.weightKg), ...getAmsterdamNowInputValues() });
     setWaistEntry({ value: (savedProfile?.waistCm ?? defaultProfile.waistCm), ...getAmsterdamNowInputValues() });
   }, []);
+
+  useEffect(() => {
+    if (!hasUnsavedChanges || suppressBeforeUnload) return;
+
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [hasUnsavedChanges, suppressBeforeUnload]);
+
+  useEffect(() => {
+    const handleDocumentClick = (event: MouseEvent) => {
+      if (!hasUnsavedChanges) return;
+      const target = event.target as HTMLElement | null;
+      const anchor = target?.closest("a[href]") as HTMLAnchorElement | null;
+      if (!anchor) return;
+      const destination = new URL(anchor.href, window.location.href);
+      const current = new URL(window.location.href);
+      const isSamePage = destination.pathname === current.pathname && destination.search === current.search && destination.hash === current.hash;
+      if (destination.origin !== current.origin || isSamePage) return;
+      event.preventDefault();
+      setPendingNavigationUrl(destination.toString());
+      setShowUnsavedChangesPopup(true);
+    };
+
+    document.addEventListener("click", handleDocumentClick, true);
+    return () => document.removeEventListener("click", handleDocumentClick, true);
+  }, [hasUnsavedChanges]);
 
 
   useEffect(() => {
@@ -359,6 +394,10 @@ export default function ProfilePage() {
   const latestWeightEntry = useMemo(() => getLatestProgressEntry(bodyProgress.weight), [bodyProgress.weight]);
   const latestWaistEntry = useMemo(() => getLatestProgressEntry(bodyProgress.waist), [bodyProgress.waist]);
 
+  function markUnsavedChanges() {
+    setHasUnsavedChanges(true);
+  }
+
   function openWeightModal() {
     setWeightEntry({ value: profile.weightKg, ...getAmsterdamNowInputValues() });
     setIsWeightModalOpen(true);
@@ -377,6 +416,7 @@ export default function ProfilePage() {
     setBodyProgress(next);
     writeJson(STORAGE_KEYS.bodyProgress, next);
     updateProfile("weightKg", Number(weightEntry.value));
+    markUnsavedChanges();
     setIsWeightModalOpen(false);
   }
 
@@ -388,31 +428,35 @@ export default function ProfilePage() {
     setBodyProgress(next);
     writeJson(STORAGE_KEYS.bodyProgress, next);
     updateProfile("waistCm", Number(waistEntry.value));
+    markUnsavedChanges();
     setIsWaistModalOpen(false);
   }
 
   function updateProfile<K extends keyof ProfileInput>(key: K, value: ProfileInput[K]) {
     setProfile((prev) => ({ ...prev, [key]: value }));
+    markUnsavedChanges();
   }
 
   function disableMacro(key: MacroKey) {
     if (disabledMacros.includes(key)) return;
     setDisabledMacros((prev) => [...prev, key]);
+    markUnsavedChanges();
   }
 
   function enableMacro(key: MacroKey) {
     setDisabledMacros((prev) => prev.filter((macro) => macro !== key));
+    markUnsavedChanges();
   }
 
   function saveProfile() {
     if (!mainGoal.trim()) {
       setMessage("Please select a Main goal before saving.");
-      return;
+      return false;
     }
 
     if (!goalIntensity.trim()) {
       setMessage("Please select a Goal intensity before saving.");
-      return;
+      return false;
     }
 
     const profileToSave = {
@@ -446,6 +490,28 @@ export default function ProfilePage() {
       setMessage(confirmationMessage);
       setSaveConfirmation(confirmationMessage);
     }
+
+    setHasUnsavedChanges(false);
+    setShowUnsavedChangesPopup(false);
+    setPendingNavigationUrl(null);
+    return true;
+  }
+
+  function discardAndNavigate() {
+    if (!pendingNavigationUrl) {
+      setShowUnsavedChangesPopup(false);
+      return;
+    }
+    setSuppressBeforeUnload(true);
+    window.location.href = pendingNavigationUrl;
+  }
+
+  function saveAndNavigate() {
+    if (!pendingNavigationUrl) return;
+    const saved = saveProfile();
+    if (!saved) return;
+    setSuppressBeforeUnload(true);
+    window.location.href = pendingNavigationUrl;
   }
 
 
@@ -536,6 +602,7 @@ export default function ProfilePage() {
               onChange={(e) => {
                 setMainGoal(e.target.value);
                 setGoalIntensity("");
+                markUnsavedChanges();
               }}
             >
               <option value="">Select main goal</option>
@@ -549,7 +616,10 @@ export default function ProfilePage() {
             <select
               className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2"
               value={goalIntensity}
-              onChange={(e) => setGoalIntensity(e.target.value)}
+              onChange={(e) => {
+                setGoalIntensity(e.target.value);
+                markUnsavedChanges();
+              }}
               disabled={!mainGoal}
             >
               <option value="">Select goal intensity</option>
@@ -564,7 +634,10 @@ export default function ProfilePage() {
           <textarea
             className="mt-1 min-h-24 w-full rounded-xl border border-slate-200 px-3 py-2"
             value={goalDescription}
-            onChange={(e) => setGoalDescription(e.target.value)}
+            onChange={(e) => {
+              setGoalDescription(e.target.value);
+              markUnsavedChanges();
+            }}
             placeholder="Describe your specific goal in your own words."
           />
         </label>
@@ -581,6 +654,7 @@ export default function ProfilePage() {
                 const next = e.target.checked;
                 setIsManualMode(next);
                 writeJson(STORAGE_KEYS.macroManualMode, next);
+                markUnsavedChanges();
                 if (next) {
                   setManualWeekScheme(calculatedWeekScheme);
                   writeJson(STORAGE_KEYS.weeklyMacroScheme, calculatedWeekScheme);
@@ -628,7 +702,10 @@ export default function ProfilePage() {
                         disabled={!isManualMode}
                         className="w-full rounded-lg border border-slate-200 px-2 py-1.5 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
                         value={visibleWeekScheme[day]?.[key] ?? 0}
-                        onChange={(e) => updateWeekMacro(day, key, Number(e.target.value))}
+                        onChange={(e) => {
+                          updateWeekMacro(day, key, Number(e.target.value));
+                          markUnsavedChanges();
+                        }}
                       />
                     </td>
                   ))}
@@ -669,13 +746,13 @@ export default function ProfilePage() {
 
       <section className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
         <p className="text-sm text-slate-500">Save Profile stores body profile, goals, and macro targets together.</p>
-        <button onClick={saveProfile} className="rounded-xl bg-emerald-500 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-400">Save Profile</button>
+        <button onClick={() => { saveProfile(); }} className="rounded-xl bg-emerald-500 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-400">Save Profile</button>
       </section>
 
 
       {isWeightModalOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
-          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl ring-1 ring-slate-200">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-3 sm:p-4">
+          <div className="w-full max-w-md max-h-[86vh] overflow-y-auto rounded-2xl bg-white p-4 shadow-xl ring-1 ring-slate-200 sm:p-6">
             <h3 className="text-lg font-semibold text-slate-900">Register Weight Progress</h3>
             <p className="mt-2 text-sm text-slate-600">Previous value: <span className="font-semibold text-slate-900">{latestWeightEntry?.value ?? profile.weightKg} kg</span></p>
             <p className="text-xs text-slate-500">Saved on: {formatAmsterdamDateTime(latestWeightEntry?.recordedAt ?? latestWeightEntry?.createdAt)}</p>
@@ -701,8 +778,8 @@ export default function ProfilePage() {
       ) : null}
 
       {isWaistModalOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
-          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl ring-1 ring-slate-200">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-3 sm:p-4">
+          <div className="w-full max-w-md max-h-[86vh] overflow-y-auto rounded-2xl bg-white p-4 shadow-xl ring-1 ring-slate-200 sm:p-6">
             <h3 className="text-lg font-semibold text-slate-900">Register Waist Progress</h3>
             <p className="mt-2 text-sm text-slate-600">Previous value: <span className="font-semibold text-slate-900">{latestWaistEntry?.value ?? profile.waistCm} cm</span></p>
             <p className="text-xs text-slate-500">Saved on: {formatAmsterdamDateTime(latestWaistEntry?.recordedAt ?? latestWaistEntry?.createdAt)}</p>
@@ -729,12 +806,26 @@ export default function ProfilePage() {
 
 
       {saveConfirmation ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
-          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl ring-1 ring-slate-200">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-3 sm:p-4">
+          <div className="w-full max-w-md max-h-[86vh] overflow-y-auto rounded-2xl bg-white p-4 shadow-xl ring-1 ring-slate-200 sm:p-6">
             <h3 className="text-lg font-semibold text-slate-900">Profile saved</h3>
             <p className="mt-2 text-sm text-slate-600">{saveConfirmation}</p>
             <div className="mt-5 flex justify-end">
               <button type="button" onClick={() => setSaveConfirmation(null)} className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-400">OK</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {showUnsavedChangesPopup ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-3 sm:p-4">
+          <div className="w-full max-w-md max-h-[86vh] overflow-y-auto rounded-2xl bg-white p-4 shadow-xl ring-1 ring-slate-200 sm:p-6">
+            <h3 className="text-lg font-semibold text-slate-900">Unsaved changes</h3>
+            <p className="mt-2 text-sm text-slate-600">You have unsaved profile changes. Save before leaving this page?</p>
+            <div className="mt-5 flex justify-end gap-2">
+              <button type="button" onClick={() => { setShowUnsavedChangesPopup(false); setPendingNavigationUrl(null); }} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700">Stay</button>
+              <button type="button" onClick={discardAndNavigate} className="rounded-xl border border-rose-200 px-4 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-50">Discard & leave</button>
+              <button type="button" onClick={saveAndNavigate} className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-400">Save & leave</button>
             </div>
           </div>
         </div>

@@ -748,18 +748,6 @@ export default function InsightsPage() {
         ) : null}
       </section>
 
-      <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
-        <h2 className="text-xl font-semibold text-slate-900">Summary</h2>
-        <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-          <p className="text-sm text-slate-700">Calories adherence: <span className="font-semibold text-slate-900">{summary.calorieAdherence}%</span></p>
-          <p className="text-sm text-slate-700">Protein target reached: <span className="font-semibold text-slate-900">{summary.proteinDaysHit} / {summary.days} days</span></p>
-          <p className="text-sm text-slate-700">Workout completion rate: <span className="font-semibold text-slate-900">{summary.workoutCompletion}%</span></p>
-          <p className="text-sm text-slate-700">Workouts completed: <span className="font-semibold text-slate-900">{workoutSummary.completedSessions} / {workoutSummary.plannedSessions || 0}</span></p>
-          <p className="text-sm text-slate-700">Total exercises completed: <span className="font-semibold text-slate-900">{workoutSummary.totalExercises}</span></p>
-          <p className="text-sm text-slate-700">Training volume: <span className="font-semibold text-slate-900">{Math.round(workoutSummary.totalFitnessVolume).toLocaleString()} kg</span></p>
-        </div>
-      </section>
-
       <ChartCard title="Smart Coaching Insights">
         <ul className="space-y-2">
           {coachingInsights.map((insight, index) => (
