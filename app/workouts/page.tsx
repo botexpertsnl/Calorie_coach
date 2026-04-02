@@ -794,6 +794,7 @@ export default function WorkoutsPage() {
     resetDraft("fitness");
     setAddExerciseDays([selectedDay]);
     setShowScheduleDays(false);
+    setMessage(null);
     setIsAddExerciseOpen(true);
   }
 
@@ -899,7 +900,7 @@ export default function WorkoutsPage() {
         updatedAt: now
       };
       setExceptions((prev) => [payload, ...prev]);
-      setMessage(`Exercise removed for ${formatDayDateLabel(selectedDateKey)} only.`);
+      setMessage("Exercise updated.");
     } else {
       setPlan((prev) => {
         const dayLog = prev[selectedDay];
@@ -1552,7 +1553,7 @@ export default function WorkoutsPage() {
                       <div>
                         <p className={`font-semibold ${isPausedForDate ? "text-slate-500 line-through" : "text-slate-900"}`}>{exercise.name}</p>
                         {isPausedForDate ? (
-                          <p className="mt-1 text-xs font-medium text-amber-700">⏸️ This excersize is pauzed for the date, pauzed on {formatDayDateLabel(selectedDateKey)}.</p>
+                          <p className="mt-1 text-xs font-medium text-rose-700">🗑️ This excersize is only deleted for {formatDayDateLabel(selectedDateKey)}.</p>
                         ) : null}
                         {exercise.sourceType === "system" ? <p className="mt-1 inline-block rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-blue-700">Auto-generated</p> : null}
                         <div className="mt-2 flex flex-wrap gap-1.5">
