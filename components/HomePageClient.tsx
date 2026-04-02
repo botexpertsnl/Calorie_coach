@@ -4,10 +4,9 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { AppHeaderNav } from "@/components/AppHeaderNav";
 import { QuickMealsModal } from "@/components/QuickMealsModal";
 import { Spinner } from "@/components/Spinner";
-import { STORAGE_KEYS, readJson, writeJson } from "@/lib/local-data";
-import { TARGETS_UPDATED_EVENT, recalculateAndPersistTodayTargets } from "@/lib/daily-targets";
-import { ensureDemoSeedData } from "@/lib/demo-seed";
+import { TARGETS_UPDATED_EVENT } from "@/lib/daily-targets";
 import { ALL_WEEKDAYS, applyDailyMealsForDate, getLocalDateKey, getMealsForDate, toCalorieResponseFromQuickMeal } from "@/lib/meals";
+import { getCurrentUserId, loadDailyTargets, loadMeals, loadQuickMeals, loadUserSettings, replaceMeals, replaceQuickMeals } from "@/lib/supabase/user-data";
 import { CalorieResponse, DailyTargets, MacroKey, MealSourceType, MealWeekday, QuickMeal, StoredMealLog } from "@/lib/types";
 
 type MacroRowProps = {
@@ -165,32 +164,55 @@ export function HomePageClient() {
   const [analysisTotals, setAnalysisTotals] = useState({ calories: 0, protein: 0, carbs: 0, fat: 0 });
   const [analysisAsDailyMeal, setAnalysisAsDailyMeal] = useState(false);
   const [analysisDailyMealDays, setAnalysisDailyMealDays] = useState<MealWeekday[]>([...ALL_WEEKDAYS]);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [hasLoadedPersistedData, setHasLoadedPersistedData] = useState(false);
 
   useEffect(() => {
-    ensureDemoSeedData();
+    let isMounted = true;
 
-    const savedMeals = readJson<StoredMealLog[]>(STORAGE_KEYS.meals);
-    const savedTargets = readJson<DailyTargets>(STORAGE_KEYS.targets);
-    const savedQuickMeals = readJson<QuickMeal[]>(STORAGE_KEYS.quickMeals);
-    const savedDisabledMacros = readJson<MacroKey[]>(STORAGE_KEYS.disabledMacros);
+    async function hydrate() {
+      try {
+        const authUserId = await getCurrentUserId();
+        if (!isMounted) return;
+        setUserId(authUserId);
 
-    if (savedMeals) {
-      setHistory(savedMeals.map(normalizeHistoryEntry));
+        const [savedMeals, savedTargets, savedQuickMeals, settings] = await Promise.all([
+          loadMeals(authUserId),
+          loadDailyTargets(authUserId),
+          loadQuickMeals(authUserId),
+          loadUserSettings(authUserId)
+        ]);
+
+        if (!isMounted) return;
+        setHistory(savedMeals.map(normalizeHistoryEntry));
+        if (savedTargets) setDailyTargets(savedTargets);
+        setQuickMeals(savedQuickMeals.map(normalizeQuickMeal));
+        setDisabledMacros(settings.disabledMacros ?? []);
+      } catch (loadError) {
+        if (!isMounted) return;
+        const message = loadError instanceof Error ? loadError.message : "Unable to load your meal data.";
+        setError(message);
+      } finally {
+        if (isMounted) setHasLoadedPersistedData(true);
+      }
     }
-    if (savedTargets) setDailyTargets(savedTargets);
-    if (savedQuickMeals) {
-      setQuickMeals(savedQuickMeals.map(normalizeQuickMeal));
-    }
-    if (savedDisabledMacros) setDisabledMacros(savedDisabledMacros);
+
+    void hydrate();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   useEffect(() => {
-    writeJson(STORAGE_KEYS.meals, history);
-  }, [history]);
+    if (!userId || !hasLoadedPersistedData) return;
+    void replaceMeals(userId, history);
+  }, [hasLoadedPersistedData, history, userId]);
 
   useEffect(() => {
-    writeJson(STORAGE_KEYS.quickMeals, quickMeals);
-  }, [quickMeals]);
+    if (!userId || !hasLoadedPersistedData) return;
+    void replaceQuickMeals(userId, quickMeals);
+  }, [hasLoadedPersistedData, quickMeals, userId]);
 
   useEffect(() => {
     const interval = window.setInterval(() => {
@@ -202,52 +224,28 @@ export function HomePageClient() {
   }, []);
 
   useEffect(() => {
-    const syncTargets = () => {
-      const recalculated = recalculateAndPersistTodayTargets();
-      const savedTargets = recalculated ?? readJson<DailyTargets>(STORAGE_KEYS.targets);
-      const savedDisabled = readJson<MacroKey[]>(STORAGE_KEYS.disabledMacros) ?? [];
+    const syncTargets = async () => {
+      if (!userId) return;
+      const [savedTargets, settings] = await Promise.all([loadDailyTargets(userId), loadUserSettings(userId)]);
       if (savedTargets) setDailyTargets(savedTargets);
-      setDisabledMacros(savedDisabled);
+      setDisabledMacros(settings.disabledMacros ?? []);
     };
 
     const onTargetsUpdated = (event: Event) => {
       const custom = event as CustomEvent<DailyTargets>;
       if (custom.detail) setDailyTargets(custom.detail);
-      const savedDisabled = readJson<MacroKey[]>(STORAGE_KEYS.disabledMacros) ?? [];
-      setDisabledMacros(savedDisabled);
     };
 
-    const onStorage = (event: StorageEvent) => {
-      if (!event.key) {
-        syncTargets();
-        return;
-      }
-
-      const watchKeys = new Set<string>([
-        STORAGE_KEYS.targets,
-        STORAGE_KEYS.disabledMacros,
-        STORAGE_KEYS.profile,
-        STORAGE_KEYS.workouts,
-        STORAGE_KEYS.workoutExceptions,
-        STORAGE_KEYS.macroManualMode
-      ]);
-
-      if (watchKeys.has(event.key)) syncTargets();
-    };
-
-    const onFocus = () => syncTargets();
-
-    syncTargets();
+    const onFocus = () => void syncTargets();
+    void syncTargets();
     window.addEventListener(TARGETS_UPDATED_EVENT, onTargetsUpdated as EventListener);
-    window.addEventListener("storage", onStorage);
     window.addEventListener("focus", onFocus);
 
     return () => {
       window.removeEventListener(TARGETS_UPDATED_EVENT, onTargetsUpdated as EventListener);
-      window.removeEventListener("storage", onStorage);
       window.removeEventListener("focus", onFocus);
     };
-  }, []);
+  }, [userId]);
 
 
   useEffect(() => {

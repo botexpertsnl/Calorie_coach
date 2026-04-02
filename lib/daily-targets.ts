@@ -1,4 +1,3 @@
-import { STORAGE_KEYS, readJson, writeJson } from "@/lib/local-data";
 import { getLocalDateKey } from "@/lib/meals";
 import { calculateDailyTargets } from "@/lib/nutrition";
 import { buildWorkoutAdjustedSummary } from "@/lib/workout-execution";
@@ -56,25 +55,19 @@ type RecalculateTodayInput = {
 };
 
 export function recalculateAndPersistTodayTargets(input: RecalculateTodayInput = {}) {
-  if (typeof window === "undefined") return null;
-
-  const manualMode = readJson<boolean>(STORAGE_KEYS.macroManualMode) ?? false;
-  if (manualMode && !input.force) return null;
-
-  const profile = input.profile ?? readJson<ProfileInput>(STORAGE_KEYS.profile);
+  const profile = input.profile ?? null;
   if (!profile) return null;
+  if (!input.force && input.disabledMacros === undefined) return null;
 
-  const workouts = input.workouts ?? readJson<WorkoutWeekPlan>(STORAGE_KEYS.workouts);
-  const exceptions = input.exceptions ?? readJson<WorkoutException[]>(STORAGE_KEYS.workoutExceptions) ?? [];
-  const disabledMacros = input.disabledMacros ?? readJson<MacroKey[]>(STORAGE_KEYS.disabledMacros) ?? [];
+  const workouts = input.workouts ?? null;
+  const exceptions = input.exceptions ?? [];
+  const disabledMacros = input.disabledMacros ?? [];
 
   const todayKey = getLocalDateKey();
   const nextTargets = {
     ...getDailyMacroTargets(todayKey, profile, workouts, exceptions),
     disabledMacros
   };
-
-  writeJson(STORAGE_KEYS.targets, nextTargets);
   notifyTargetsUpdated(nextTargets);
   return nextTargets;
 }
