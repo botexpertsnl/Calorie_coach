@@ -140,7 +140,6 @@ const specifyMuscleLabels: Record<SpecifyMuscle, string> = {
   deep_core: "Deep Core"
 };
 
-
 function normalizeMuscleGroup(muscleGroup: string | undefined, exerciseName: string, type: WorkoutExerciseType): MuscleGroup {
   const value = (muscleGroup ?? "").toLowerCase();
 
@@ -366,7 +365,6 @@ function cloneExerciseToDay(exercise: WorkoutExercise, targetDay: WorkoutDay): W
   };
 }
 
-
 function isSameExerciseConfiguration(a: WorkoutExercise, b: WorkoutExercise) {
   const key = (exercise: WorkoutExercise) => JSON.stringify({
     type: exercise.type,
@@ -432,7 +430,7 @@ function normalizePlanWithMetrics(plan: WorkoutWeekPlan, weightKg: number): Work
         const normalizedLabels = {
           muscleGroup: normalizedMuscleGroup,
           specifyMuscle: withPoints.specifyMuscle ?? inferSpecifyMuscle(withPoints.name, normalizedMuscleGroup),
-          movementType: withPoints.type === "cardio" ? "conditioning" : withPoints.movementType
+          movementType: withPoints.type === "cardio" ? "conditioning" : withPoints.type === "crossfit" ? withPoints.movementType : undefined
         };
         return {
           ...withPoints,
@@ -524,7 +522,6 @@ export default function WorkoutsPage() {
     });
   }, [exceptions, hasLoadedInitialData, plan, profile]);
 
-
   useEffect(() => {
     if (!isAddExerciseOpen) {
       setAddExerciseDays([selectedDay]);
@@ -563,8 +560,6 @@ export default function WorkoutsPage() {
     }
     return Array.from(values);
   }, [selectedExercises, typeFilter]);
-
-
 
   const availableSpecifyMuscleFilters = useMemo(() => {
     const values = new Set<SpecifyMuscle>();
@@ -654,7 +649,6 @@ export default function WorkoutsPage() {
     return pausedIds;
   }, [exceptions, selectedDateKey]);
 
-
   function setDraftField<K extends keyof PlannerDraft>(key: K, value: PlannerDraft[K]) {
     setDraft((prev) => ({ ...prev, [key]: value }));
   }
@@ -681,7 +675,6 @@ export default function WorkoutsPage() {
 
     return null;
   }
-
 
   function buildExerciseForDay(day: WorkoutDay, existingId?: string | null): WorkoutExercise {
     const now = new Date().toISOString();
@@ -796,10 +789,7 @@ export default function WorkoutsPage() {
     resetDraft("fitness");
     setAddExerciseDays([selectedDay]);
     setShowScheduleDays(false);
-<<<<<<< codex/update-work-out-delete-confirmation-flow-a1a0r6
     setAddExerciseTodayOnly(false);
-=======
->>>>>>> main
     setMessage(null);
     setIsAddExerciseOpen(true);
   }
@@ -828,10 +818,9 @@ export default function WorkoutsPage() {
       return;
     }
 
-<<<<<<< codex/update-work-out-delete-confirmation-flow-a1a0r6
     if (addExerciseTodayOnly) {
-      const todayDateKey = getAmsterdamDateKey();
       const todayDay = getAmsterdamToday();
+      const todayDateKey = getCurrentWeekDateForDay(todayDay, currentWeekStartDateKey);
       const nowIso = new Date().toISOString();
       const oneTimeExercise = buildExerciseForDay(todayDay);
       const oneTimeException: WorkoutException = {
@@ -848,8 +837,6 @@ export default function WorkoutsPage() {
       return;
     }
 
-=======
->>>>>>> main
     setPlan((prev) => {
       const next = { ...prev };
       targetDays.forEach((day) => {
@@ -1118,7 +1105,6 @@ export default function WorkoutsPage() {
                     </tbody>
                   </table>
                 </div>
-
               </div>
               <button type="button" onClick={closeProgress} className="rounded-md p-1 text-slate-400 hover:bg-slate-100">✕</button>
             </div>
@@ -1259,7 +1245,6 @@ export default function WorkoutsPage() {
         </div>
       ) : null}
 
-
       {isAddExerciseOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45 p-3 sm:p-4">
           <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white p-6 shadow-xl ring-1 ring-slate-200">
@@ -1272,7 +1257,6 @@ export default function WorkoutsPage() {
             </div>
 
             <form onSubmit={(event) => event.preventDefault()} className="mt-4 space-y-4">
-
               <label className="block text-sm text-slate-700">Exercise name / description
                 <input className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={draft.name} onChange={(event) => {
                   const value = event.target.value;
@@ -1324,6 +1308,7 @@ export default function WorkoutsPage() {
                   ))}
                 </select>
               </label>
+
               <label className="block text-sm text-slate-700">Specify Muscle <span className="text-slate-400">(optional)</span>
                 <select
                   className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 disabled:bg-slate-100 disabled:text-slate-400"
@@ -1428,7 +1413,6 @@ export default function WorkoutsPage() {
                 <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
                   <input
                     type="checkbox"
-<<<<<<< codex/update-work-out-delete-confirmation-flow-a1a0r6
                     checked={addExerciseTodayOnly}
                     onChange={(event) => {
                       const checked = event.target.checked;
@@ -1439,7 +1423,7 @@ export default function WorkoutsPage() {
                       }
                     }}
                   />
-                  Schedule this exercise one time only for today ({formatDayDateLabel(getAmsterdamDateKey())})
+                  Schedule this exercise one time only for today ({formatDayDateLabel(getCurrentWeekDateForDay(getAmsterdamToday(), currentWeekStartDateKey))})
                 </label>
 
                 <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
@@ -1450,11 +1434,6 @@ export default function WorkoutsPage() {
                     onChange={(event) => {
                       const checked = event.target.checked;
                       if (addExerciseTodayOnly) return;
-=======
-                    checked={showScheduleDays}
-                    onChange={(event) => {
-                      const checked = event.target.checked;
->>>>>>> main
                       setShowScheduleDays(checked);
                       if (!checked) {
                         setAddExerciseDays([selectedDay]);
@@ -1496,7 +1475,6 @@ export default function WorkoutsPage() {
         </div>
       ) : null}
 
-
       <main className="mx-auto w-full max-w-6xl space-y-6 px-4 py-8 md:px-8">
         <AppHeaderNav />
 
@@ -1536,16 +1514,16 @@ export default function WorkoutsPage() {
             </div>
             <div className="mt-3">
               <div className="flex flex-wrap gap-2">
-              {availableTypeFilters.map((filterType) => (
-                <button
-                  key={filterType}
-                  type="button"
-                  onClick={() => setTypeFilter((prev) => (prev === filterType ? "all" : filterType))}
-                  className={`min-w-[132px] rounded-full border px-5 py-2.5 text-sm font-semibold ${typeFilter === filterType ? "border-emerald-500 bg-emerald-50 text-emerald-700 shadow-sm" : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"}`}
-                >
-                  {filterType === "crossfit" ? "CrossFit" : filterType === "cardio" ? "Cardio" : "Fitness"}
-                </button>
-              ))}
+                {availableTypeFilters.map((filterType) => (
+                  <button
+                    key={filterType}
+                    type="button"
+                    onClick={() => setTypeFilter((prev) => (prev === filterType ? "all" : filterType))}
+                    className={`min-w-[132px] rounded-full border px-5 py-2.5 text-sm font-semibold ${typeFilter === filterType ? "border-emerald-500 bg-emerald-50 text-emerald-700 shadow-sm" : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"}`}
+                  >
+                    {filterType === "crossfit" ? "CrossFit" : filterType === "cardio" ? "Cardio" : "Fitness"}
+                  </button>
+                ))}
               </div>
             </div>
 
@@ -1610,45 +1588,46 @@ export default function WorkoutsPage() {
                 {filteredExercises.map((exercise) => {
                   const isPausedForDate = pausedExerciseIdsForSelectedDate.has(exercise.id);
                   return (
-                  <li key={exercise.id} className="rounded-xl border border-slate-200 p-4 cursor-pointer hover:bg-slate-50" onClick={() => openProgress(exercise)}>
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div>
-                        <p className={`font-semibold ${isPausedForDate ? "text-slate-500 line-through" : "text-slate-900"}`}>{exercise.name}</p>
-                        {isPausedForDate ? (
-                          <p className="mt-1 text-xs font-medium text-rose-700">🗑️ This excersize is only deleted for {formatDayDateLabel(selectedDateKey)}.</p>
-                        ) : null}
-                        {exercise.sourceType === "system" ? <p className="mt-1 inline-block rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-blue-700">Auto-generated</p> : null}
-                        <div className="mt-2 flex flex-wrap gap-1.5">
-                          <button
-                            type="button"
-                            onClick={(event) => { event.stopPropagation(); setSubFilter(exercise.muscleGroup); }}
-                            className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-slate-700 hover:bg-slate-200"
-                          >
-                            {muscleGroupLabels[exercise.muscleGroup]}
-                          </button>
-                          {exercise.specifyMuscle ? (
+                    <li key={exercise.id} className="rounded-xl border border-slate-200 p-4 cursor-pointer hover:bg-slate-50" onClick={() => openProgress(exercise)}>
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p className={`font-semibold ${isPausedForDate ? "text-slate-500 line-through" : "text-slate-900"}`}>{exercise.name}</p>
+                          {isPausedForDate ? (
+                            <p className="mt-1 text-xs font-medium text-rose-700">🗑️ This excersize is only deleted for {formatDayDateLabel(selectedDateKey)}.</p>
+                          ) : null}
+                          {exercise.sourceType === "system" ? <p className="mt-1 inline-block rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-blue-700">Auto-generated</p> : null}
+                          <div className="mt-2 flex flex-wrap gap-1.5">
                             <button
                               type="button"
-                              onClick={(event) => { event.stopPropagation(); setSpecifyFilter(exercise.specifyMuscle!); }}
-                              className="rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-semibold uppercase text-indigo-700 hover:bg-indigo-100"
+                              onClick={(event) => { event.stopPropagation(); setSubFilter(exercise.muscleGroup); }}
+                              className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-slate-700 hover:bg-slate-200"
                             >
-                              {specifyMuscleLabels[exercise.specifyMuscle]}
+                              {muscleGroupLabels[exercise.muscleGroup]}
                             </button>
-                          ) : null}
+                            {exercise.specifyMuscle ? (
+                              <button
+                                type="button"
+                                onClick={(event) => { event.stopPropagation(); setSpecifyFilter(exercise.specifyMuscle!); }}
+                                className="rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-semibold uppercase text-indigo-700 hover:bg-indigo-100"
+                              >
+                                {specifyMuscleLabels[exercise.specifyMuscle]}
+                              </button>
+                            ) : null}
+                          </div>
+                          {exercise.type === "cardio" ? <p className="mt-1 text-sm text-slate-600">Duration: {exercise.durationMinutes} minutes</p> : null}
+                          {exercise.type === "fitness" ? <p className="mt-1 text-sm text-slate-600">{exercise.sets} sets × {exercise.reps} reps × {exercise.weight} kg</p> : null}
+                          {exercise.type === "crossfit" ? <><p className="mt-1 text-sm text-slate-600">Duration: {exercise.durationMinutes} minutes</p>{exercise.weight ? <p className="text-sm text-slate-600">Weight: {exercise.weight} kg</p> : null}{exercise.sets && exercise.reps ? <p className="text-sm text-slate-600">{exercise.sets} sets × {exercise.reps} reps</p> : null}</> : null}
+                          {exercise.notes ? <p className="mt-1 text-xs text-slate-500">Notes: {exercise.notes}</p> : null}
                         </div>
-                        {exercise.type === "cardio" ? <p className="mt-1 text-sm text-slate-600">Duration: {exercise.durationMinutes} minutes</p> : null}
-                        {exercise.type === "fitness" ? <p className="mt-1 text-sm text-slate-600">{exercise.sets} sets × {exercise.reps} reps × {exercise.weight} kg</p> : null}
-                        {exercise.type === "crossfit" ? <><p className="mt-1 text-sm text-slate-600">Duration: {exercise.durationMinutes} minutes</p>{exercise.weight ? <p className="text-sm text-slate-600">Weight: {exercise.weight} kg</p> : null}{exercise.sets && exercise.reps ? <p className="text-sm text-slate-600">{exercise.sets} sets × {exercise.reps} reps</p> : null}</> : null}
-                        {exercise.notes ? <p className="mt-1 text-xs text-slate-500">Notes: {exercise.notes}</p> : null}
-                      </div>
 
-                      <div className="flex gap-2">
-                        {exercise.sourceType !== "system" ? <button type="button" aria-label="Duplicate exercise" onClick={(event) => { event.stopPropagation(); openDuplicateModal(exercise); }} className="rounded-lg border border-slate-200 px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100">Duplicate</button> : null}
-                        {exercise.sourceType !== "system" ? <button type="button" aria-label="Delete exercise" onClick={(event) => { event.stopPropagation(); setDeleteExerciseId(exercise.id); }} className="rounded-lg border border-rose-200 px-2 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-50">Delete</button> : null}
+                        <div className="flex gap-2">
+                          {exercise.sourceType !== "system" ? <button type="button" aria-label="Duplicate exercise" onClick={(event) => { event.stopPropagation(); openDuplicateModal(exercise); }} className="rounded-lg border border-slate-200 px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100">Duplicate</button> : null}
+                          {exercise.sourceType !== "system" ? <button type="button" aria-label="Delete exercise" onClick={(event) => { event.stopPropagation(); setDeleteExerciseId(exercise.id); }} className="rounded-lg border border-rose-200 px-2 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-50">Delete</button> : null}
+                        </div>
                       </div>
-                    </div>
-                  </li>
-                );})}
+                    </li>
+                  );
+                })}
               </ul>
             )}
 
