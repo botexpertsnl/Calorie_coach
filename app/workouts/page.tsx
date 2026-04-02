@@ -256,13 +256,6 @@ function inferExerciseDefaults(name: string): Partial<PlannerDraft> {
   return {};
 }
 
-function formatNumericDelta(current: number | undefined, previous: number | undefined) {
-  if (typeof current !== "number" || typeof previous !== "number") return null;
-  const diff = current - previous;
-  if (!Number.isFinite(diff)) return null;
-  return Number(diff.toFixed(2));
-}
-
 function formatRecordedDate(iso: string) {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "n/a";
@@ -461,6 +454,7 @@ export default function WorkoutsPage() {
   const [draft, setDraft] = useState<PlannerDraft>(defaultDraft);
   const [editingExerciseId, setEditingExerciseId] = useState<string | null>(null);
   const [deleteExerciseId, setDeleteExerciseId] = useState<string | null>(null);
+  const [deleteExerciseScope, setDeleteExerciseScope] = useState<"single_date" | "weekly_schedule">("single_date");
   const [progressExerciseId, setProgressExerciseId] = useState<string | null>(null);
   const [duplicateExerciseId, setDuplicateExerciseId] = useState<string | null>(null);
   const [duplicateTargets, setDuplicateTargets] = useState<WorkoutDay[]>([]);
@@ -652,21 +646,8 @@ export default function WorkoutsPage() {
   const previousProgresses = useMemo(() => {
     if (!progressExercise) return [];
     const history = getHistory(progressExercise);
-    return history.slice(-2).reverse();
+    return history.slice(-3).reverse();
   }, [progressExercise]);
-
-  const latestPreviousProgress = previousProgresses[0];
-
-  const progressComparisons = useMemo(() => {
-    if (!latestPreviousProgress) return [] as Array<{ label: string; value: number | null; unit: string }>;
-
-    return [
-      { label: "Duration", value: formatNumericDelta(draft.durationMinutes, latestPreviousProgress.durationMinutes), unit: "min" },
-      { label: "Sets", value: formatNumericDelta(draft.sets, latestPreviousProgress.sets), unit: "sets" },
-      { label: "Reps", value: formatNumericDelta(draft.reps, latestPreviousProgress.reps), unit: "reps" },
-      { label: "Weight", value: formatNumericDelta(draft.weight, latestPreviousProgress.weight), unit: "kg" }
-    ];
-  }, [draft.durationMinutes, draft.reps, draft.sets, draft.weight, latestPreviousProgress]);
 
   const selectedDaySummary = useMemo(() => {
     return selectedExercises.reduce(
@@ -935,18 +916,36 @@ export default function WorkoutsPage() {
 
   function confirmDelete() {
     if (!deleteExerciseId) return;
-    setPlan((prev) => {
-      const dayLog = prev[selectedDay];
-      return {
-        ...prev,
-        [selectedDay]: {
-          ...dayLog,
-          exercises: dayLog.exercises.filter((exercise) => exercise.id !== deleteExerciseId)
-        }
+
+    if (deleteExerciseScope === "single_date") {
+      const now = new Date().toISOString();
+      const selectedDateKey = getCurrentWeekDateForDay(selectedDay, currentWeekStartDateKey);
+      const payload: WorkoutException = {
+        id: crypto.randomUUID(),
+        date: selectedDateKey,
+        exceptionType: "missed",
+        originalWorkoutId: deleteExerciseId,
+        createdAt: now,
+        updatedAt: now
       };
-    });
+      setExceptions((prev) => [payload, ...prev]);
+      setMessage(`Exercise removed for ${formatDayDateLabel(selectedDateKey)} only.`);
+    } else {
+      setPlan((prev) => {
+        const dayLog = prev[selectedDay];
+        return {
+          ...prev,
+          [selectedDay]: {
+            ...dayLog,
+            exercises: dayLog.exercises.filter((exercise) => exercise.id !== deleteExerciseId)
+          }
+        };
+      });
+      setMessage("Exercise removed from weekly schedule.");
+    }
+
     setDeleteExerciseId(null);
-    setMessage("Exercise deleted.");
+    setDeleteExerciseScope("single_date");
   }
 
   function openProgress(exercise: WorkoutExercise) {
@@ -1158,9 +1157,29 @@ export default function WorkoutsPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45 p-3 sm:p-4">
           <div className="w-full max-w-md max-h-[86vh] overflow-y-auto rounded-2xl bg-white p-4 shadow-xl ring-1 ring-slate-200 sm:p-6">
             <h3 className="text-lg font-semibold text-slate-900">Delete exercise?</h3>
-            <p className="mt-2 text-sm text-slate-600">This removes the exercise from the weekly plan.</p>
+            <p className="mt-2 text-sm text-slate-600">Choose whether to remove this exercise for just this date or from the weekly plan.</p>
+            <div className="mt-4 space-y-2">
+              <label className="flex items-start gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700">
+                <input
+                  type="radio"
+                  name="delete-scope"
+                  checked={deleteExerciseScope === "single_date"}
+                  onChange={() => setDeleteExerciseScope("single_date")}
+                />
+                <span>Only this date ({formatDayDateLabel(getCurrentWeekDateForDay(selectedDay, currentWeekStartDateKey))})</span>
+              </label>
+              <label className="flex items-start gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700">
+                <input
+                  type="radio"
+                  name="delete-scope"
+                  checked={deleteExerciseScope === "weekly_schedule"}
+                  onChange={() => setDeleteExerciseScope("weekly_schedule")}
+                />
+                <span>Remove from weekly schedule</span>
+              </label>
+            </div>
             <div className="mt-5 flex justify-end gap-2">
-              <button type="button" onClick={() => setDeleteExerciseId(null)} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700">Cancel</button>
+              <button type="button" onClick={() => { setDeleteExerciseId(null); setDeleteExerciseScope("single_date"); }} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700">Cancel</button>
               <button type="button" onClick={confirmDelete} className="rounded-xl bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-500">Delete</button>
             </div>
           </div>
@@ -1314,27 +1333,6 @@ export default function WorkoutsPage() {
                   </div>
                 ) : null}
 
-                {latestPreviousProgress ? (
-                  <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Current vs previous entry ({formatRecordedDate(latestPreviousProgress.recordedAt)})</p>
-                    <div className="mt-2 grid gap-2 sm:grid-cols-4">
-                      {progressComparisons.map((item) => {
-                        const value = item.value;
-                        const isPositive = (value ?? 0) > 0;
-                        const isNegative = (value ?? 0) < 0;
-
-                        return (
-                          <div key={item.label} className="rounded-lg border border-slate-200 bg-white px-3 py-2">
-                            <p className="text-[11px] uppercase tracking-wide text-slate-500">{item.label}</p>
-                            <p className={`text-sm font-semibold ${isPositive ? "text-emerald-600" : isNegative ? "text-rose-600" : "text-slate-700"}`}>
-                              {value === null ? "n/a" : `${value > 0 ? "+" : ""}${value} ${item.unit}` }
-                            </p>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ) : null}
               </div>
               <button type="button" onClick={closeProgress} className="rounded-md p-1 text-slate-400 hover:bg-slate-100">✕</button>
             </div>
