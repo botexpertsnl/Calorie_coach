@@ -43,22 +43,49 @@ export function toDateKey(date: Date) {
   return date.toISOString().slice(0, 10);
 }
 
-function getAmsterdamDate(date = new Date()) {
-  const text = date.toLocaleString("sv-SE", { timeZone: "Europe/Amsterdam" });
-  return new Date(text.replace(" ", "T"));
+function getAmsterdamDateParts(date = new Date()) {
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Amsterdam",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  });
+  const parts = formatter.formatToParts(date);
+  const year = parts.find((part) => part.type === "year")?.value;
+  const month = parts.find((part) => part.type === "month")?.value;
+  const day = parts.find((part) => part.type === "day")?.value;
+
+  if (!year || !month || !day) {
+    return { dateKey: toDateKey(date) };
+  }
+
+  return { dateKey: `${year}-${month}-${day}` };
+}
+
+function parseDateKeyUtc(dateKey: string) {
+  const [year, month, day] = dateKey.split("-").map(Number);
+  return new Date(Date.UTC(year, month - 1, day));
+}
+
+export function getAmsterdamDateKey(date = new Date()) {
+  return getAmsterdamDateParts(date).dateKey;
+}
+
+export function getAmsterdamWeekStartDateKey(date = new Date()) {
+  const todayDateKey = getAmsterdamDateKey(date);
+  const today = parseDateKeyUtc(todayDateKey);
+  const jsDay = today.getUTCDay();
+  const mondayOffset = jsDay === 0 ? -6 : 1 - jsDay;
+  today.setUTCDate(today.getUTCDate() + mondayOffset);
+  return toDateKey(today);
 }
 
 export function getCurrentWeekDateKeys() {
-  const now = getAmsterdamDate();
-  const jsDay = now.getDay();
-  const mondayOffset = jsDay === 0 ? -6 : 1 - jsDay;
-  const monday = new Date(now);
-  monday.setDate(now.getDate() + mondayOffset);
-  monday.setHours(0, 0, 0, 0);
+  const monday = parseDateKeyUtc(getAmsterdamWeekStartDateKey());
 
   return dayOrder.map((_, idx) => {
     const d = new Date(monday);
-    d.setDate(monday.getDate() + idx);
+    d.setUTCDate(monday.getUTCDate() + idx);
     return toDateKey(d);
   });
 }
@@ -80,8 +107,8 @@ export function getDateKeysInRange(start: Date, end: Date) {
 }
 
 function weekdayFromDateKey(dateKey: string): WorkoutDay {
-  const d = new Date(`${dateKey}T00:00:00`);
-  const isoDay = d.getDay();
+  const d = parseDateKeyUtc(dateKey);
+  const isoDay = d.getUTCDay();
   const map: Record<number, WorkoutDay> = {
     0: "sunday",
     1: "monday",

@@ -6,7 +6,7 @@ import { STORAGE_KEYS, readJson, writeJson } from "@/lib/local-data";
 import { recalculateAndPersistTodayTargets } from "@/lib/daily-targets";
 import { ensureDemoSeedData } from "@/lib/demo-seed";
 import { calculateTrainingVolume, estimateCaloriesForType } from "@/lib/workouts";
-import { withStoredWorkoutPoints } from "@/lib/workout-execution";
+import { getAmsterdamDateKey, getAmsterdamWeekStartDateKey, withStoredWorkoutPoints } from "@/lib/workout-execution";
 import {
   CardioExercise,
   CrossfitExercise,
@@ -281,18 +281,12 @@ function getAmsterdamToday(): WorkoutDay {
   return "monday";
 }
 
-function getCurrentWeekDateForDay(day: WorkoutDay) {
-  const now = new Date();
-  const amsterdamText = now.toLocaleString("sv-SE", { timeZone: "Europe/Amsterdam" }).replace(" ", "T");
-  const amsterdamNow = new Date(amsterdamText);
-  const jsDay = amsterdamNow.getDay();
-  const mondayOffset = jsDay === 0 ? -6 : 1 - jsDay;
-  const monday = new Date(amsterdamNow);
-  monday.setDate(amsterdamNow.getDate() + mondayOffset);
-  monday.setHours(0, 0, 0, 0);
+function getCurrentWeekDateForDay(day: WorkoutDay, weekStartDateKey = getAmsterdamWeekStartDateKey()) {
+  const [year, month, dayOfMonth] = weekStartDateKey.split("-").map(Number);
+  const monday = new Date(Date.UTC(year, month - 1, dayOfMonth));
 
   const target = new Date(monday);
-  target.setDate(monday.getDate() + dayOrder.indexOf(day));
+  target.setUTCDate(monday.getUTCDate() + dayOrder.indexOf(day));
   return target.toISOString().slice(0, 10);
 }
 
@@ -482,8 +476,8 @@ export default function WorkoutsPage() {
   const [isExceptionsOpen, setIsExceptionsOpen] = useState(false);
   const [exceptionType, setExceptionType] = useState<WorkoutExceptionType>("missed");
   const [exceptionScope, setExceptionScope] = useState<"full" | "exercise">("exercise");
-  const [exceptionDate, setExceptionDate] = useState(new Date().toISOString().slice(0, 10));
-  const [exceptionNewDate, setExceptionNewDate] = useState(new Date().toISOString().slice(0, 10));
+  const [exceptionDate, setExceptionDate] = useState(getAmsterdamDateKey());
+  const [exceptionNewDate, setExceptionNewDate] = useState(getAmsterdamDateKey());
   const [exceptionOriginalWorkoutId, setExceptionOriginalWorkoutId] = useState("");
   const [exceptionExerciseName, setExceptionExerciseName] = useState("");
   const [exceptionExerciseType, setExceptionExerciseType] = useState<WorkoutExerciseType>("fitness");
@@ -496,6 +490,7 @@ export default function WorkoutsPage() {
   const [subFilter, setSubFilter] = useState<string>("all");
   const [specifyFilter, setSpecifyFilter] = useState<"all" | SpecifyMuscle>("all");
   const [hasLoadedInitialData, setHasLoadedInitialData] = useState(false);
+  const [currentWeekStartDateKey, setCurrentWeekStartDateKey] = useState(getAmsterdamWeekStartDateKey());
 
   useEffect(() => {
     ensureDemoSeedData();
@@ -503,14 +498,38 @@ export default function WorkoutsPage() {
     const savedPlan = readJson<WorkoutWeekPlan>(STORAGE_KEYS.workouts);
     const savedProfile = readJson<ProfileInput>(STORAGE_KEYS.profile);
     const savedExceptions = readJson<WorkoutException[]>(STORAGE_KEYS.workoutExceptions) ?? [];
+    const initialWeekStartDateKey = getAmsterdamWeekStartDateKey();
+    const currentWeekDateKeys = new Set(dayOrder.map((day) => getCurrentWeekDateForDay(day, initialWeekStartDateKey)));
+    const currentWeekExceptions = savedExceptions.filter(
+      (item) => currentWeekDateKeys.has(item.date) || (item.newDate ? currentWeekDateKeys.has(item.newDate) : false)
+    );
 
     const profileWeightKg = savedProfile?.weightKg ?? 70;
     if (savedPlan) setPlan(normalizePlanWithMetrics(savedPlan, profileWeightKg));
     if (savedProfile?.weightKg) setProfileWeight(savedProfile.weightKg);
     if (savedProfile) setProfile(savedProfile);
-    setExceptions(savedExceptions);
+    setExceptions(currentWeekExceptions);
+    setCurrentWeekStartDateKey(initialWeekStartDateKey);
     setHasLoadedInitialData(true);
   }, []);
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      const latestWeekStartDateKey = getAmsterdamWeekStartDateKey();
+      if (latestWeekStartDateKey === currentWeekStartDateKey) return;
+
+      const nextWeekDateKeys = new Set(dayOrder.map((day) => getCurrentWeekDateForDay(day, latestWeekStartDateKey)));
+      setExceptions((previous) =>
+        previous.filter((item) => nextWeekDateKeys.has(item.date) || (item.newDate ? nextWeekDateKeys.has(item.newDate) : false))
+      );
+      setCurrentWeekStartDateKey(latestWeekStartDateKey);
+      const amsterdamToday = getAmsterdamDateKey();
+      setExceptionDate(amsterdamToday);
+      setExceptionNewDate(amsterdamToday);
+    }, 60_000);
+
+    return () => window.clearInterval(intervalId);
+  }, [currentWeekStartDateKey]);
 
   useEffect(() => {
     writeJson(STORAGE_KEYS.workouts, plan);
@@ -660,7 +679,8 @@ export default function WorkoutsPage() {
 
 
   const plannedOptionsForExceptionDay = useMemo(() => {
-    const day = new Date(`${exceptionDate}T00:00:00`).toLocaleDateString("en-US", { weekday: "long" }).toLowerCase() as WorkoutDay;
+    const weekday = new Date(`${exceptionDate}T00:00:00Z`).toLocaleDateString("en-US", { weekday: "long", timeZone: "UTC" }).toLowerCase();
+    const day = (weekday in dayLabels ? weekday : "monday") as WorkoutDay;
     return (plan[day]?.exercises ?? []).filter((exercise) => !exercise.isPaused);
   }, [exceptionDate, plan]);
 
@@ -833,7 +853,7 @@ export default function WorkoutsPage() {
     }
 
     if (addExerciseDateOnly) {
-      const selectedDateKey = getCurrentWeekDateForDay(selectedDay);
+      const selectedDateKey = getCurrentWeekDateForDay(selectedDay, currentWeekStartDateKey);
       const nowIso = new Date().toISOString();
       const newException: WorkoutException = {
         id: crypto.randomUUID(),
@@ -1634,7 +1654,7 @@ export default function WorkoutsPage() {
                       }
                     }}
                   />
-                  Add only for this specific date ({formatDayDateLabel(getCurrentWeekDateForDay(selectedDay))})
+                  Add only for this specific date ({formatDayDateLabel(getCurrentWeekDateForDay(selectedDay, currentWeekStartDateKey))})
                 </label>
 
                 <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
@@ -1722,7 +1742,7 @@ export default function WorkoutsPage() {
         <section>
           <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
             <div className="flex items-center justify-between gap-3">
-              <h2 className="text-xl font-semibold text-slate-900">{dayLabels[selectedDay]} {formatDayDateLabel(getCurrentWeekDateForDay(selectedDay))}</h2>
+              <h2 className="text-xl font-semibold text-slate-900">{formatDayDateLabel(getCurrentWeekDateForDay(selectedDay, currentWeekStartDateKey))} | {dayLabels[selectedDay]}</h2>
               <button type="button" onClick={() => setIsExceptionsOpen(true)} className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Workout Exceptions</button>
             </div>
             <div className="mt-3">
