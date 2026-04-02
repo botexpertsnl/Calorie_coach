@@ -459,6 +459,7 @@ export default function WorkoutsPage() {
   const [isAddExerciseOpen, setIsAddExerciseOpen] = useState(false);
   const [showScheduleDays, setShowScheduleDays] = useState(false);
   const [addExerciseDays, setAddExerciseDays] = useState<WorkoutDay[]>([selectedDay]);
+  const [addExerciseTodayOnly, setAddExerciseTodayOnly] = useState(false);
   const [isPlannerDaysExpanded, setIsPlannerDaysExpanded] = useState(false);
   const [profileWeight, setProfileWeight] = useState(70);
   const [profile, setProfile] = useState<ProfileInput | null>(null);
@@ -528,6 +529,7 @@ export default function WorkoutsPage() {
     if (!isAddExerciseOpen) {
       setAddExerciseDays([selectedDay]);
       setShowScheduleDays(false);
+      setAddExerciseTodayOnly(false);
     }
   }, [isAddExerciseOpen, selectedDay]);
 
@@ -794,6 +796,10 @@ export default function WorkoutsPage() {
     resetDraft("fitness");
     setAddExerciseDays([selectedDay]);
     setShowScheduleDays(false);
+<<<<<<< codex/update-work-out-delete-confirmation-flow-a1a0r6
+    setAddExerciseTodayOnly(false);
+=======
+>>>>>>> main
     setMessage(null);
     setIsAddExerciseOpen(true);
   }
@@ -802,6 +808,7 @@ export default function WorkoutsPage() {
     setIsAddExerciseOpen(false);
     setShowScheduleDays(false);
     setAddExerciseDays([selectedDay]);
+    setAddExerciseTodayOnly(false);
     resetDraft("fitness");
   }
 
@@ -821,6 +828,28 @@ export default function WorkoutsPage() {
       return;
     }
 
+<<<<<<< codex/update-work-out-delete-confirmation-flow-a1a0r6
+    if (addExerciseTodayOnly) {
+      const todayDateKey = getAmsterdamDateKey();
+      const todayDay = getAmsterdamToday();
+      const nowIso = new Date().toISOString();
+      const oneTimeExercise = buildExerciseForDay(todayDay);
+      const oneTimeException: WorkoutException = {
+        id: crypto.randomUUID(),
+        date: todayDateKey,
+        exceptionType: "extra",
+        extraWorkoutData: oneTimeExercise,
+        createdAt: nowIso,
+        updatedAt: nowIso
+      };
+      setExceptions((prev) => [oneTimeException, ...prev]);
+      setMessage(`One-time exercise added for today (${formatDayDateLabel(todayDateKey)}).`);
+      closeAddExerciseModal();
+      return;
+    }
+
+=======
+>>>>>>> main
     setPlan((prev) => {
       const next = { ...prev };
       targetDays.forEach((day) => {
@@ -1399,9 +1428,33 @@ export default function WorkoutsPage() {
                 <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
                   <input
                     type="checkbox"
+<<<<<<< codex/update-work-out-delete-confirmation-flow-a1a0r6
+                    checked={addExerciseTodayOnly}
+                    onChange={(event) => {
+                      const checked = event.target.checked;
+                      setAddExerciseTodayOnly(checked);
+                      if (checked) {
+                        setShowScheduleDays(false);
+                        setAddExerciseDays([selectedDay]);
+                      }
+                    }}
+                  />
+                  Schedule this exercise one time only for today ({formatDayDateLabel(getAmsterdamDateKey())})
+                </label>
+
+                <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={showScheduleDays}
+                    disabled={addExerciseTodayOnly}
+                    onChange={(event) => {
+                      const checked = event.target.checked;
+                      if (addExerciseTodayOnly) return;
+=======
                     checked={showScheduleDays}
                     onChange={(event) => {
                       const checked = event.target.checked;
+>>>>>>> main
                       setShowScheduleDays(checked);
                       if (!checked) {
                         setAddExerciseDays([selectedDay]);
