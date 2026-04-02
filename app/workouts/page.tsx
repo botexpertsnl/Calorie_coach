@@ -6,7 +6,7 @@ import { STORAGE_KEYS, readJson, writeJson } from "@/lib/local-data";
 import { recalculateAndPersistTodayTargets } from "@/lib/daily-targets";
 import { ensureDemoSeedData } from "@/lib/demo-seed";
 import { calculateTrainingVolume, estimateCaloriesForType } from "@/lib/workouts";
-import { getAmsterdamDateKey, getAmsterdamWeekStartDateKey, withStoredWorkoutPoints } from "@/lib/workout-execution";
+import { getAmsterdamWeekStartDateKey, withStoredWorkoutPoints } from "@/lib/workout-execution";
 import {
   CardioExercise,
   CrossfitExercise,
@@ -19,11 +19,9 @@ import {
   WorkoutExercise,
   WorkoutExerciseType,
   WorkoutException,
-  WorkoutExceptionType,
   WorkoutIntensity,
   WorkoutProgressEntry,
   WorkoutWeekPlan,
-  FULL_DAY_EXCEPTION_ID
 } from "@/lib/types";
 
 const dayOrder: WorkoutDay[] = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
@@ -461,25 +459,11 @@ export default function WorkoutsPage() {
   const [isAddExerciseOpen, setIsAddExerciseOpen] = useState(false);
   const [showScheduleDays, setShowScheduleDays] = useState(false);
   const [addExerciseDays, setAddExerciseDays] = useState<WorkoutDay[]>([selectedDay]);
-  const [addExerciseDateOnly, setAddExerciseDateOnly] = useState(false);
   const [isPlannerDaysExpanded, setIsPlannerDaysExpanded] = useState(false);
   const [profileWeight, setProfileWeight] = useState(70);
   const [profile, setProfile] = useState<ProfileInput | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [exceptions, setExceptions] = useState<WorkoutException[]>([]);
-  const [isExceptionsOpen, setIsExceptionsOpen] = useState(false);
-  const [exceptionType, setExceptionType] = useState<WorkoutExceptionType>("missed");
-  const [exceptionScope, setExceptionScope] = useState<"full" | "exercise">("exercise");
-  const [exceptionDate, setExceptionDate] = useState(getAmsterdamDateKey());
-  const [exceptionNewDate, setExceptionNewDate] = useState(getAmsterdamDateKey());
-  const [exceptionOriginalWorkoutId, setExceptionOriginalWorkoutId] = useState("");
-  const [exceptionExerciseName, setExceptionExerciseName] = useState("");
-  const [exceptionExerciseType, setExceptionExerciseType] = useState<WorkoutExerciseType>("fitness");
-  const [exceptionDuration, setExceptionDuration] = useState(20);
-  const [exceptionSets, setExceptionSets] = useState(3);
-  const [exceptionReps, setExceptionReps] = useState(10);
-  const [exceptionWeight, setExceptionWeight] = useState(20);
-  const [exceptionIntensity, setExceptionIntensity] = useState<WorkoutIntensity>("moderate");
   const [typeFilter, setTypeFilter] = useState<"all" | "fitness" | "cardio" | "crossfit">("all");
   const [subFilter, setSubFilter] = useState<string>("all");
   const [specifyFilter, setSpecifyFilter] = useState<"all" | SpecifyMuscle>("all");
@@ -517,9 +501,6 @@ export default function WorkoutsPage() {
         previous.filter((item) => nextWeekDateKeys.has(item.date) || (item.newDate ? nextWeekDateKeys.has(item.newDate) : false))
       );
       setCurrentWeekStartDateKey(latestWeekStartDateKey);
-      const amsterdamToday = getAmsterdamDateKey();
-      setExceptionDate(amsterdamToday);
-      setExceptionNewDate(amsterdamToday);
     }, 60_000);
 
     return () => window.clearInterval(intervalId);
@@ -546,7 +527,6 @@ export default function WorkoutsPage() {
   useEffect(() => {
     if (!isAddExerciseOpen) {
       setAddExerciseDays([selectedDay]);
-      setAddExerciseDateOnly(false);
       setShowScheduleDays(false);
     }
   }, [isAddExerciseOpen, selectedDay]);
@@ -658,12 +638,20 @@ export default function WorkoutsPage() {
     );
   }, [profileWeight, selectedExercises]);
 
+  const selectedDateKey = useMemo(
+    () => getCurrentWeekDateForDay(selectedDay, currentWeekStartDateKey),
+    [currentWeekStartDateKey, selectedDay]
+  );
 
-  const plannedOptionsForExceptionDay = useMemo(() => {
-    const weekday = new Date(`${exceptionDate}T00:00:00Z`).toLocaleDateString("en-US", { weekday: "long", timeZone: "UTC" }).toLowerCase();
-    const day = (weekday in dayLabels ? weekday : "monday") as WorkoutDay;
-    return (plan[day]?.exercises ?? []).filter((exercise) => !exercise.isPaused);
-  }, [exceptionDate, plan]);
+  const pausedExerciseIdsForSelectedDate = useMemo(() => {
+    const pausedIds = new Set<string>();
+    for (const item of exceptions) {
+      if (item.exceptionType !== "missed" || item.date !== selectedDateKey) continue;
+      if (typeof item.originalWorkoutId === "string") pausedIds.add(item.originalWorkoutId);
+    }
+    return pausedIds;
+  }, [exceptions, selectedDateKey]);
+
 
   function setDraftField<K extends keyof PlannerDraft>(key: K, value: PlannerDraft[K]) {
     setDraft((prev) => ({ ...prev, [key]: value }));
@@ -805,7 +793,6 @@ export default function WorkoutsPage() {
   function openAddExerciseModal() {
     resetDraft("fitness");
     setAddExerciseDays([selectedDay]);
-    setAddExerciseDateOnly(false);
     setShowScheduleDays(false);
     setIsAddExerciseOpen(true);
   }
@@ -830,23 +817,6 @@ export default function WorkoutsPage() {
     const targetDays = showScheduleDays ? addExerciseDays : [selectedDay];
     if (!targetDays.length) {
       setMessage("Please select at least one day.");
-      return;
-    }
-
-    if (addExerciseDateOnly) {
-      const selectedDateKey = getCurrentWeekDateForDay(selectedDay, currentWeekStartDateKey);
-      const nowIso = new Date().toISOString();
-      const newException: WorkoutException = {
-        id: crypto.randomUUID(),
-        date: selectedDateKey,
-        exceptionType: "extra",
-        extraWorkoutData: createExerciseFromException(draft.type),
-        createdAt: nowIso,
-        updatedAt: nowIso
-      };
-      setExceptions((prev) => [newException, ...prev]);
-      setMessage(`Exercise added for ${formatDayDateLabel(selectedDateKey)} only.`);
-      closeAddExerciseModal();
       return;
     }
 
@@ -1005,152 +975,6 @@ export default function WorkoutsPage() {
     closeDuplicateModal();
   }
 
-  function createExerciseFromException(type: WorkoutExerciseType): WorkoutExercise {
-    const now = new Date().toISOString();
-
-    if (type === "cardio") {
-      const estimatedCalories = estimateCaloriesForType({
-        type: "cardio",
-        weightKg: profileWeight,
-        name: exceptionExerciseName,
-        durationMinutes: Math.max(1, exceptionDuration),
-        intensity: exceptionIntensity
-      });
-
-      const baseExercise = {
-        id: crypto.randomUUID(),
-        type: "cardio",
-        workoutDayId: selectedDay,
-        name: exceptionExerciseName.trim(),
-        durationMinutes: Math.max(1, exceptionDuration),
-        intensity: exceptionIntensity,
-        trainingVolume: 0,
-        estimatedCalories,
-        strengthPoints: 0,
-        cardioPoints: 0,
-        notes: "",
-        muscleGroup: "legs",
-        movementType: "conditioning",
-        progressHistory: [],
-        createdAt: now,
-        updatedAt: now,
-        isPaused: false
-      } as CardioExercise;
-
-      return baseExercise;
-    }
-
-    if (type === "crossfit") {
-      const duration = Math.max(0, exceptionDuration);
-      const sets = exceptionSets > 0 ? exceptionSets : undefined;
-      const reps = exceptionReps > 0 ? exceptionReps : undefined;
-      const weight = exceptionWeight > 0 ? exceptionWeight : undefined;
-
-      const baseExercise = {
-        id: crypto.randomUUID(),
-        type: "crossfit",
-        workoutDayId: selectedDay,
-        name: exceptionExerciseName.trim(),
-        durationMinutes: duration,
-        sets,
-        reps,
-        weight,
-        trainingVolume: calculateTrainingVolume(sets, reps, weight),
-        estimatedCalories: estimateCaloriesForType({
-          type: "crossfit",
-          weightKg: profileWeight,
-          name: exceptionExerciseName,
-          durationMinutes: duration,
-          intensity: exceptionIntensity
-        }),
-        strengthPoints: 0,
-        cardioPoints: 0,
-        notes: "",
-        muscleGroup: "legs",
-        movementType: "functional",
-        intensity: exceptionIntensity,
-        progressHistory: [],
-        createdAt: now,
-        updatedAt: now,
-        isPaused: false
-      } as CrossfitExercise;
-
-      return baseExercise;
-    }
-
-    const baseExercise = {
-      id: crypto.randomUUID(),
-      type: "fitness",
-      workoutDayId: selectedDay,
-      name: exceptionExerciseName.trim(),
-      sets: Math.max(1, exceptionSets),
-      reps: Math.max(1, exceptionReps),
-      weight: Math.max(0, exceptionWeight),
-      trainingVolume: calculateTrainingVolume(Math.max(1, exceptionSets), Math.max(1, exceptionReps), Math.max(0, exceptionWeight)),
-      estimatedCalories: estimateCaloriesForType({
-        type: "fitness",
-        weightKg: profileWeight,
-        name: exceptionExerciseName,
-        sets: Math.max(1, exceptionSets),
-        reps: Math.max(1, exceptionReps),
-        weight: Math.max(0, exceptionWeight),
-        intensity: exceptionIntensity
-      }),
-      strengthPoints: 0,
-      cardioPoints: 0,
-      notes: "",
-      muscleGroup: "legs",
-      movementType: undefined,
-      intensity: exceptionIntensity,
-      progressHistory: [],
-      createdAt: now,
-      updatedAt: now,
-      isPaused: false
-    } as FitnessExercise;
-
-    return baseExercise;
-  }
-
-  function saveException(event: FormEvent) {
-    event.preventDefault();
-
-    if (exceptionScope === "exercise" && (exceptionType === "missed" || exceptionType === "replaced" || exceptionType === "rescheduled") && !exceptionOriginalWorkoutId) {
-      setMessage("Select a planned workout for this exception.");
-      return;
-    }
-
-    if (exceptionType === "replaced" && !exceptionExerciseName.trim()) {
-      setMessage("Provide a workout title for replacement workout.");
-      return;
-    }
-
-    if (exceptionType === "rescheduled" && !exceptionNewDate) {
-      setMessage("Choose a new date for rescheduled workout.");
-      return;
-    }
-
-    const now = new Date().toISOString();
-    const payload: WorkoutException = {
-      id: crypto.randomUUID(),
-      date: exceptionDate,
-      exceptionType,
-      originalWorkoutId: (exceptionType === "missed" || exceptionType === "replaced" || exceptionType === "rescheduled")
-        ? (exceptionScope === "full" ? FULL_DAY_EXCEPTION_ID : exceptionOriginalWorkoutId || undefined)
-        : undefined,
-      newDate: exceptionType === "rescheduled" ? exceptionNewDate : undefined,
-      replacementWorkoutData: exceptionType === "replaced" ? createExerciseFromException(exceptionExerciseType) : undefined,
-      extraWorkoutData: undefined,
-      createdAt: now,
-      updatedAt: now
-    };
-
-    setExceptions((prev) => [payload, ...prev]);
-    setMessage("Workout exception saved.");
-    setIsExceptionsOpen(false);
-    setExceptionOriginalWorkoutId("");
-    setExceptionExerciseName("");
-  }
-
   return (
     <>
       {deleteExerciseId ? (
@@ -1182,83 +1006,6 @@ export default function WorkoutsPage() {
               <button type="button" onClick={() => { setDeleteExerciseId(null); setDeleteExerciseScope("single_date"); }} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700">Cancel</button>
               <button type="button" onClick={confirmDelete} className="rounded-xl bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-500">Delete</button>
             </div>
-          </div>
-        </div>
-      ) : null}
-
-      {isExceptionsOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45 p-3 sm:p-4">
-          <div className="w-full max-w-2xl max-h-[86vh] overflow-y-auto rounded-2xl bg-white p-4 shadow-xl ring-1 ring-slate-200 sm:p-6">
-            <div className="flex items-start justify-between">
-              <div>
-                <h3 className="text-xl font-semibold text-slate-900">Workout Exceptions</h3>
-                <p className="text-sm text-slate-500">Only log differences from your weekly plan.</p>
-              </div>
-              <button type="button" onClick={() => setIsExceptionsOpen(false)} className="rounded-md p-1 text-slate-400 hover:bg-slate-100">✕</button>
-            </div>
-
-            <form onSubmit={saveException} className="mt-4 space-y-4">
-              <label className="block text-sm text-slate-700">Exception type
-                <select className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={exceptionType} onChange={(e) => setExceptionType(e.target.value as WorkoutExceptionType)}>
-                  <option value="missed">Missed Workout</option>
-                  <option value="replaced">Replaced Workout</option>
-                  <option value="rescheduled">Rescheduled Workout</option>
-                </select>
-              </label>
-
-              <label className="block text-sm text-slate-700">Date
-                <input type="date" className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={exceptionDate} onChange={(e) => setExceptionDate(e.target.value)} />
-              </label>
-
-              <label className="block text-sm text-slate-700">Apply to
-                <select className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={exceptionScope} onChange={(e) => setExceptionScope(e.target.value as "full" | "exercise")}>
-                  <option value="full">Full workout day</option>
-                  <option value="exercise">Specific exercise</option>
-                </select>
-              </label>
-
-              {(exceptionType === "missed" || exceptionType === "replaced" || exceptionType === "rescheduled") && exceptionScope === "exercise" ? (
-                <label className="block text-sm text-slate-700">Planned workout
-                  <select className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={exceptionOriginalWorkoutId} onChange={(e) => setExceptionOriginalWorkoutId(e.target.value)}>
-                    <option value="">Select workout</option>
-                    {plannedOptionsForExceptionDay.map((exercise) => (<option key={exercise.id} value={exercise.id}>{exercise.name} ({exercise.type})</option>))}
-                  </select>
-                </label>
-              ) : null}
-
-              {exceptionType === "rescheduled" ? (
-                <label className="block text-sm text-slate-700">New date
-                  <input type="date" className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={exceptionNewDate} onChange={(e) => setExceptionNewDate(e.target.value)} />
-                </label>
-              ) : null}
-
-              {(exceptionType === "replaced") ? (
-                <div className="space-y-3 rounded-xl border border-slate-200 p-4">
-                  <label className="block text-sm text-slate-700">Workout title
-                    <input className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={exceptionExerciseName} onChange={(e) => setExceptionExerciseName(e.target.value)} />
-                  </label>
-                  <label className="block text-sm text-slate-700">Type
-                    <select className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={exceptionExerciseType} onChange={(e) => setExceptionExerciseType(e.target.value as WorkoutExerciseType)}>
-                      <option value="cardio">Cardio</option>
-                      <option value="fitness">Fitness</option>
-                      <option value="crossfit">CrossFit</option>
-                    </select>
-                  </label>
-                  {(exceptionExerciseType === "cardio" || exceptionExerciseType === "crossfit") ? <label className="block text-sm text-slate-700">Duration (minutes)<input type="number" min={0} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={exceptionDuration} onChange={(e)=>setExceptionDuration(Number(e.target.value))} /></label> : null}
-                  {(exceptionExerciseType === "fitness" || exceptionExerciseType === "crossfit") ? <div className="grid gap-3 sm:grid-cols-3"><label className="text-sm text-slate-700">Sets<input type="number" min={0} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={exceptionSets} onChange={(e)=>setExceptionSets(Number(e.target.value))} /></label><label className="text-sm text-slate-700">Reps<input type="number" min={0} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={exceptionReps} onChange={(e)=>setExceptionReps(Number(e.target.value))} /></label><label className="text-sm text-slate-700">Weight (kg)<input type="number" min={0} step="0.5" className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={exceptionWeight} onChange={(e)=>setExceptionWeight(Number(e.target.value))} /></label></div> : null}
-                  <label className="block text-sm text-slate-700">Intensity
-                    <select className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={exceptionIntensity} onChange={(e)=>setExceptionIntensity(e.target.value as WorkoutIntensity)}>
-                      <option value="low">Low</option><option value="moderate">Moderate</option><option value="high">High</option>
-                    </select>
-                  </label>
-                </div>
-              ) : null}
-
-              <div className="flex justify-end gap-2">
-                <button type="button" onClick={() => setIsExceptionsOpen(false)} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700">Cancel</button>
-                <button type="submit" className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-400">Save Exception</button>
-              </div>
-            </form>
           </div>
         </div>
       ) : null}
@@ -1642,27 +1389,9 @@ export default function WorkoutsPage() {
                 <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
                   <input
                     type="checkbox"
-                    checked={addExerciseDateOnly}
-                    onChange={(event) => {
-                      const checked = event.target.checked;
-                      setAddExerciseDateOnly(checked);
-                      if (checked) {
-                        setShowScheduleDays(false);
-                        setAddExerciseDays([selectedDay]);
-                      }
-                    }}
-                  />
-                  Add only for this specific date ({formatDayDateLabel(getCurrentWeekDateForDay(selectedDay, currentWeekStartDateKey))})
-                </label>
-
-                <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
-                  <input
-                    type="checkbox"
                     checked={showScheduleDays}
-                    disabled={addExerciseDateOnly}
                     onChange={(event) => {
                       const checked = event.target.checked;
-                      if (addExerciseDateOnly) return;
                       setShowScheduleDays(checked);
                       if (!checked) {
                         setAddExerciseDays([selectedDay]);
@@ -1712,9 +1441,8 @@ export default function WorkoutsPage() {
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h1 className="text-3xl font-semibold text-slate-900">Workouts Planner</h1>
-              <p className="mt-2 text-sm text-slate-500">Planned workouts are treated as completed by default. Only log exceptions when reality differed from plan.</p>
+              <p className="mt-2 text-sm text-slate-500">Plan your weekly workouts and update progress per exercise.</p>
             </div>
-            <button type="button" onClick={openAddExerciseModal} className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-400">Add Exercise</button>
           </div>
           <div className="mt-4 flex items-center justify-between md:hidden">
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Planner days</p>
@@ -1740,8 +1468,8 @@ export default function WorkoutsPage() {
         <section>
           <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
             <div className="flex items-center justify-between gap-3">
-              <h2 className="text-xl font-semibold text-slate-900">{formatDayDateLabel(getCurrentWeekDateForDay(selectedDay, currentWeekStartDateKey))} | {dayLabels[selectedDay]}</h2>
-              <button type="button" onClick={() => setIsExceptionsOpen(true)} className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Workout Exceptions</button>
+              <h2 className="text-xl font-semibold text-slate-900">{formatDayDateLabel(selectedDateKey)} | {dayLabels[selectedDay]}</h2>
+              <button type="button" onClick={openAddExerciseModal} className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-400">Add Exercise</button>
             </div>
             <div className="mt-3">
               <div className="flex flex-wrap gap-2">
@@ -1816,11 +1544,16 @@ export default function WorkoutsPage() {
               <p className="mt-4 rounded-xl border border-dashed border-slate-200 p-8 text-center text-sm text-slate-500">No exercises match the selected filters.</p>
             ) : (
               <ul className="mt-4 space-y-3">
-                {filteredExercises.map((exercise) => (
+                {filteredExercises.map((exercise) => {
+                  const isPausedForDate = pausedExerciseIdsForSelectedDate.has(exercise.id);
+                  return (
                   <li key={exercise.id} className="rounded-xl border border-slate-200 p-4 cursor-pointer hover:bg-slate-50" onClick={() => openProgress(exercise)}>
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div>
-                        <p className="font-semibold text-slate-900">{exercise.name}</p>
+                        <p className={`font-semibold ${isPausedForDate ? "text-slate-500 line-through" : "text-slate-900"}`}>{exercise.name}</p>
+                        {isPausedForDate ? (
+                          <p className="mt-1 text-xs font-medium text-amber-700">⏸️ This excersize is pauzed for the date, pauzed on {formatDayDateLabel(selectedDateKey)}.</p>
+                        ) : null}
                         {exercise.sourceType === "system" ? <p className="mt-1 inline-block rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-blue-700">Auto-generated</p> : null}
                         <div className="mt-2 flex flex-wrap gap-1.5">
                           <button
@@ -1853,7 +1586,7 @@ export default function WorkoutsPage() {
                       </div>
                     </div>
                   </li>
-                ))}
+                );})}
               </ul>
             )}
 
