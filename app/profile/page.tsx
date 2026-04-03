@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { AppHeaderNav } from "@/components/AppHeaderNav";
 import { TARGETS_UPDATED_EVENT, getDailyMacroTargets, recalculateAndPersistTodayTargets } from "@/lib/daily-targets";
 import { calculateDailyTargets } from "@/lib/nutrition";
-import { getCurrentUserId, loadBodyProgress, loadDailyTargets, loadProfile, loadUserSettings, loadWorkoutExceptions, loadWorkoutPlan, replaceBodyProgress, saveDailyTargets, saveProfile, saveUserSettings } from "@/lib/supabase/user-data";
+import { getCurrentUserId, loadBodyProgress, loadDailyTargets, loadProfile, loadUserSettings, loadWorkoutExceptions, loadWorkoutPlan, replaceBodyProgress, saveDailyTargets, saveProfile as saveSupabaseProfile, saveUserSettings } from "@/lib/supabase/user-data";
 import { getCurrentWeekDateKeys } from "@/lib/workout-execution";
 import { BodyMetricProgressEntry, BodyProgressHistory, DailyTargets, MacroKey, ProfileInput, WorkoutDay, WorkoutException, WorkoutWeekPlan } from "@/lib/types";
 
@@ -476,7 +476,7 @@ export default function ProfilePage() {
 
     setProfile(profileToSave);
     if (userId) {
-      void saveProfile(userId, profileToSave);
+      void saveSupabaseProfile(userId, profileToSave);
       void saveUserSettings(userId, {
         disabledMacros,
         macroManualMode: isManualMode,
