@@ -48,7 +48,7 @@ export function ProfileGoalsModal({ isOpen, initialProfile, onClose, onSave }: P
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
-      <div className="w-full max-w-3xl rounded-2xl bg-white p-6 shadow-xl">
+      <div className="mobile-popup-panel w-full max-w-3xl rounded-2xl bg-white p-6 shadow-xl">
         <div className="mb-5 flex items-center justify-between">
           <h2 className="text-2xl font-semibold text-slate-900">User Profile &amp; Goals</h2>
           <button

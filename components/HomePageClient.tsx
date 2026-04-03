@@ -4,10 +4,9 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { AppHeaderNav } from "@/components/AppHeaderNav";
 import { QuickMealsModal } from "@/components/QuickMealsModal";
 import { Spinner } from "@/components/Spinner";
-import { STORAGE_KEYS, readJson, writeJson } from "@/lib/local-data";
-import { TARGETS_UPDATED_EVENT, recalculateAndPersistTodayTargets } from "@/lib/daily-targets";
-import { ensureDemoSeedData } from "@/lib/demo-seed";
+import { TARGETS_UPDATED_EVENT } from "@/lib/daily-targets";
 import { ALL_WEEKDAYS, applyDailyMealsForDate, getLocalDateKey, getMealsForDate, toCalorieResponseFromQuickMeal } from "@/lib/meals";
+import { getCurrentUserId, loadDailyTargets, loadMeals, loadQuickMeals, loadUserSettings, replaceMeals, replaceQuickMeals } from "@/lib/supabase/user-data";
 import { CalorieResponse, DailyTargets, MacroKey, MealSourceType, MealWeekday, QuickMeal, StoredMealLog } from "@/lib/types";
 
 type MacroRowProps = {
@@ -163,32 +162,58 @@ export function HomePageClient() {
   const [analysisDate, setAnalysisDate] = useState(getNowDateTimeInputValues().date);
   const [analysisTime, setAnalysisTime] = useState(getNowDateTimeInputValues().time);
   const [analysisTotals, setAnalysisTotals] = useState({ calories: 0, protein: 0, carbs: 0, fat: 0 });
+  const [analysisAsDailyMeal, setAnalysisAsDailyMeal] = useState(false);
+  const [analysisDailyMealDays, setAnalysisDailyMealDays] = useState<MealWeekday[]>([...ALL_WEEKDAYS]);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [hasLoadedPersistedData, setHasLoadedPersistedData] = useState(false);
+  const [popupNotice, setPopupNotice] = useState<string | null>(null);
 
   useEffect(() => {
-    ensureDemoSeedData();
+    let isMounted = true;
 
-    const savedMeals = readJson<StoredMealLog[]>(STORAGE_KEYS.meals);
-    const savedTargets = readJson<DailyTargets>(STORAGE_KEYS.targets);
-    const savedQuickMeals = readJson<QuickMeal[]>(STORAGE_KEYS.quickMeals);
-    const savedDisabledMacros = readJson<MacroKey[]>(STORAGE_KEYS.disabledMacros);
+    async function hydrate() {
+      try {
+        const authUserId = await getCurrentUserId();
+        if (!isMounted) return;
+        setUserId(authUserId);
 
-    if (savedMeals) {
-      setHistory(savedMeals.map(normalizeHistoryEntry));
+        const [savedMeals, savedTargets, savedQuickMeals, settings] = await Promise.all([
+          loadMeals(authUserId),
+          loadDailyTargets(authUserId),
+          loadQuickMeals(authUserId),
+          loadUserSettings(authUserId)
+        ]);
+
+        if (!isMounted) return;
+        setHistory(savedMeals.map(normalizeHistoryEntry));
+        if (savedTargets) setDailyTargets(savedTargets);
+        setQuickMeals(savedQuickMeals.map(normalizeQuickMeal));
+        setDisabledMacros(settings.disabledMacros ?? []);
+      } catch (loadError) {
+        if (!isMounted) return;
+        const message = loadError instanceof Error ? loadError.message : "Unable to load your meal data.";
+        setError(message);
+      } finally {
+        if (isMounted) setHasLoadedPersistedData(true);
+      }
     }
-    if (savedTargets) setDailyTargets(savedTargets);
-    if (savedQuickMeals) {
-      setQuickMeals(savedQuickMeals.map(normalizeQuickMeal));
-    }
-    if (savedDisabledMacros) setDisabledMacros(savedDisabledMacros);
+
+    void hydrate();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   useEffect(() => {
-    writeJson(STORAGE_KEYS.meals, history);
-  }, [history]);
+    if (!userId || !hasLoadedPersistedData) return;
+    void replaceMeals(userId, history);
+  }, [hasLoadedPersistedData, history, userId]);
 
   useEffect(() => {
-    writeJson(STORAGE_KEYS.quickMeals, quickMeals);
-  }, [quickMeals]);
+    if (!userId || !hasLoadedPersistedData) return;
+    void replaceQuickMeals(userId, quickMeals);
+  }, [hasLoadedPersistedData, quickMeals, userId]);
 
   useEffect(() => {
     const interval = window.setInterval(() => {
@@ -200,52 +225,28 @@ export function HomePageClient() {
   }, []);
 
   useEffect(() => {
-    const syncTargets = () => {
-      const recalculated = recalculateAndPersistTodayTargets();
-      const savedTargets = recalculated ?? readJson<DailyTargets>(STORAGE_KEYS.targets);
-      const savedDisabled = readJson<MacroKey[]>(STORAGE_KEYS.disabledMacros) ?? [];
+    const syncTargets = async () => {
+      if (!userId) return;
+      const [savedTargets, settings] = await Promise.all([loadDailyTargets(userId), loadUserSettings(userId)]);
       if (savedTargets) setDailyTargets(savedTargets);
-      setDisabledMacros(savedDisabled);
+      setDisabledMacros(settings.disabledMacros ?? []);
     };
 
     const onTargetsUpdated = (event: Event) => {
       const custom = event as CustomEvent<DailyTargets>;
       if (custom.detail) setDailyTargets(custom.detail);
-      const savedDisabled = readJson<MacroKey[]>(STORAGE_KEYS.disabledMacros) ?? [];
-      setDisabledMacros(savedDisabled);
     };
 
-    const onStorage = (event: StorageEvent) => {
-      if (!event.key) {
-        syncTargets();
-        return;
-      }
-
-      const watchKeys = new Set<string>([
-        STORAGE_KEYS.targets,
-        STORAGE_KEYS.disabledMacros,
-        STORAGE_KEYS.profile,
-        STORAGE_KEYS.workouts,
-        STORAGE_KEYS.workoutExceptions,
-        STORAGE_KEYS.macroManualMode
-      ]);
-
-      if (watchKeys.has(event.key)) syncTargets();
-    };
-
-    const onFocus = () => syncTargets();
-
-    syncTargets();
+    const onFocus = () => void syncTargets();
+    void syncTargets();
     window.addEventListener(TARGETS_UPDATED_EVENT, onTargetsUpdated as EventListener);
-    window.addEventListener("storage", onStorage);
     window.addEventListener("focus", onFocus);
 
     return () => {
       window.removeEventListener(TARGETS_UPDATED_EVENT, onTargetsUpdated as EventListener);
-      window.removeEventListener("storage", onStorage);
       window.removeEventListener("focus", onFocus);
     };
-  }, []);
+  }, [userId]);
 
 
   useEffect(() => {
@@ -276,7 +277,13 @@ export function HomePageClient() {
     setHistory((prev) => [entry, ...prev]);
   }
 
-  function addMealFromAnalysis(result: CalorieResponse, meta: { text: string; source: "text" | "image" }, date: string, time: string) {
+  function addMealFromAnalysis(
+    result: CalorieResponse,
+    meta: { text: string; source: "text" | "image" },
+    date: string,
+    time: string,
+    options?: { sourceType?: MealSourceType; quickMealId?: string }
+  ) {
     const createdAt = toIsoFromDateTime(date, time);
     const mealDate = date || getNowDateTimeInputValues().date;
 
@@ -285,7 +292,8 @@ export function HomePageClient() {
       title: meta.text,
       text: meta.text,
       source: meta.source,
-      sourceType: "ai",
+      sourceType: options?.sourceType ?? "ai",
+      quickMealId: options?.quickMealId,
       mealDate,
       result,
       createdAt
@@ -311,7 +319,15 @@ export function HomePageClient() {
       carbs: result.totals.carbs,
       fat: result.totals.fat
     });
+    setAnalysisAsDailyMeal(false);
+    setAnalysisDailyMealDays([...ALL_WEEKDAYS]);
     setAnalysisModalOpen(true);
+  }
+
+  function toggleAnalysisDailyMealDay(day: MealWeekday) {
+    setAnalysisDailyMealDays((prev) =>
+      prev.includes(day) ? prev.filter((item) => item !== day) : [...prev, day]
+    );
   }
 
   function addAnalyzedMealFromModal() {
@@ -327,12 +343,48 @@ export function HomePageClient() {
       }
     };
 
-    addMealFromAnalysis(updatedResult, analysisMeta, analysisDate, analysisTime);
+    let quickMealIdForMealLog: string | undefined;
+    if (analysisAsDailyMeal) {
+      const now = new Date().toISOString();
+      const safeDays = analysisDailyMealDays.length ? analysisDailyMealDays : [...ALL_WEEKDAYS];
+      const quickMealId = crypto.randomUUID();
+      quickMealIdForMealLog = quickMealId;
+
+      setQuickMeals((prev) => [
+        {
+          id: quickMealId,
+          title: analysisMeta.text || "Daily Meal",
+          calories: Math.max(0, Number(analysisTotals.calories) || 0),
+          protein: Math.max(0, Number(analysisTotals.protein) || 0),
+          carbs: Math.max(0, Number(analysisTotals.carbs) || 0),
+          fat: Math.max(0, Number(analysisTotals.fat) || 0),
+          isDailyMeal: true,
+          dailyMealDays: safeDays,
+          createdAt: now,
+          updatedAt: now
+        },
+        ...prev
+      ]);
+    }
+
+    addMealFromAnalysis(updatedResult, analysisMeta, analysisDate, analysisTime, {
+      sourceType: analysisAsDailyMeal ? "daily" : "ai",
+      quickMealId: quickMealIdForMealLog
+    });
     setAnalysisModalOpen(false);
     setAnalysisMeta(null);
     setAnalysisResult(null);
+    setAnalysisAsDailyMeal(false);
+    setAnalysisDailyMealDays([...ALL_WEEKDAYS]);
     setMealDescription("");
+    setPopupNotice("Meal added.");
   }
+
+  useEffect(() => {
+    if (!popupNotice) return;
+    const timeoutId = window.setTimeout(() => setPopupNotice(null), 2200);
+    return () => window.clearTimeout(timeoutId);
+  }, [popupNotice]);
 
   async function analyzeMealText(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -585,7 +637,7 @@ export function HomePageClient() {
     <>
       {deleteMealId ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-3 sm:p-4">
-          <div className="w-full max-w-md max-h-[86vh] overflow-y-auto rounded-2xl bg-white p-4 shadow-xl ring-1 ring-slate-200 sm:p-6">
+          <div className="mobile-popup-panel w-full max-w-md max-h-[86vh] overflow-y-auto rounded-2xl bg-white p-4 shadow-xl ring-1 ring-slate-200 sm:p-6">
             <h3 className="text-lg font-semibold text-slate-900">Delete meal?</h3>
             <p className="mt-2 text-sm text-slate-600">Are you sure you want to delete this meal?</p>
             {mealPendingDelete ? <p className="mt-2 text-xs text-slate-500">{mealPendingDelete.text}</p> : null}
@@ -598,7 +650,7 @@ export function HomePageClient() {
       ) : null}
       {editMealId ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-3 sm:p-4">
-          <div className="w-full max-w-lg max-h-[86vh] overflow-y-auto rounded-2xl bg-white p-4 shadow-xl ring-1 ring-slate-200 sm:p-6">
+          <div className="mobile-popup-panel w-full max-w-lg max-h-[86vh] overflow-y-auto rounded-2xl bg-white p-4 shadow-xl ring-1 ring-slate-200 sm:p-6">
             <h3 className="text-lg font-semibold text-slate-900">Edit meal</h3>
             <div className="mt-4 space-y-3">
               <label className="block text-sm text-slate-700">Meal description
@@ -659,9 +711,12 @@ export function HomePageClient() {
 
 
       {analysisModalOpen && analysisResult ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-3 sm:p-4">
-          <div className="w-full max-w-2xl max-h-[86vh] overflow-y-auto rounded-2xl bg-white p-4 shadow-xl ring-1 ring-slate-200 sm:p-6">
-            <h3 className="text-lg font-semibold text-slate-900">Analyzed meal macros</h3>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-0 sm:p-4">
+          <div className="mobile-popup-panel h-full w-full max-w-none overflow-y-auto rounded-none bg-white p-4 shadow-xl ring-0 sm:h-auto sm:max-w-2xl sm:max-h-[86vh] sm:rounded-2xl sm:ring-1 sm:ring-slate-200 sm:p-6">
+            <div className="flex items-start justify-between gap-3">
+              <h3 className="text-lg font-semibold text-slate-900">Analyzed meal macros</h3>
+              <button type="button" onClick={() => { setAnalysisModalOpen(false); setAnalysisMeta(null); setAnalysisResult(null); }} className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700" aria-label="Close analyzed meal modal">✕</button>
+            </div>
             <p className="mt-1 text-sm text-slate-500">Review and edit macros before adding this meal.</p>
 
             <div className="mt-4 grid gap-3 md:grid-cols-2">
@@ -672,6 +727,28 @@ export function HomePageClient() {
                 <input type="time" value={analysisTime} onChange={(event) => setAnalysisTime(event.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" />
               </label>
             </div>
+
+            <label className="mt-4 flex items-start gap-3 rounded-xl border border-slate-200 p-3 text-sm text-slate-700">
+              <input type="checkbox" checked={analysisAsDailyMeal} onChange={(event) => setAnalysisAsDailyMeal(event.target.checked)} className="mt-0.5 h-4 w-4 rounded border-slate-300 text-emerald-500 focus:ring-emerald-400" />
+              <span>
+                <span className="font-medium text-slate-800">Save as Daily Meal</span>
+                <span className="mt-1 block text-xs text-slate-500">This meal can be auto-added on selected days.</span>
+              </span>
+            </label>
+
+            {analysisAsDailyMeal ? (
+              <div className="mt-3 rounded-xl border border-slate-200 p-3">
+                <p className="text-sm font-medium text-slate-800">Auto-add days</p>
+                <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                  {ALL_WEEKDAYS.map((day) => (
+                    <label key={day} className="inline-flex items-center gap-2 text-sm text-slate-700">
+                      <input type="checkbox" checked={analysisDailyMealDays.includes(day)} onChange={() => toggleAnalysisDailyMealDay(day)} className="h-4 w-4 rounded border-slate-300 text-emerald-500 focus:ring-emerald-400" />
+                      {day.charAt(0).toUpperCase() + day.slice(1)}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            ) : null}
 
             <div className="mt-4 grid gap-3 md:grid-cols-2">
               <label className="text-sm text-slate-700">Calories
@@ -695,6 +772,11 @@ export function HomePageClient() {
               <button type="button" onClick={addAnalyzedMealFromModal} className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-400">Add meal</button>
             </div>
           </div>
+        </div>
+      ) : null}
+      {popupNotice ? (
+        <div className="fixed inset-x-4 bottom-4 z-[60] mx-auto w-full max-w-sm rounded-xl bg-slate-900 px-4 py-3 text-center text-sm font-medium text-white shadow-lg">
+          {popupNotice}
         </div>
       ) : null}
 
@@ -734,7 +816,14 @@ export function HomePageClient() {
           <p className="mt-1 text-sm text-slate-500">Describe your meal in detail or take a photo for better accuracy.</p>
 
           <form onSubmit={analyzeMealText} className="mt-4 space-y-4">
-            <textarea className="min-h-36 w-full rounded-2xl border border-slate-200 bg-white p-4 text-slate-800 outline-none transition focus:border-emerald-400" placeholder="e.g., Two scrambled eggs with a slice of whole grain toast and half an avocado..." value={mealDescription} onChange={(event) => setMealDescription(event.target.value)} />
+            <div className="relative">
+              <textarea className="min-h-36 w-full rounded-2xl border border-slate-200 bg-white p-4 pr-14 text-slate-800 outline-none transition focus:border-emerald-400" placeholder="e.g., Two scrambled eggs with a slice of whole grain toast and half an avocado..." value={mealDescription} onChange={(event) => setMealDescription(event.target.value)} />
+              {isImageLoading ? (
+                <div className="pointer-events-none absolute right-4 top-4 inline-flex items-center gap-2 rounded-lg bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700">
+                  <Spinner /> Reading photo...
+                </div>
+              ) : null}
+            </div>
 
             <input ref={fileInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={(event) => {
               const file = event.target.files?.[0];
