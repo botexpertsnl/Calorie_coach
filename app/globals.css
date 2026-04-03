@@ -9,3 +9,11 @@
 body {
   @apply bg-slate-100 text-slate-900 antialiased;
 }
+
+@media (max-width: 768px) {
+  .mobile-popup-panel input,
+  .mobile-popup-panel select,
+  .mobile-popup-panel textarea {
+    font-size: 16px;
+  }
+}

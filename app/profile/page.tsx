@@ -2,10 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { AppHeaderNav } from "@/components/AppHeaderNav";
-import { STORAGE_KEYS, readJson, writeJson } from "@/lib/local-data";
 import { TARGETS_UPDATED_EVENT, getDailyMacroTargets, recalculateAndPersistTodayTargets } from "@/lib/daily-targets";
-import { ensureDemoSeedData } from "@/lib/demo-seed";
 import { calculateDailyTargets } from "@/lib/nutrition";
+import { getCurrentUserId, loadBodyProgress, loadDailyTargets, loadProfile, loadUserSettings, loadWorkoutExceptions, loadWorkoutPlan, replaceBodyProgress, saveDailyTargets, saveProfile as saveSupabaseProfile, saveUserSettings } from "@/lib/supabase/user-data";
 import { getCurrentWeekDateKeys } from "@/lib/workout-execution";
 import { BodyMetricProgressEntry, BodyProgressHistory, DailyTargets, MacroKey, ProfileInput, WorkoutDay, WorkoutException, WorkoutWeekPlan } from "@/lib/types";
 
@@ -233,41 +232,59 @@ export default function ProfilePage() {
   const [showUnsavedChangesPopup, setShowUnsavedChangesPopup] = useState(false);
   const [pendingNavigationUrl, setPendingNavigationUrl] = useState<string | null>(null);
   const [suppressBeforeUnload, setSuppressBeforeUnload] = useState(false);
+  const [userId, setUserId] = useState<string | null>(null);
 
   useEffect(() => {
-    ensureDemoSeedData();
+    let isMounted = true;
+    async function hydrate() {
+      try {
+        const authUserId = await getCurrentUserId();
+        if (!isMounted) return;
+        setUserId(authUserId);
 
-    const savedProfile = readJson<ProfileInput>(STORAGE_KEYS.profile);
-    const savedTargets = readJson<DailyTargets>(STORAGE_KEYS.targets);
-    const savedDisabled = readJson<MacroKey[]>(STORAGE_KEYS.disabledMacros);
-    const savedManualMode = readJson<boolean>(STORAGE_KEYS.macroManualMode);
-    const savedWorkouts = readJson<WorkoutWeekPlan>(STORAGE_KEYS.workouts);
-    const savedExceptions = readJson<WorkoutException[]>(STORAGE_KEYS.workoutExceptions) ?? [];
-    const savedWeekScheme = readJson<Record<WorkoutDay, Record<MacroKey, number>>>(STORAGE_KEYS.weeklyMacroScheme);
-    const savedBodyProgress = readJson<BodyProgressHistory>(STORAGE_KEYS.bodyProgress);
+        const [savedProfile, savedTargets, savedSettings, savedWorkouts, savedExceptions, savedBodyProgress] = await Promise.all([
+          loadProfile(authUserId),
+          loadDailyTargets(authUserId),
+          loadUserSettings(authUserId),
+          loadWorkoutPlan(authUserId),
+          loadWorkoutExceptions(authUserId),
+          loadBodyProgress(authUserId)
+        ]);
 
-    if (savedProfile) {
-      setProfile({ ...defaultProfile, ...savedProfile });
-      const parsedGoals = parseGoalsFromText(savedProfile.goalText ?? "");
-      setMainGoal(parsedGoals.mainGoal);
-      setGoalIntensity(parsedGoals.goalIntensity || (savedProfile.goalIntensity ?? ""));
-      setGoalDescription(parsedGoals.goalDescription);
+        if (!isMounted) return;
+        if (savedProfile) {
+          setProfile({ ...defaultProfile, ...savedProfile });
+          const parsedGoals = parseGoalsFromText(savedProfile.goalText ?? "");
+          setMainGoal(parsedGoals.mainGoal);
+          setGoalIntensity(parsedGoals.goalIntensity || (savedProfile.goalIntensity ?? ""));
+          setGoalDescription(parsedGoals.goalDescription);
+        }
+
+        if (savedTargets) setTargets(savedTargets);
+        setDisabledMacros(savedSettings.disabledMacros ?? []);
+        setIsManualMode(savedSettings.macroManualMode);
+        if (savedWorkouts) setWorkouts(savedWorkouts);
+        setExceptions(savedExceptions);
+        if (savedSettings.weeklyMacroScheme) setManualWeekScheme(savedSettings.weeklyMacroScheme);
+
+        const initialProgress = (savedBodyProgress.weight.length || savedBodyProgress.waist.length)
+          ? savedBodyProgress
+          : {
+              weight: [{ id: crypto.randomUUID(), value: (savedProfile?.weightKg ?? defaultProfile.weightKg), recordedAt: new Date().toISOString(), createdAt: new Date().toISOString() }],
+              waist: [{ id: crypto.randomUUID(), value: (savedProfile?.waistCm ?? defaultProfile.waistCm), recordedAt: new Date().toISOString(), createdAt: new Date().toISOString() }]
+            };
+        setBodyProgress(initialProgress);
+        setWeightEntry({ value: (savedProfile?.weightKg ?? defaultProfile.weightKg), ...getAmsterdamNowInputValues() });
+        setWaistEntry({ value: (savedProfile?.waistCm ?? defaultProfile.waistCm), ...getAmsterdamNowInputValues() });
+      } catch (error) {
+        if (!isMounted) return;
+        setMessage(error instanceof Error ? error.message : "Unable to load profile data.");
+      }
     }
-
-    if (savedTargets) setTargets(savedTargets);
-    if (savedDisabled) setDisabledMacros(savedDisabled);
-    if (typeof savedManualMode === "boolean") setIsManualMode(savedManualMode);
-    if (savedWorkouts) setWorkouts(savedWorkouts);
-    setExceptions(savedExceptions);
-    if (savedWeekScheme) setManualWeekScheme(savedWeekScheme);
-
-    const initialProgress = savedBodyProgress ?? {
-      weight: [{ id: crypto.randomUUID(), value: (savedProfile?.weightKg ?? defaultProfile.weightKg), recordedAt: new Date().toISOString(), createdAt: new Date().toISOString() }],
-      waist: [{ id: crypto.randomUUID(), value: (savedProfile?.waistCm ?? defaultProfile.waistCm), recordedAt: new Date().toISOString(), createdAt: new Date().toISOString() }]
+    void hydrate();
+    return () => {
+      isMounted = false;
     };
-    setBodyProgress(initialProgress);
-    setWeightEntry({ value: (savedProfile?.weightKg ?? defaultProfile.weightKg), ...getAmsterdamNowInputValues() });
-    setWaistEntry({ value: (savedProfile?.waistCm ?? defaultProfile.waistCm), ...getAmsterdamNowInputValues() });
   }, []);
 
   useEffect(() => {
@@ -303,28 +320,21 @@ export default function ProfilePage() {
 
   useEffect(() => {
     const syncWorkouts = () => {
-      const savedWorkouts = readJson<WorkoutWeekPlan>(STORAGE_KEYS.workouts);
-      const savedExceptions = readJson<WorkoutException[]>(STORAGE_KEYS.workoutExceptions) ?? [];
-      setWorkouts(savedWorkouts);
-      setExceptions(savedExceptions);
-    };
-
-    const onStorage = (event: StorageEvent) => {
-      if (!event.key || event.key === STORAGE_KEYS.workouts || event.key === STORAGE_KEYS.workoutExceptions) {
-        syncWorkouts();
-      }
+      if (!userId) return;
+      void Promise.all([loadWorkoutPlan(userId), loadWorkoutExceptions(userId)]).then(([savedWorkouts, savedExceptions]) => {
+        setWorkouts(savedWorkouts);
+        setExceptions(savedExceptions);
+      });
     };
 
     const onFocus = () => syncWorkouts();
 
-    window.addEventListener("storage", onStorage);
     window.addEventListener("focus", onFocus);
 
     return () => {
-      window.removeEventListener("storage", onStorage);
       window.removeEventListener("focus", onFocus);
     };
-  }, []);
+  }, [userId]);
 
   const builtGoalText = useMemo(
     () => composeGoalText(mainGoal.trim(), goalIntensity.trim(), goalDescription.trim()),
@@ -379,7 +389,6 @@ export default function ProfilePage() {
           [key]: Math.max(0, value)
         }
       };
-      writeJson(STORAGE_KEYS.weeklyMacroScheme, next);
       return next;
     });
 
@@ -412,7 +421,7 @@ export default function ProfilePage() {
     const entry: BodyMetricProgressEntry = { id: crypto.randomUUID(), value: Number(weightEntry.value), recordedAt, createdAt };
     const next = { ...bodyProgress, weight: [...bodyProgress.weight, entry] };
     setBodyProgress(next);
-    writeJson(STORAGE_KEYS.bodyProgress, next);
+    if (userId) void replaceBodyProgress(userId, next);
     updateProfile("weightKg", Number(weightEntry.value));
     markUnsavedChanges();
     setIsWeightModalOpen(false);
@@ -424,7 +433,7 @@ export default function ProfilePage() {
     const entry: BodyMetricProgressEntry = { id: crypto.randomUUID(), value: Number(waistEntry.value), recordedAt, createdAt };
     const next = { ...bodyProgress, waist: [...bodyProgress.waist, entry] };
     setBodyProgress(next);
-    writeJson(STORAGE_KEYS.bodyProgress, next);
+    if (userId) void replaceBodyProgress(userId, next);
     updateProfile("waistCm", Number(waistEntry.value));
     markUnsavedChanges();
     setIsWaistModalOpen(false);
@@ -466,15 +475,20 @@ export default function ProfilePage() {
     };
 
     setProfile(profileToSave);
-    writeJson(STORAGE_KEYS.profile, profileToSave);
-    writeJson(STORAGE_KEYS.disabledMacros, disabledMacros);
-    writeJson(STORAGE_KEYS.macroManualMode, isManualMode);
-    writeJson(STORAGE_KEYS.weeklyMacroScheme, manualWeekScheme);
-    writeJson(STORAGE_KEYS.bodyProgress, bodyProgress);
+    if (userId) {
+      void saveSupabaseProfile(userId, profileToSave);
+      void saveUserSettings(userId, {
+        disabledMacros,
+        macroManualMode: isManualMode,
+        weeklyMacroScheme: manualWeekScheme
+      });
+      void replaceBodyProgress(userId, bodyProgress);
+    }
 
     if (!isManualMode) {
       const nextTargets = recalculateAndPersistTodayTargets({ profile: profileToSave, workouts, exceptions, disabledMacros, force: true });
       if (nextTargets) setTargets(nextTargets);
+      if (nextTargets && userId) void saveDailyTargets(userId, nextTargets);
       const confirmationMessage = "Profile saved successfully. Daily macros were recalculated from your profile, daily activity, and today's workout plan.";
       setMessage(confirmationMessage);
       setSaveConfirmation(confirmationMessage);
@@ -482,7 +496,7 @@ export default function ProfilePage() {
       const todayDay = dayFromDateKey(new Date().toISOString().slice(0, 10));
       const todayManual = manualWeekScheme[todayDay] ?? createDefaultWeekMacroScheme(targets)[todayDay];
       const manualTargets = { ...targets, ...todayManual, disabledMacros };
-      writeJson(STORAGE_KEYS.targets, manualTargets);
+      if (userId) void saveDailyTargets(userId, manualTargets);
       window.dispatchEvent(new CustomEvent(TARGETS_UPDATED_EVENT, { detail: manualTargets }));
       const confirmationMessage = "Profile saved successfully. Manual daily macros were kept.";
       setMessage(confirmationMessage);
@@ -650,16 +664,24 @@ export default function ProfilePage() {
               onChange={(e) => {
                 const next = e.target.checked;
                 setIsManualMode(next);
-                writeJson(STORAGE_KEYS.macroManualMode, next);
+                if (userId) {
+                  void saveUserSettings(userId, {
+                    disabledMacros,
+                    macroManualMode: next,
+                    weeklyMacroScheme: next ? calculatedWeekScheme : manualWeekScheme
+                  });
+                }
                 markUnsavedChanges();
                 if (next) {
                   setManualWeekScheme(calculatedWeekScheme);
-                  writeJson(STORAGE_KEYS.weeklyMacroScheme, calculatedWeekScheme);
                   return;
                 }
 
                 const recalculated = recalculateAndPersistTodayTargets({ profile, workouts, exceptions, disabledMacros, force: true });
-                if (recalculated) setTargets(recalculated);
+                if (recalculated) {
+                  setTargets(recalculated);
+                  if (userId) void saveDailyTargets(userId, recalculated);
+                }
               }}
             />
             <span className="font-medium text-slate-800">input manual</span>
@@ -748,7 +770,7 @@ export default function ProfilePage() {
 
       {isWeightModalOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-3 sm:p-4">
-          <div className="w-full max-w-md max-h-[86vh] overflow-y-auto rounded-2xl bg-white p-4 shadow-xl ring-1 ring-slate-200 sm:p-6">
+          <div className="mobile-popup-panel w-full max-w-md max-h-[86vh] overflow-y-auto rounded-2xl bg-white p-4 shadow-xl ring-1 ring-slate-200 sm:p-6">
             <h3 className="text-lg font-semibold text-slate-900">Register Weight Progress</h3>
             <p className="mt-2 text-sm text-slate-600">Previous value: <span className="font-semibold text-slate-900">{latestWeightEntry?.value ?? profile.weightKg} kg</span></p>
             <p className="text-xs text-slate-500">Saved on: {formatAmsterdamDateTime(latestWeightEntry?.recordedAt ?? latestWeightEntry?.createdAt)}</p>
@@ -775,7 +797,7 @@ export default function ProfilePage() {
 
       {isWaistModalOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-3 sm:p-4">
-          <div className="w-full max-w-md max-h-[86vh] overflow-y-auto rounded-2xl bg-white p-4 shadow-xl ring-1 ring-slate-200 sm:p-6">
+          <div className="mobile-popup-panel w-full max-w-md max-h-[86vh] overflow-y-auto rounded-2xl bg-white p-4 shadow-xl ring-1 ring-slate-200 sm:p-6">
             <h3 className="text-lg font-semibold text-slate-900">Register Waist Progress</h3>
             <p className="mt-2 text-sm text-slate-600">Previous value: <span className="font-semibold text-slate-900">{latestWaistEntry?.value ?? profile.waistCm} cm</span></p>
             <p className="text-xs text-slate-500">Saved on: {formatAmsterdamDateTime(latestWaistEntry?.recordedAt ?? latestWaistEntry?.createdAt)}</p>
@@ -802,7 +824,7 @@ export default function ProfilePage() {
 
       {saveConfirmation ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-3 sm:p-4">
-          <div className="w-full max-w-md max-h-[86vh] overflow-y-auto rounded-2xl bg-white p-4 shadow-xl ring-1 ring-slate-200 sm:p-6">
+          <div className="mobile-popup-panel w-full max-w-md max-h-[86vh] overflow-y-auto rounded-2xl bg-white p-4 shadow-xl ring-1 ring-slate-200 sm:p-6">
             <h3 className="text-lg font-semibold text-slate-900">Profile saved</h3>
             <p className="mt-2 text-sm text-slate-600">{saveConfirmation}</p>
             <div className="mt-5 flex justify-end">
@@ -814,7 +836,7 @@ export default function ProfilePage() {
 
       {showUnsavedChangesPopup ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-3 sm:p-4">
-          <div className="w-full max-w-md max-h-[86vh] overflow-y-auto rounded-2xl bg-white p-4 shadow-xl ring-1 ring-slate-200 sm:p-6">
+          <div className="mobile-popup-panel w-full max-w-md max-h-[86vh] overflow-y-auto rounded-2xl bg-white p-4 shadow-xl ring-1 ring-slate-200 sm:p-6">
             <h3 className="text-lg font-semibold text-slate-900">Unsaved changes</h3>
             <p className="mt-2 text-sm text-slate-600">You have unsaved profile changes. Save before leaving this page?</p>
             <div className="mt-5 flex justify-end gap-2">

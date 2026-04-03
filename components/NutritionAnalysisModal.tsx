@@ -59,7 +59,7 @@ export function NutritionAnalysisModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
-      <div className="w-full max-w-4xl rounded-3xl bg-white shadow-2xl ring-1 ring-slate-200">
+      <div className="mobile-popup-panel w-full max-w-4xl rounded-3xl bg-white shadow-2xl ring-1 ring-slate-200">
         <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
           <h2 className="text-xl font-semibold text-slate-900">Nutrition Analysis</h2>
           <button type="button" onClick={onClose} className="rounded-lg p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700" aria-label="Close nutrition analysis">✕</button>

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
+import { logoutAction } from "@/app/auth/actions";
 
 const navItems = [
   { label: "Meals", href: "/" },
@@ -52,6 +53,14 @@ export function AppHeaderNav() {
               </Link>
             );
           })}
+          <form action={logoutAction}>
+            <button
+              type="submit"
+              className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+            >
+              Log out
+            </button>
+          </form>
         </nav>
       </header>
 
@@ -97,6 +106,14 @@ export function AppHeaderNav() {
                 </Link>
               );
             })}
+            <form action={logoutAction}>
+              <button
+                type="submit"
+                className="mt-3 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-left text-base font-semibold text-slate-700"
+              >
+                Log out
+              </button>
+            </form>
           </nav>
         </aside>
       </div>
