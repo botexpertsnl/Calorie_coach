@@ -166,6 +166,7 @@ export function HomePageClient() {
   const [analysisDailyMealDays, setAnalysisDailyMealDays] = useState<MealWeekday[]>([...ALL_WEEKDAYS]);
   const [userId, setUserId] = useState<string | null>(null);
   const [hasLoadedPersistedData, setHasLoadedPersistedData] = useState(false);
+  const [popupNotice, setPopupNotice] = useState<string | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -376,7 +377,14 @@ export function HomePageClient() {
     setAnalysisAsDailyMeal(false);
     setAnalysisDailyMealDays([...ALL_WEEKDAYS]);
     setMealDescription("");
+    setPopupNotice("Meal added.");
   }
+
+  useEffect(() => {
+    if (!popupNotice) return;
+    const timeoutId = window.setTimeout(() => setPopupNotice(null), 2200);
+    return () => window.clearTimeout(timeoutId);
+  }, [popupNotice]);
 
   async function analyzeMealText(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -703,9 +711,12 @@ export function HomePageClient() {
 
 
       {analysisModalOpen && analysisResult ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-3 sm:p-4">
-          <div className="mobile-popup-panel w-full max-w-2xl max-h-[86vh] overflow-y-auto rounded-2xl bg-white p-4 shadow-xl ring-1 ring-slate-200 sm:p-6">
-            <h3 className="text-lg font-semibold text-slate-900">Analyzed meal macros</h3>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-0 sm:p-4">
+          <div className="mobile-popup-panel h-full w-full max-w-none overflow-y-auto rounded-none bg-white p-4 shadow-xl ring-0 sm:h-auto sm:max-w-2xl sm:max-h-[86vh] sm:rounded-2xl sm:ring-1 sm:ring-slate-200 sm:p-6">
+            <div className="flex items-start justify-between gap-3">
+              <h3 className="text-lg font-semibold text-slate-900">Analyzed meal macros</h3>
+              <button type="button" onClick={() => { setAnalysisModalOpen(false); setAnalysisMeta(null); setAnalysisResult(null); }} className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700" aria-label="Close analyzed meal modal">✕</button>
+            </div>
             <p className="mt-1 text-sm text-slate-500">Review and edit macros before adding this meal.</p>
 
             <div className="mt-4 grid gap-3 md:grid-cols-2">
@@ -761,6 +772,11 @@ export function HomePageClient() {
               <button type="button" onClick={addAnalyzedMealFromModal} className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-400">Add meal</button>
             </div>
           </div>
+        </div>
+      ) : null}
+      {popupNotice ? (
+        <div className="fixed inset-x-4 bottom-4 z-[60] mx-auto w-full max-w-sm rounded-xl bg-slate-900 px-4 py-3 text-center text-sm font-medium text-white shadow-lg">
+          {popupNotice}
         </div>
       ) : null}
 

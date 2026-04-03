@@ -468,6 +468,7 @@ export default function WorkoutsPage() {
   const [hasLoadedInitialData, setHasLoadedInitialData] = useState(false);
   const [currentWeekStartDateKey, setCurrentWeekStartDateKey] = useState(getAmsterdamWeekStartDateKey());
   const [userId, setUserId] = useState<string | null>(null);
+  const [popupSubmissionNotice, setPopupSubmissionNotice] = useState<string | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -857,6 +858,7 @@ export default function WorkoutsPage() {
       };
       setExceptions((prev) => [oneTimeException, ...prev]);
       setMessage(`One-time exercise added for today (${formatDayDateLabel(todayDateKey)}).`);
+      setPopupSubmissionNotice("Exercise saved.");
       closeAddExerciseModal();
       return;
     }
@@ -871,6 +873,7 @@ export default function WorkoutsPage() {
     });
 
     setMessage(`Exercise saved for ${targetDays.length} day${targetDays.length > 1 ? "s" : ""}.`);
+    setPopupSubmissionNotice("Exercise saved.");
     closeAddExerciseModal();
   }
 
@@ -895,6 +898,7 @@ export default function WorkoutsPage() {
 
     const wasProgressSave = Boolean(progressExerciseId);
     setMessage(editingExerciseId ? "Exercise updated." : "Exercise saved.");
+    setPopupSubmissionNotice(editingExerciseId ? "Exercise updated." : "Exercise saved.");
 
     if (wasProgressSave) {
       closeProgress();
@@ -924,6 +928,12 @@ export default function WorkoutsPage() {
       crossfitUseWeight: exercise.type === "crossfit" ? typeof exercise.weight === "number" : false
     });
   }
+
+  useEffect(() => {
+    if (!popupSubmissionNotice) return;
+    const timeoutId = window.setTimeout(() => setPopupSubmissionNotice(null), 2200);
+    return () => window.clearTimeout(timeoutId);
+  }, [popupSubmissionNotice]);
 
   function confirmDelete() {
     if (!deleteExerciseId) return;
@@ -1270,8 +1280,8 @@ export default function WorkoutsPage() {
       ) : null}
 
       {isAddExerciseOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45 p-3 sm:p-4">
-          <div className="mobile-popup-panel w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white p-6 shadow-xl ring-1 ring-slate-200">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45 p-0 sm:p-4">
+          <div className="mobile-popup-panel h-full w-full max-w-none overflow-y-auto rounded-none bg-white p-4 shadow-xl ring-0 sm:max-h-[90vh] sm:max-w-2xl sm:rounded-2xl sm:p-6 sm:ring-1 sm:ring-slate-200">
             <div className="flex items-start justify-between">
               <div>
                 <h3 className="text-xl font-semibold text-slate-900">{editingExerciseId ? "Edit Exercise" : "Add Exercise"}</h3>
@@ -1496,6 +1506,11 @@ export default function WorkoutsPage() {
 
             {message ? <p className="mt-3 text-sm text-slate-600">{message}</p> : null}
           </div>
+        </div>
+      ) : null}
+      {popupSubmissionNotice ? (
+        <div className="fixed inset-x-4 bottom-4 z-[60] mx-auto w-full max-w-sm rounded-xl bg-slate-900 px-4 py-3 text-center text-sm font-medium text-white shadow-lg">
+          {popupSubmissionNotice}
         </div>
       ) : null}
 
