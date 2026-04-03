@@ -2,9 +2,8 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { AppHeaderNav } from "@/components/AppHeaderNav";
-import { STORAGE_KEYS, readJson, writeJson } from "@/lib/local-data";
 import { recalculateAndPersistTodayTargets } from "@/lib/daily-targets";
-import { ensureDemoSeedData } from "@/lib/demo-seed";
+import { getCurrentUserId, loadProfile, loadWorkoutExceptions, loadWorkoutPlan, replaceWorkoutExceptions, saveDailyTargets, saveWorkoutPlan } from "@/lib/supabase/user-data";
 import { calculateTrainingVolume, estimateCaloriesForType } from "@/lib/workouts";
 import { getAmsterdamWeekStartDateKey, withStoredWorkoutPoints } from "@/lib/workout-execution";
 import {
@@ -468,26 +467,46 @@ export default function WorkoutsPage() {
   const [specifyFilter, setSpecifyFilter] = useState<"all" | SpecifyMuscle>("all");
   const [hasLoadedInitialData, setHasLoadedInitialData] = useState(false);
   const [currentWeekStartDateKey, setCurrentWeekStartDateKey] = useState(getAmsterdamWeekStartDateKey());
+  const [userId, setUserId] = useState<string | null>(null);
 
   useEffect(() => {
-    ensureDemoSeedData();
+    let isMounted = true;
+    async function hydrate() {
+      try {
+        const authUserId = await getCurrentUserId();
+        if (!isMounted) return;
+        setUserId(authUserId);
 
-    const savedPlan = readJson<WorkoutWeekPlan>(STORAGE_KEYS.workouts);
-    const savedProfile = readJson<ProfileInput>(STORAGE_KEYS.profile);
-    const savedExceptions = readJson<WorkoutException[]>(STORAGE_KEYS.workoutExceptions) ?? [];
-    const initialWeekStartDateKey = getAmsterdamWeekStartDateKey();
-    const currentWeekDateKeys = new Set(dayOrder.map((day) => getCurrentWeekDateForDay(day, initialWeekStartDateKey)));
-    const currentWeekExceptions = savedExceptions.filter(
-      (item) => currentWeekDateKeys.has(item.date) || (item.newDate ? currentWeekDateKeys.has(item.newDate) : false)
-    );
+        const [savedPlan, savedProfile, savedExceptions] = await Promise.all([
+          loadWorkoutPlan(authUserId),
+          loadProfile(authUserId),
+          loadWorkoutExceptions(authUserId)
+        ]);
 
-    const profileWeightKg = savedProfile?.weightKg ?? 70;
-    if (savedPlan) setPlan(normalizePlanWithMetrics(savedPlan, profileWeightKg));
-    if (savedProfile?.weightKg) setProfileWeight(savedProfile.weightKg);
-    if (savedProfile) setProfile(savedProfile);
-    setExceptions(currentWeekExceptions);
-    setCurrentWeekStartDateKey(initialWeekStartDateKey);
-    setHasLoadedInitialData(true);
+        if (!isMounted) return;
+        const initialWeekStartDateKey = getAmsterdamWeekStartDateKey();
+        const currentWeekDateKeys = new Set(dayOrder.map((day) => getCurrentWeekDateForDay(day, initialWeekStartDateKey)));
+        const currentWeekExceptions = savedExceptions.filter(
+          (item) => currentWeekDateKeys.has(item.date) || (item.newDate ? currentWeekDateKeys.has(item.newDate) : false)
+        );
+
+        const profileWeightKg = savedProfile?.weightKg ?? 70;
+        if (savedPlan) setPlan(normalizePlanWithMetrics(savedPlan, profileWeightKg));
+        if (savedProfile?.weightKg) setProfileWeight(savedProfile.weightKg);
+        if (savedProfile) setProfile(savedProfile);
+        setExceptions(currentWeekExceptions);
+        setCurrentWeekStartDateKey(initialWeekStartDateKey);
+        setHasLoadedInitialData(true);
+      } catch (error) {
+        if (!isMounted) return;
+        setMessage(error instanceof Error ? error.message : "Unable to load workout data.");
+      }
+    }
+
+    void hydrate();
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -506,21 +525,26 @@ export default function WorkoutsPage() {
   }, [currentWeekStartDateKey]);
 
   useEffect(() => {
-    writeJson(STORAGE_KEYS.workouts, plan);
-  }, [plan]);
+    if (!hasLoadedInitialData || !userId) return;
+    void saveWorkoutPlan(userId, plan);
+  }, [hasLoadedInitialData, plan, userId]);
 
   useEffect(() => {
-    writeJson(STORAGE_KEYS.workoutExceptions, exceptions);
-  }, [exceptions]);
+    if (!hasLoadedInitialData || !userId) return;
+    void replaceWorkoutExceptions(userId, exceptions);
+  }, [exceptions, hasLoadedInitialData, userId]);
 
   useEffect(() => {
     if (!hasLoadedInitialData) return;
-    recalculateAndPersistTodayTargets({
+    const nextTargets = recalculateAndPersistTodayTargets({
       profile,
       workouts: plan,
-      exceptions
+      exceptions,
+      disabledMacros: [],
+      force: true
     });
-  }, [exceptions, hasLoadedInitialData, plan, profile]);
+    if (nextTargets && userId) void saveDailyTargets(userId, nextTargets);
+  }, [exceptions, hasLoadedInitialData, plan, profile, userId]);
 
   useEffect(() => {
     if (!isAddExerciseOpen) {
@@ -996,7 +1020,7 @@ export default function WorkoutsPage() {
     <>
       {deleteExerciseId ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45 p-3 sm:p-4">
-          <div className="w-full max-w-md max-h-[86vh] overflow-y-auto rounded-2xl bg-white p-4 shadow-xl ring-1 ring-slate-200 sm:p-6">
+          <div className="mobile-popup-panel w-full max-w-md max-h-[86vh] overflow-y-auto rounded-2xl bg-white p-4 shadow-xl ring-1 ring-slate-200 sm:p-6">
             <h3 className="text-lg font-semibold text-slate-900">Delete exercise?</h3>
             <p className="mt-2 text-sm text-slate-600">Choose whether to remove this exercise for just this date or from the weekly plan.</p>
             <div className="mt-4 space-y-2">
@@ -1029,7 +1053,7 @@ export default function WorkoutsPage() {
 
       {duplicateExercise ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45 p-3 sm:p-4">
-          <div className="w-full max-w-md max-h-[86vh] overflow-y-auto rounded-2xl bg-white p-4 shadow-xl ring-1 ring-slate-200 sm:p-6">
+          <div className="mobile-popup-panel w-full max-w-md max-h-[86vh] overflow-y-auto rounded-2xl bg-white p-4 shadow-xl ring-1 ring-slate-200 sm:p-6">
             <div className="flex items-start justify-between">
               <div>
                 <h3 className="text-lg font-semibold text-slate-900">Duplicate Exercise</h3>
@@ -1065,7 +1089,7 @@ export default function WorkoutsPage() {
 
       {progressExercise ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45 p-3 sm:p-4">
-          <div className="w-full max-w-2xl max-h-[86vh] overflow-y-auto rounded-2xl bg-white p-4 shadow-xl ring-1 ring-slate-200 sm:p-6">
+          <div className="mobile-popup-panel w-full max-w-2xl max-h-[86vh] overflow-y-auto rounded-2xl bg-white p-4 shadow-xl ring-1 ring-slate-200 sm:p-6">
             <div className="flex items-start justify-between">
               <div>
                 <h3 className="text-xl font-semibold text-slate-900">Exercise Progress</h3>
@@ -1247,7 +1271,7 @@ export default function WorkoutsPage() {
 
       {isAddExerciseOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45 p-3 sm:p-4">
-          <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white p-6 shadow-xl ring-1 ring-slate-200">
+          <div className="mobile-popup-panel w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white p-6 shadow-xl ring-1 ring-slate-200">
             <div className="flex items-start justify-between">
               <div>
                 <h3 className="text-xl font-semibold text-slate-900">{editingExerciseId ? "Edit Exercise" : "Add Exercise"}</h3>

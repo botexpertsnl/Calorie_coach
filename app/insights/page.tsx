@@ -3,8 +3,7 @@
 import { ReactNode, useEffect, useMemo, useState } from "react";
 import { AppHeaderNav } from "@/components/AppHeaderNav";
 import { TARGETS_UPDATED_EVENT, getDailyMacroTargets } from "@/lib/daily-targets";
-import { ensureDemoSeedData } from "@/lib/demo-seed";
-import { STORAGE_KEYS, readJson } from "@/lib/local-data";
+import { getCurrentUserId, loadBodyProgress, loadDailyTargets, loadMeals, loadProfile, loadUserSettings, loadWorkoutExceptions, loadWorkoutPlan } from "@/lib/supabase/user-data";
 import { buildEffectiveWorkoutInstances, buildWorkoutAdjustedSummary, getDateKeysInRange } from "@/lib/workout-execution";
 import {
   BodyProgressHistory,
@@ -387,33 +386,30 @@ export default function InsightsPage() {
 
   useEffect(() => {
     const sync = () => {
-      ensureDemoSeedData();
-      setMeals(readJson<StoredMealLog[]>(STORAGE_KEYS.meals) ?? []);
-      setWorkouts(readJson<WorkoutWeekPlan>(STORAGE_KEYS.workouts));
-      setWorkoutExceptions(readJson<WorkoutException[]>(STORAGE_KEYS.workoutExceptions) ?? []);
-      setNutritionTargets(readJson<DailyTargets>(STORAGE_KEYS.targets));
-      setProfile(readJson<ProfileInput>(STORAGE_KEYS.profile));
-      setBodyProgress(readJson<BodyProgressHistory>(STORAGE_KEYS.bodyProgress) ?? { weight: [], waist: [] });
-      setDisabledMacros(readJson<MacroKey[]>(STORAGE_KEYS.disabledMacros) ?? []);
-    };
+      void (async () => {
+        try {
+          const userId = await getCurrentUserId();
+          const [meals, workouts, workoutExceptions, nutritionTargets, profile, bodyProgress, settings] = await Promise.all([
+            loadMeals(userId),
+            loadWorkoutPlan(userId),
+            loadWorkoutExceptions(userId),
+            loadDailyTargets(userId),
+            loadProfile(userId),
+            loadBodyProgress(userId),
+            loadUserSettings(userId)
+          ]);
 
-    const onStorage = (event: StorageEvent) => {
-      if (!event.key) {
-        sync();
-        return;
-      }
-
-      const watchKeys = new Set<string>([
-        STORAGE_KEYS.meals,
-        STORAGE_KEYS.workouts,
-        STORAGE_KEYS.workoutExceptions,
-        STORAGE_KEYS.targets,
-        STORAGE_KEYS.profile,
-        STORAGE_KEYS.disabledMacros,
-        STORAGE_KEYS.bodyProgress
-      ]);
-
-      if (watchKeys.has(event.key)) sync();
+          setMeals(meals);
+          setWorkouts(workouts);
+          setWorkoutExceptions(workoutExceptions);
+          setNutritionTargets(nutritionTargets);
+          setProfile(profile);
+          setBodyProgress(bodyProgress);
+          setDisabledMacros(settings.disabledMacros ?? []);
+        } catch {
+          // keep page functional when Supabase data is temporarily unavailable
+        }
+      })();
     };
 
     const onTargetsUpdated = (event: Event) => {
@@ -422,12 +418,12 @@ export default function InsightsPage() {
     };
 
     sync();
-    window.addEventListener("storage", onStorage);
     window.addEventListener(TARGETS_UPDATED_EVENT, onTargetsUpdated as EventListener);
+    window.addEventListener("focus", sync);
 
     return () => {
-      window.removeEventListener("storage", onStorage);
       window.removeEventListener(TARGETS_UPDATED_EVENT, onTargetsUpdated as EventListener);
+      window.removeEventListener("focus", sync);
     };
   }, []);
 
