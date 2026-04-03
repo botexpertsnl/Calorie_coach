@@ -2,11 +2,36 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { AppHeaderNav } from "@/components/AppHeaderNav";
-import { TARGETS_UPDATED_EVENT, getDailyMacroTargets, recalculateAndPersistTodayTargets } from "@/lib/daily-targets";
+import {
+  TARGETS_UPDATED_EVENT,
+  getDailyMacroTargets,
+  recalculateAndPersistTodayTargets
+} from "@/lib/daily-targets";
 import { calculateDailyTargets } from "@/lib/nutrition";
-import { getCurrentUserId, loadBodyProgress, loadDailyTargets, loadProfile, loadUserSettings, loadWorkoutExceptions, loadWorkoutPlan, replaceBodyProgress, saveDailyTargets, saveProfile as saveSupabaseProfile, saveUserSettings } from "@/lib/supabase/user-data";
+import {
+  getCurrentUserId,
+  loadBodyProgress,
+  loadDailyTargets,
+  loadProfile,
+  loadUserSettings,
+  loadWorkoutExceptions,
+  loadWorkoutPlan,
+  replaceBodyProgress,
+  saveDailyTargets,
+  saveProfile as saveSupabaseProfile,
+  saveUserSettings
+} from "@/lib/supabase/user-data";
 import { getCurrentWeekDateKeys } from "@/lib/workout-execution";
-import { BodyMetricProgressEntry, BodyProgressHistory, DailyTargets, MacroKey, ProfileInput, WorkoutDay, WorkoutException, WorkoutWeekPlan } from "@/lib/types";
+import {
+  BodyMetricProgressEntry,
+  BodyProgressHistory,
+  DailyTargets,
+  MacroKey,
+  ProfileInput,
+  WorkoutDay,
+  WorkoutException,
+  WorkoutWeekPlan
+} from "@/lib/types";
 
 const defaultProfile: ProfileInput = {
   heightCm: 0,
@@ -37,7 +62,10 @@ const primaryGoalOptions = [
   "General Health & Longevity"
 ] as const;
 
-const goalIntensityOptionsByMainGoal: Record<(typeof primaryGoalOptions)[number], Array<{ value: "slow" | "medium" | "medium_fast" | "fast"; label: string }>> = {
+const goalIntensityOptionsByMainGoal: Record<
+  (typeof primaryGoalOptions)[number],
+  Array<{ value: "slow" | "medium" | "medium_fast" | "fast"; label: string }>
+> = {
   "Fat Loss": [
     { value: "slow", label: "Slow — Fat loss with muscle gain" },
     { value: "medium", label: "Medium — Fat loss with muscle maintenance" },
@@ -70,7 +98,15 @@ const goalIntensityOptionsByMainGoal: Record<(typeof primaryGoalOptions)[number]
   ]
 };
 
-const weekDayOrder: WorkoutDay[] = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
+const weekDayOrder: WorkoutDay[] = [
+  "monday",
+  "tuesday",
+  "wednesday",
+  "thursday",
+  "friday",
+  "saturday",
+  "sunday"
+];
 
 const weekDayLabels: Record<WorkoutDay, string> = {
   monday: "Monday",
@@ -81,6 +117,7 @@ const weekDayLabels: Record<WorkoutDay, string> = {
   saturday: "Saturday",
   sunday: "Sunday"
 };
+
 const PROFILE_RESET_VERSION = "v1";
 
 function dayFromDateKey(dateKey: string): WorkoutDay {
@@ -98,7 +135,9 @@ function dayFromDateKey(dateKey: string): WorkoutDay {
   return map[day];
 }
 
-function createDefaultWeekMacroScheme(targets: DailyTargets): Record<WorkoutDay, Record<MacroKey, number>> {
+function createDefaultWeekMacroScheme(
+  targets: DailyTargets
+): Record<WorkoutDay, Record<MacroKey, number>> {
   return weekDayOrder.reduce((acc, day) => {
     acc[day] = {
       calories: targets.calories,
@@ -166,7 +205,9 @@ function getAmsterdamOffsetMs(date: Date) {
   });
 
   const parts = formatter.formatToParts(date);
-  const getPart = (type: Intl.DateTimeFormatPartTypes) => Number(parts.find((part) => part.type === type)?.value ?? 0);
+  const getPart = (type: Intl.DateTimeFormatPartTypes) =>
+    Number(parts.find((part) => part.type === type)?.value ?? 0);
+
   const asUtc = Date.UTC(
     getPart("year"),
     getPart("month") - 1,
@@ -182,7 +223,10 @@ function getAmsterdamOffsetMs(date: Date) {
 function toIsoFromAmsterdamDateTime(date: string, time: string) {
   const [year, month, day] = date.split("-").map(Number);
   const [hour, minute] = time.split(":").map(Number);
-  if ([year, month, day, hour, minute].some((value) => Number.isNaN(value))) return new Date().toISOString();
+
+  if ([year, month, day, hour, minute].some((value) => Number.isNaN(value))) {
+    return new Date().toISOString();
+  }
 
   const utcGuess = new Date(Date.UTC(year, month - 1, day, hour, minute, 0));
   const offsetMs = getAmsterdamOffsetMs(utcGuess);
@@ -193,6 +237,7 @@ function formatAmsterdamDateTime(iso?: string) {
   if (!iso) return "n/a";
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "n/a";
+
   const formatted = new Intl.DateTimeFormat("en-GB", {
     timeZone: "Europe/Amsterdam",
     year: "numeric",
@@ -202,11 +247,16 @@ function formatAmsterdamDateTime(iso?: string) {
     minute: "2-digit",
     hour12: false
   }).format(date);
+
   return `${formatted} (CEST/CET)`;
 }
 
 function getLatestProgressEntry(entries: BodyMetricProgressEntry[]) {
-  return [...entries].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0] ?? null;
+  return (
+    [...entries].sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    )[0] ?? null
+  );
 }
 
 export default function ProfilePage() {
@@ -221,14 +271,23 @@ export default function ProfilePage() {
   const [saveConfirmation, setSaveConfirmation] = useState<string | null>(null);
   const [workouts, setWorkouts] = useState<WorkoutWeekPlan | null>(null);
   const [exceptions, setExceptions] = useState<WorkoutException[]>([]);
-  const [manualWeekScheme, setManualWeekScheme] = useState<Record<WorkoutDay, Record<MacroKey, number>>>(
-    createDefaultWeekMacroScheme(defaultTargets)
-  );
-  const [bodyProgress, setBodyProgress] = useState<BodyProgressHistory>({ weight: [], waist: [] });
+  const [manualWeekScheme, setManualWeekScheme] = useState<
+    Record<WorkoutDay, Record<MacroKey, number>>
+  >(createDefaultWeekMacroScheme(defaultTargets));
+  const [bodyProgress, setBodyProgress] = useState<BodyProgressHistory>({
+    weight: [],
+    waist: []
+  });
   const [isWeightModalOpen, setIsWeightModalOpen] = useState(false);
   const [isWaistModalOpen, setIsWaistModalOpen] = useState(false);
-  const [weightEntry, setWeightEntry] = useState({ value: 0, ...getAmsterdamNowInputValues() });
-  const [waistEntry, setWaistEntry] = useState({ value: 0, ...getAmsterdamNowInputValues() });
+  const [weightEntry, setWeightEntry] = useState({
+    value: 0,
+    ...getAmsterdamNowInputValues()
+  });
+  const [waistEntry, setWaistEntry] = useState({
+    value: 0,
+    ...getAmsterdamNowInputValues()
+  });
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [showUnsavedChangesPopup, setShowUnsavedChangesPopup] = useState(false);
   const [pendingNavigationUrl, setPendingNavigationUrl] = useState<string | null>(null);
@@ -238,13 +297,21 @@ export default function ProfilePage() {
 
   useEffect(() => {
     let isMounted = true;
+
     async function hydrate() {
       try {
         const authUserId = await getCurrentUserId();
         if (!isMounted) return;
         setUserId(authUserId);
 
-        const [savedProfile, savedTargets, savedSettings, savedWorkouts, savedExceptions, savedBodyProgress] = await Promise.all([
+        const [
+          savedProfile,
+          savedTargets,
+          savedSettings,
+          savedWorkouts,
+          savedExceptions,
+          savedBodyProgress
+        ] = await Promise.all([
           loadProfile(authUserId),
           loadDailyTargets(authUserId),
           loadUserSettings(authUserId),
@@ -254,8 +321,10 @@ export default function ProfilePage() {
         ]);
 
         if (!isMounted) return;
+
         const resetKey = `ai-calorie-coach-profile-reset:${PROFILE_RESET_VERSION}:${authUserId}`;
-        const shouldResetProfileOnce = typeof window !== "undefined" && !window.localStorage.getItem(resetKey);
+        const shouldResetProfileOnce =
+          typeof window !== "undefined" && !window.localStorage.getItem(resetKey);
 
         if (savedProfile && !shouldResetProfileOnce) {
           setProfile({ ...defaultProfile, ...savedProfile });
@@ -273,32 +342,45 @@ export default function ProfilePage() {
         if (savedTargets && !shouldResetProfileOnce) setTargets(savedTargets);
         setDisabledMacros(savedSettings.disabledMacros ?? []);
         setIsManualMode(savedSettings.macroManualMode);
+
         if (savedWorkouts) setWorkouts(savedWorkouts);
         setExceptions(savedExceptions);
-        if (savedSettings.weeklyMacroScheme) setManualWeekScheme(savedSettings.weeklyMacroScheme);
 
-        const initialProgress = (savedBodyProgress.weight.length || savedBodyProgress.waist.length) && !shouldResetProfileOnce
-          ? savedBodyProgress
-          : {
-              weight: [],
-              waist: []
-            };
+        if (savedSettings.weeklyMacroScheme) {
+          setManualWeekScheme(savedSettings.weeklyMacroScheme);
+        }
+
+        const initialProgress =
+          (savedBodyProgress.weight.length || savedBodyProgress.waist.length) &&
+          !shouldResetProfileOnce
+            ? savedBodyProgress
+            : { weight: [], waist: [] };
+
         setBodyProgress(initialProgress);
-        setWeightEntry({ value: (savedProfile?.weightKg ?? defaultProfile.weightKg), ...getAmsterdamNowInputValues() });
-        setWaistEntry({ value: (savedProfile?.waistCm ?? defaultProfile.waistCm), ...getAmsterdamNowInputValues() });
+        setWeightEntry({
+          value: savedProfile?.weightKg ?? defaultProfile.weightKg,
+          ...getAmsterdamNowInputValues()
+        });
+        setWaistEntry({
+          value: savedProfile?.waistCm ?? defaultProfile.waistCm,
+          ...getAmsterdamNowInputValues()
+        });
 
         if (shouldResetProfileOnce) {
           void saveSupabaseProfile(authUserId, defaultProfile);
           void replaceBodyProgress(authUserId, initialProgress);
           window.localStorage.setItem(resetKey, "done");
         }
+
         setHasHydratedProfile(true);
       } catch (error) {
         if (!isMounted) return;
         setMessage(error instanceof Error ? error.message : "Unable to load profile data.");
       }
     }
+
     void hydrate();
+
     return () => {
       isMounted = false;
     };
@@ -319,13 +401,20 @@ export default function ProfilePage() {
   useEffect(() => {
     const handleDocumentClick = (event: MouseEvent) => {
       if (!hasUnsavedChanges) return;
+
       const target = event.target as HTMLElement | null;
       const anchor = target?.closest("a[href]") as HTMLAnchorElement | null;
       if (!anchor) return;
+
       const destination = new URL(anchor.href, window.location.href);
       const current = new URL(window.location.href);
-      const isSamePage = destination.pathname === current.pathname && destination.search === current.search && destination.hash === current.hash;
+      const isSamePage =
+        destination.pathname === current.pathname &&
+        destination.search === current.search &&
+        destination.hash === current.hash;
+
       if (destination.origin !== current.origin || isSamePage) return;
+
       event.preventDefault();
       setPendingNavigationUrl(destination.toString());
       setShowUnsavedChangesPopup(true);
@@ -338,10 +427,13 @@ export default function ProfilePage() {
   useEffect(() => {
     const syncWorkouts = () => {
       if (!userId) return;
-      void Promise.all([loadWorkoutPlan(userId), loadWorkoutExceptions(userId)]).then(([savedWorkouts, savedExceptions]) => {
-        setWorkouts(savedWorkouts);
-        setExceptions(savedExceptions);
-      });
+
+      void Promise.all([loadWorkoutPlan(userId), loadWorkoutExceptions(userId)]).then(
+        ([savedWorkouts, savedExceptions]) => {
+          setWorkouts(savedWorkouts);
+          setExceptions(savedExceptions);
+        }
+      );
     };
 
     const onFocus = () => syncWorkouts();
@@ -359,7 +451,9 @@ export default function ProfilePage() {
   );
 
   const goalIntensityOptions = useMemo(() => {
-    if (!mainGoal || !primaryGoalOptions.includes(mainGoal as (typeof primaryGoalOptions)[number])) return [];
+    if (!mainGoal || !primaryGoalOptions.includes(mainGoal as (typeof primaryGoalOptions)[number])) {
+      return [];
+    }
     return goalIntensityOptionsByMainGoal[mainGoal as (typeof primaryGoalOptions)[number]];
   }, [mainGoal]);
 
@@ -376,12 +470,14 @@ export default function ProfilePage() {
     return weekKeys.reduce((acc, dateKey) => {
       const day = dayFromDateKey(dateKey);
       const dayTargets = getDailyMacroTargets(dateKey, profile, workouts, exceptions);
+
       acc[day] = {
         calories: dayTargets.calories,
         protein: dayTargets.protein,
         carbs: dayTargets.carbs,
         fat: dayTargets.fat
       };
+
       return acc;
     }, {} as Record<WorkoutDay, Record<MacroKey, number>>);
   }, [exceptions, profile, workouts]);
@@ -391,7 +487,10 @@ export default function ProfilePage() {
   const averageWeekMacros = useMemo(() => {
     const count = weekDayOrder.length;
     return macroConfig.reduce((acc, { key }) => {
-      const total = weekDayOrder.reduce((sum, day) => sum + (visibleWeekScheme[day]?.[key] ?? 0), 0);
+      const total = weekDayOrder.reduce(
+        (sum, day) => sum + (visibleWeekScheme[day]?.[key] ?? 0),
+        0
+      );
       acc[key] = Math.round(total / count);
       return acc;
     }, {} as Record<MacroKey, number>);
@@ -415,8 +514,14 @@ export default function ProfilePage() {
     }
   }
 
-  const latestWeightEntry = useMemo(() => getLatestProgressEntry(bodyProgress.weight), [bodyProgress.weight]);
-  const latestWaistEntry = useMemo(() => getLatestProgressEntry(bodyProgress.waist), [bodyProgress.waist]);
+  const latestWeightEntry = useMemo(
+    () => getLatestProgressEntry(bodyProgress.weight),
+    [bodyProgress.weight]
+  );
+  const latestWaistEntry = useMemo(
+    () => getLatestProgressEntry(bodyProgress.waist),
+    [bodyProgress.waist]
+  );
 
   function markUnsavedChanges() {
     setHasUnsavedChanges(true);
@@ -435,10 +540,19 @@ export default function ProfilePage() {
   function saveWeightProgress() {
     const recordedAt = toIsoFromAmsterdamDateTime(weightEntry.date, weightEntry.time);
     const createdAt = new Date().toISOString();
-    const entry: BodyMetricProgressEntry = { id: crypto.randomUUID(), value: Number(weightEntry.value), recordedAt, createdAt };
+
+    const entry: BodyMetricProgressEntry = {
+      id: crypto.randomUUID(),
+      value: Number(weightEntry.value),
+      recordedAt,
+      createdAt
+    };
+
     const next = { ...bodyProgress, weight: [...bodyProgress.weight, entry] };
     setBodyProgress(next);
+
     if (userId) void replaceBodyProgress(userId, next);
+
     updateProfile("weightKg", Number(weightEntry.value));
     markUnsavedChanges();
     setIsWeightModalOpen(false);
@@ -447,10 +561,19 @@ export default function ProfilePage() {
   function saveWaistProgress() {
     const recordedAt = toIsoFromAmsterdamDateTime(waistEntry.date, waistEntry.time);
     const createdAt = new Date().toISOString();
-    const entry: BodyMetricProgressEntry = { id: crypto.randomUUID(), value: Number(waistEntry.value), recordedAt, createdAt };
+
+    const entry: BodyMetricProgressEntry = {
+      id: crypto.randomUUID(),
+      value: Number(waistEntry.value),
+      recordedAt,
+      createdAt
+    };
+
     const next = { ...bodyProgress, waist: [...bodyProgress.waist, entry] };
     setBodyProgress(next);
+
     if (userId) void replaceBodyProgress(userId, next);
+
     updateProfile("waistCm", Number(waistEntry.value));
     markUnsavedChanges();
     setIsWaistModalOpen(false);
@@ -474,6 +597,7 @@ export default function ProfilePage() {
 
   function saveProfile(options?: { showConfirmation?: boolean }) {
     const showConfirmation = options?.showConfirmation ?? true;
+
     const profileToSave = {
       ...profile,
       primaryGoal: mainGoal || undefined,
@@ -492,23 +616,44 @@ export default function ProfilePage() {
       void replaceBodyProgress(userId, bodyProgress);
     }
 
-    const hasCompleteProfile = profileToSave.heightCm > 0 && profileToSave.weightKg > 0 && profileToSave.waistCm > 0 && profileToSave.age > 0 && mainGoal.trim() && goalIntensity.trim();
+    const hasCompleteProfile =
+      profileToSave.heightCm > 0 &&
+      profileToSave.weightKg > 0 &&
+      profileToSave.waistCm > 0 &&
+      profileToSave.age > 0 &&
+      mainGoal.trim() &&
+      goalIntensity.trim();
 
     if (!isManualMode && hasCompleteProfile) {
-      const nextTargets = recalculateAndPersistTodayTargets({ profile: profileToSave, workouts, exceptions, disabledMacros, force: true });
+      const nextTargets = recalculateAndPersistTodayTargets({
+        profile: profileToSave,
+        workouts,
+        exceptions,
+        disabledMacros,
+        force: true
+      });
+
       if (nextTargets) setTargets(nextTargets);
       if (nextTargets && userId) void saveDailyTargets(userId, nextTargets);
+
       if (showConfirmation) {
-        const confirmationMessage = "Profile saved successfully. Daily macros were recalculated from your profile, daily activity, and today's workout plan.";
+        const confirmationMessage =
+          "Profile saved successfully. Daily macros were recalculated from your profile, daily activity, and today's workout plan.";
         setMessage(confirmationMessage);
         setSaveConfirmation(confirmationMessage);
       }
     } else if (isManualMode) {
       const todayDay = dayFromDateKey(new Date().toISOString().slice(0, 10));
-      const todayManual = manualWeekScheme[todayDay] ?? createDefaultWeekMacroScheme(targets)[todayDay];
+      const todayManual =
+        manualWeekScheme[todayDay] ?? createDefaultWeekMacroScheme(targets)[todayDay];
       const manualTargets = { ...targets, ...todayManual, disabledMacros };
+
       if (userId) void saveDailyTargets(userId, manualTargets);
-      window.dispatchEvent(new CustomEvent(TARGETS_UPDATED_EVENT, { detail: manualTargets }));
+
+      window.dispatchEvent(
+        new CustomEvent(TARGETS_UPDATED_EVENT, { detail: manualTargets })
+      );
+
       if (showConfirmation) {
         const confirmationMessage = "Profile saved successfully. Manual daily macros were kept.";
         setMessage(confirmationMessage);
@@ -516,7 +661,8 @@ export default function ProfilePage() {
       }
     } else {
       if (showConfirmation) {
-        const confirmationMessage = "Profile auto-saved. Complete all body and goal fields to start daily targets and insights.";
+        const confirmationMessage =
+          "Profile auto-saved. Complete all body and goal fields to start daily targets and insights.";
         setMessage(confirmationMessage);
         setSaveConfirmation(confirmationMessage);
       }
@@ -530,9 +676,11 @@ export default function ProfilePage() {
 
   useEffect(() => {
     if (!userId || !hasHydratedProfile) return;
+
     const timeoutId = window.setTimeout(() => {
       saveProfile({ showConfirmation: false });
     }, 800);
+
     return () => window.clearTimeout(timeoutId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
@@ -553,14 +701,17 @@ export default function ProfilePage() {
       setShowUnsavedChangesPopup(false);
       return;
     }
+
     setSuppressBeforeUnload(true);
     window.location.href = pendingNavigationUrl;
   }
 
   function saveAndNavigate() {
     if (!pendingNavigationUrl) return;
+
     const saved = saveProfile();
     if (!saved) return;
+
     setSuppressBeforeUnload(true);
     window.location.href = pendingNavigationUrl;
   }
@@ -571,23 +722,51 @@ export default function ProfilePage() {
 
       <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
         <h1 className="text-2xl font-semibold text-slate-900">Progress Metrics</h1>
-        <p className="mt-1 text-sm text-slate-500">Track body changes over time (Europe/Amsterdam timezone).</p>
+        <p className="mt-1 text-sm text-slate-500">
+          Track body changes over time (Europe/Amsterdam timezone).
+        </p>
 
         <div className="mt-4 grid gap-4 md:grid-cols-2">
           <div className="rounded-xl border border-slate-200 p-4">
             <p className="text-xs uppercase tracking-wide text-slate-500">Current Weight</p>
-            <p className="mt-1 text-2xl font-semibold text-slate-900">{latestWeightEntry ? `${profile.weightKg} kg` : "—"}</p>
-            <p className="mt-1 text-xs text-slate-500">Last updated: {latestWeightEntry ? formatAmsterdamDateTime(latestWeightEntry.recordedAt ?? latestWeightEntry.createdAt) : "Not registered yet"}</p>
-            <button type="button" onClick={openWeightModal} className="mt-3 rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+            <p className="mt-1 text-2xl font-semibold text-slate-900">
+              {latestWeightEntry ? `${profile.weightKg} kg` : "—"}
+            </p>
+            <p className="mt-1 text-xs text-slate-500">
+              Last updated:{" "}
+              {latestWeightEntry
+                ? formatAmsterdamDateTime(
+                    latestWeightEntry.recordedAt ?? latestWeightEntry.createdAt
+                  )
+                : "Not registered yet"}
+            </p>
+            <button
+              type="button"
+              onClick={openWeightModal}
+              className="mt-3 rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            >
               {latestWeightEntry ? "Register Weight Progress" : "Register Weight"}
             </button>
           </div>
 
           <div className="rounded-xl border border-slate-200 p-4">
             <p className="text-xs uppercase tracking-wide text-slate-500">Current Waist</p>
-            <p className="mt-1 text-2xl font-semibold text-slate-900">{latestWaistEntry ? `${profile.waistCm} cm` : "—"}</p>
-            <p className="mt-1 text-xs text-slate-500">Last updated: {latestWaistEntry ? formatAmsterdamDateTime(latestWaistEntry.recordedAt ?? latestWaistEntry.createdAt) : "Not registered yet"}</p>
-            <button type="button" onClick={openWaistModal} className="mt-3 rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+            <p className="mt-1 text-2xl font-semibold text-slate-900">
+              {latestWaistEntry ? `${profile.waistCm} cm` : "—"}
+            </p>
+            <p className="mt-1 text-xs text-slate-500">
+              Last updated:{" "}
+              {latestWaistEntry
+                ? formatAmsterdamDateTime(
+                    latestWaistEntry.recordedAt ?? latestWaistEntry.createdAt
+                  )
+                : "Not registered yet"}
+            </p>
+            <button
+              type="button"
+              onClick={openWaistModal}
+              className="mt-3 rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            >
               {latestWaistEntry ? "Register Waist Progress" : "Register Waist"}
             </button>
           </div>
@@ -597,26 +776,62 @@ export default function ProfilePage() {
       <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
         <h1 className="text-2xl font-semibold text-slate-900">Body Profile</h1>
         <div className="mt-4 grid gap-4 md:grid-cols-2">
-          <label className="text-sm text-slate-700">Height (cm)
-            <input type="number" className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" placeholder="Add height" value={profile.heightCm || ""} onChange={(e) => updateProfile("heightCm", Number(e.target.value))} />
+          <label className="text-sm text-slate-700">
+            Height (cm)
+            <input
+              type="number"
+              className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2"
+              placeholder="Add height"
+              value={profile.heightCm || ""}
+              onChange={(e) => updateProfile("heightCm", Number(e.target.value))}
+            />
           </label>
-          <label className="text-sm text-slate-700">Age
-            <input type="number" className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" placeholder="Add age" value={profile.age || ""} onChange={(e) => updateProfile("age", Number(e.target.value))} />
+
+          <label className="text-sm text-slate-700">
+            Age
+            <input
+              type="number"
+              className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2"
+              placeholder="Add age"
+              value={profile.age || ""}
+              onChange={(e) => updateProfile("age", Number(e.target.value))}
+            />
           </label>
-          <label className="text-sm text-slate-700">Gender
-            <select className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={profile.gender} onChange={(e) => updateProfile("gender", e.target.value as ProfileInput["gender"])}>
+
+          <label className="text-sm text-slate-700">
+            Gender
+            <select
+              className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2"
+              value={profile.gender}
+              onChange={(e) =>
+                updateProfile("gender", e.target.value as ProfileInput["gender"])
+              }
+            >
               <option value="female">female</option>
               <option value="male">male</option>
               <option value="other">other</option>
             </select>
           </label>
-          <label className="text-sm text-slate-700">Training Experience
-            <select className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={profile.trainingExperience} onChange={(e) => updateProfile("trainingExperience", e.target.value as ProfileInput["trainingExperience"])}>
+
+          <label className="text-sm text-slate-700">
+            Training Experience
+            <select
+              className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2"
+              value={profile.trainingExperience}
+              onChange={(e) =>
+                updateProfile(
+                  "trainingExperience",
+                  e.target.value as ProfileInput["trainingExperience"]
+                )
+              }
+            >
               <option value="beginner">Beginner (0-1 year)</option>
               <option value="intermediate">Intermediate (1-3 years)</option>
               <option value="advanced">Advanced (3+ years)</option>
             </select>
-            <p className="mt-1 text-xs text-slate-500">Used to personalize workout load, recovery, and strength targets.</p>
+            <p className="mt-1 text-xs text-slate-500">
+              Used to personalize workout load, recovery, and strength targets.
+            </p>
           </label>
         </div>
       </section>
@@ -624,16 +839,33 @@ export default function ProfilePage() {
       <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
         <h2 className="text-2xl font-semibold text-slate-900">Daily Activity</h2>
         <div className="mt-4 grid gap-4 md:grid-cols-2">
-          <label className="text-sm text-slate-700">Average Daily Steps
-            <select className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={profile.averageDailySteps} onChange={(e) => updateProfile("averageDailySteps", e.target.value as ProfileInput["averageDailySteps"])}>
+          <label className="text-sm text-slate-700">
+            Average Daily Steps
+            <select
+              className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2"
+              value={profile.averageDailySteps}
+              onChange={(e) =>
+                updateProfile(
+                  "averageDailySteps",
+                  e.target.value as ProfileInput["averageDailySteps"]
+                )
+              }
+            >
               <option value="1-5000">1-5.000</option>
               <option value="5000-10000">5.000-10.000</option>
               <option value="10000+">10.000+</option>
             </select>
           </label>
 
-          <label className="text-sm text-slate-700">Work Type
-            <select className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={profile.workType} onChange={(e) => updateProfile("workType", e.target.value as ProfileInput["workType"])}>
+          <label className="text-sm text-slate-700">
+            Work Type
+            <select
+              className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2"
+              value={profile.workType}
+              onChange={(e) =>
+                updateProfile("workType", e.target.value as ProfileInput["workType"])
+              }
+            >
               <option value="sedentary">Sedentary (Desk Job)</option>
               <option value="light">Light Activity (Standing Job)</option>
               <option value="moderate">Moderate Physical Work</option>
@@ -641,15 +873,21 @@ export default function ProfilePage() {
             </select>
           </label>
         </div>
-        <p className="mt-3 text-sm text-slate-500">This information helps improve calorie and macro calculations.</p>
+        <p className="mt-3 text-sm text-slate-500">
+          This information helps improve calorie and macro calculations.
+        </p>
       </section>
 
       <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
         <h2 className="text-2xl font-semibold text-slate-900">Goals</h2>
-        <p className="mt-1 text-sm text-slate-500">Select your main goal and intensity to personalize nutrition, workouts, and insights.</p>
+        <p className="mt-1 text-sm text-slate-500">
+          Select your main goal and intensity to personalize nutrition, workouts, and
+          insights.
+        </p>
 
         <div className="mt-4 grid gap-4 md:grid-cols-2">
-          <label className="text-sm text-slate-700">Main goal
+          <label className="text-sm text-slate-700">
+            Main goal
             <select
               className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2"
               value={mainGoal}
@@ -661,12 +899,15 @@ export default function ProfilePage() {
             >
               <option value="">Select main goal</option>
               {primaryGoalOptions.map((option) => (
-                <option key={option} value={option}>{option}</option>
+                <option key={option} value={option}>
+                  {option}
+                </option>
               ))}
             </select>
           </label>
 
-          <label className="text-sm text-slate-700">Goal intensity
+          <label className="text-sm text-slate-700">
+            Goal intensity
             <select
               className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2"
               value={goalIntensity}
@@ -678,13 +919,16 @@ export default function ProfilePage() {
             >
               <option value="">Select goal intensity</option>
               {goalIntensityOptions.map((option) => (
-                <option key={option.value} value={option.value}>{option.label}</option>
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
               ))}
             </select>
           </label>
         </div>
 
-        <label className="mt-4 block text-sm text-slate-700">Goal description
+        <label className="mt-4 block text-sm text-slate-700">
+          Goal description
           <textarea
             className="mt-1 min-h-24 w-full rounded-xl border border-slate-200 px-3 py-2"
             value={goalDescription}
@@ -700,6 +944,7 @@ export default function ProfilePage() {
       <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-2xl font-semibold text-slate-900">Daily Macro Goals</h2>
+
           <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
             <input
               type="checkbox"
@@ -707,6 +952,7 @@ export default function ProfilePage() {
               onChange={(e) => {
                 const next = e.target.checked;
                 setIsManualMode(next);
+
                 if (userId) {
                   void saveUserSettings(userId, {
                     disabledMacros,
@@ -714,13 +960,22 @@ export default function ProfilePage() {
                     weeklyMacroScheme: next ? calculatedWeekScheme : manualWeekScheme
                   });
                 }
+
                 markUnsavedChanges();
+
                 if (next) {
                   setManualWeekScheme(calculatedWeekScheme);
                   return;
                 }
 
-                const recalculated = recalculateAndPersistTodayTargets({ profile, workouts, exceptions, disabledMacros, force: true });
+                const recalculated = recalculateAndPersistTodayTargets({
+                  profile,
+                  workouts,
+                  exceptions,
+                  disabledMacros,
+                  force: true
+                });
+
                 if (recalculated) {
                   setTargets(recalculated);
                   if (userId) void saveDailyTargets(userId, recalculated);
@@ -732,7 +987,8 @@ export default function ProfilePage() {
         </div>
 
         <p className="mb-4 text-sm text-slate-500">
-          Daily macros are calculated from your body profile, goals, and today&apos;s planned workout load. They are recalculated when you save your profile.
+          Daily macros are calculated from your body profile, goals, and today&apos;s
+          planned workout load. They are recalculated when you save your profile.
         </p>
 
         <div className="relative rounded-xl border border-slate-200">
@@ -741,55 +997,86 @@ export default function ProfilePage() {
               <thead className="bg-slate-50">
                 <tr>
                   <th className="px-3 py-2 text-left font-semibold text-slate-700">Day</th>
-                  {macroConfig.filter((macro) => !disabledMacros.includes(macro.key)).map(({ key, label, unit }) => (
-                    <th key={key} className="px-3 py-2 text-left font-semibold text-slate-700">
-                      <div className="flex items-center gap-2">
-                        <span>{label}</span>
-                        <span className="text-xs font-normal text-slate-500">({unit})</span>
-                        <button type="button" onClick={() => disableMacro(key)} className="rounded-md px-1.5 py-0.5 text-xs text-slate-500 hover:bg-slate-100">✕</button>
-                      </div>
-                    </th>
-                  ))}
+                  {macroConfig
+                    .filter((macro) => !disabledMacros.includes(macro.key))
+                    .map(({ key, label, unit }) => (
+                      <th
+                        key={key}
+                        className="px-3 py-2 text-left font-semibold text-slate-700"
+                      >
+                        <div className="flex items-center gap-2">
+                          <span>{label}</span>
+                          <span className="text-xs font-normal text-slate-500">
+                            ({unit})
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => disableMacro(key)}
+                            className="rounded-md px-1.5 py-0.5 text-xs text-slate-500 hover:bg-slate-100"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      </th>
+                    ))}
                 </tr>
               </thead>
+
               <tbody className="divide-y divide-slate-100">
                 {weekDayOrder.map((day) => (
                   <tr key={day}>
-                    <td className="px-3 py-2 font-medium text-slate-700">{weekDayLabels[day]}</td>
-                    {macroConfig.filter((macro) => !disabledMacros.includes(macro.key)).map(({ key }) => (
-                      <td key={`${day}-${key}`} className="px-3 py-2">
-                        <input
-                          type="number"
-                          min={0}
-                          disabled={!isManualMode}
-                          className="w-full rounded-lg border border-slate-200 px-2 py-1.5 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
-                          value={visibleWeekScheme[day]?.[key] ?? 0}
-                          onChange={(e) => {
-                            updateWeekMacro(day, key, Number(e.target.value));
-                            markUnsavedChanges();
-                          }}
-                        />
-                      </td>
-                    ))}
+                    <td className="px-3 py-2 font-medium text-slate-700">
+                      {weekDayLabels[day]}
+                    </td>
+                    {macroConfig
+                      .filter((macro) => !disabledMacros.includes(macro.key))
+                      .map(({ key }) => (
+                        <td key={`${day}-${key}`} className="px-3 py-2">
+                          <input
+                            type="number"
+                            min={0}
+                            disabled={!isManualMode}
+                            className="w-full rounded-lg border border-slate-200 px-2 py-1.5 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
+                            value={visibleWeekScheme[day]?.[key] ?? 0}
+                            onChange={(e) => {
+                              updateWeekMacro(day, key, Number(e.target.value));
+                              markUnsavedChanges();
+                            }}
+                          />
+                        </td>
+                      ))}
                   </tr>
                 ))}
               </tbody>
+
               <tfoot className="border-t border-slate-200 bg-slate-50">
                 <tr>
-                  <td className="px-3 py-2 font-semibold text-slate-800">Weekly average</td>
-                  {macroConfig.filter((macro) => !disabledMacros.includes(macro.key)).map(({ key }) => (
-                    <td key={`avg-${key}`} className="px-3 py-2 font-semibold text-slate-700">{averageWeekMacros[key]}</td>
-                  ))}
+                  <td className="px-3 py-2 font-semibold text-slate-800">
+                    Weekly average
+                  </td>
+                  {macroConfig
+                    .filter((macro) => !disabledMacros.includes(macro.key))
+                    .map(({ key }) => (
+                      <td
+                        key={`avg-${key}`}
+                        className="px-3 py-2 font-semibold text-slate-700"
+                      >
+                        {averageWeekMacros[key]}
+                      </td>
+                    ))}
                 </tr>
               </tfoot>
             </table>
           </div>
+
           <div className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-white to-transparent md:hidden" />
         </div>
 
         {disabledMacros.length ? (
           <div className="mt-4 rounded-xl border border-slate-200 p-3">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Disabled macros</p>
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Disabled macros
+            </p>
             <div className="mt-2 flex flex-wrap gap-2">
               {disabledMacros.map((key) => (
                 <button
@@ -807,39 +1094,108 @@ export default function ProfilePage() {
       </section>
 
       <section className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
-        <p className="text-sm text-slate-500">Save Profile stores body profile, goals, and macro targets together.</p>
-        <button onClick={() => { saveProfile(); }} className="rounded-xl bg-emerald-500 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-400">Save Profile</button>
+        <p className="text-sm text-slate-500">
+          Save Profile stores body profile, goals, and macro targets together.
+        </p>
+        <button
+          onClick={() => {
+            saveProfile();
+          }}
+          className="rounded-xl bg-emerald-500 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-400"
+        >
+          Save Profile
+        </button>
       </section>
 
       {isWeightModalOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-0 sm:p-4">
-          <div className="mobile-popup-panel w-full max-w-md max-h-[86vh] overflow-y-auto rounded-2xl bg-white p-4 shadow-xl ring-1 ring-slate-200 sm:p-6">
-<<<<<<< codex/add-option-to-save-meal-from-pop-up-gcuu2y
+          <div className="mobile-popup-panel max-h-[86vh] w-full max-w-md overflow-y-auto rounded-2xl bg-white p-4 shadow-xl ring-1 ring-slate-200 sm:p-6">
             <div className="flex items-start justify-between gap-3">
-              <h3 className="text-lg font-semibold text-slate-900">Register Weight Progress</h3>
-              <button type="button" onClick={() => setIsWeightModalOpen(false)} className="rounded-md p-1 text-slate-400 hover:bg-slate-100" aria-label="Close register weight popup">✕</button>
+              <h3 className="text-lg font-semibold text-slate-900">
+                Register Weight Progress
+              </h3>
+              <button
+                type="button"
+                onClick={() => setIsWeightModalOpen(false)}
+                className="rounded-md p-1 text-slate-400 hover:bg-slate-100"
+                aria-label="Close register weight popup"
+              >
+                ✕
+              </button>
             </div>
-=======
-            <h3 className="text-lg font-semibold text-slate-900">Register Weight Progress</h3>
->>>>>>> main
-            <p className="mt-2 text-sm text-slate-600">Previous value: <span className="font-semibold text-slate-900">{latestWeightEntry?.value ?? profile.weightKg} kg</span></p>
-            <p className="text-xs text-slate-500">Saved on: {formatAmsterdamDateTime(latestWeightEntry?.recordedAt ?? latestWeightEntry?.createdAt)}</p>
+
+            <p className="mt-2 text-sm text-slate-600">
+              Previous value:{" "}
+              <span className="font-semibold text-slate-900">
+                {latestWeightEntry?.value ?? profile.weightKg} kg
+              </span>
+            </p>
+            <p className="text-xs text-slate-500">
+              Saved on:{" "}
+              {formatAmsterdamDateTime(
+                latestWeightEntry?.recordedAt ?? latestWeightEntry?.createdAt
+              )}
+            </p>
+
             <div className="mt-4 space-y-3">
-              <label className="block text-sm text-slate-700">New Weight value
-                <input type="number" className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" placeholder="Add weight" value={weightEntry.value || ""} onChange={(e) => setWeightEntry((prev) => ({ ...prev, value: Number(e.target.value) }))} />
+              <label className="block text-sm text-slate-700">
+                New Weight value
+                <input
+                  type="number"
+                  className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2"
+                  placeholder="Add weight"
+                  value={weightEntry.value || ""}
+                  onChange={(e) =>
+                    setWeightEntry((prev) => ({
+                      ...prev,
+                      value: Number(e.target.value)
+                    }))
+                  }
+                />
               </label>
+
               <div className="grid gap-3 md:grid-cols-2">
-                <label className="text-sm text-slate-700">Date
-                  <input type="date" className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={weightEntry.date} onChange={(e) => setWeightEntry((prev) => ({ ...prev, date: e.target.value }))} />
+                <label className="text-sm text-slate-700">
+                  Date
+                  <input
+                    type="date"
+                    className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2"
+                    value={weightEntry.date}
+                    onChange={(e) =>
+                      setWeightEntry((prev) => ({ ...prev, date: e.target.value }))
+                    }
+                  />
                 </label>
-                <label className="text-sm text-slate-700">Time
-                  <input type="time" className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={weightEntry.time} onChange={(e) => setWeightEntry((prev) => ({ ...prev, time: e.target.value }))} />
+
+                <label className="text-sm text-slate-700">
+                  Time
+                  <input
+                    type="time"
+                    className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2"
+                    value={weightEntry.time}
+                    onChange={(e) =>
+                      setWeightEntry((prev) => ({ ...prev, time: e.target.value }))
+                    }
+                  />
                 </label>
               </div>
             </div>
+
             <div className="mt-5 flex justify-end gap-2">
-              <button type="button" onClick={() => setIsWeightModalOpen(false)} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700">Cancel</button>
-              <button type="button" onClick={saveWeightProgress} className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-400">Save Weight Progress</button>
+              <button
+                type="button"
+                onClick={() => setIsWeightModalOpen(false)}
+                className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={saveWeightProgress}
+                className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-400"
+              >
+                Save Weight Progress
+              </button>
             </div>
           </div>
         </div>
@@ -847,33 +1203,93 @@ export default function ProfilePage() {
 
       {isWaistModalOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-0 sm:p-4">
-          <div className="mobile-popup-panel w-full max-w-md max-h-[86vh] overflow-y-auto rounded-2xl bg-white p-4 shadow-xl ring-1 ring-slate-200 sm:p-6">
-<<<<<<< codex/add-option-to-save-meal-from-pop-up-gcuu2y
+          <div className="mobile-popup-panel max-h-[86vh] w-full max-w-md overflow-y-auto rounded-2xl bg-white p-4 shadow-xl ring-1 ring-slate-200 sm:p-6">
             <div className="flex items-start justify-between gap-3">
-              <h3 className="text-lg font-semibold text-slate-900">Register Waist Progress</h3>
-              <button type="button" onClick={() => setIsWaistModalOpen(false)} className="rounded-md p-1 text-slate-400 hover:bg-slate-100" aria-label="Close register waist popup">✕</button>
+              <h3 className="text-lg font-semibold text-slate-900">
+                Register Waist Progress
+              </h3>
+              <button
+                type="button"
+                onClick={() => setIsWaistModalOpen(false)}
+                className="rounded-md p-1 text-slate-400 hover:bg-slate-100"
+                aria-label="Close register waist popup"
+              >
+                ✕
+              </button>
             </div>
-=======
-            <h3 className="text-lg font-semibold text-slate-900">Register Waist Progress</h3>
->>>>>>> main
-            <p className="mt-2 text-sm text-slate-600">Previous value: <span className="font-semibold text-slate-900">{latestWaistEntry?.value ?? profile.waistCm} cm</span></p>
-            <p className="text-xs text-slate-500">Saved on: {formatAmsterdamDateTime(latestWaistEntry?.recordedAt ?? latestWaistEntry?.createdAt)}</p>
+
+            <p className="mt-2 text-sm text-slate-600">
+              Previous value:{" "}
+              <span className="font-semibold text-slate-900">
+                {latestWaistEntry?.value ?? profile.waistCm} cm
+              </span>
+            </p>
+            <p className="text-xs text-slate-500">
+              Saved on:{" "}
+              {formatAmsterdamDateTime(
+                latestWaistEntry?.recordedAt ?? latestWaistEntry?.createdAt
+              )}
+            </p>
+
             <div className="mt-4 space-y-3">
-              <label className="block text-sm text-slate-700">New Waist value
-                <input type="number" className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" placeholder="Add waist" value={waistEntry.value || ""} onChange={(e) => setWaistEntry((prev) => ({ ...prev, value: Number(e.target.value) }))} />
+              <label className="block text-sm text-slate-700">
+                New Waist value
+                <input
+                  type="number"
+                  className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2"
+                  placeholder="Add waist"
+                  value={waistEntry.value || ""}
+                  onChange={(e) =>
+                    setWaistEntry((prev) => ({
+                      ...prev,
+                      value: Number(e.target.value)
+                    }))
+                  }
+                />
               </label>
+
               <div className="grid gap-3 md:grid-cols-2">
-                <label className="text-sm text-slate-700">Date
-                  <input type="date" className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={waistEntry.date} onChange={(e) => setWaistEntry((prev) => ({ ...prev, date: e.target.value }))} />
+                <label className="text-sm text-slate-700">
+                  Date
+                  <input
+                    type="date"
+                    className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2"
+                    value={waistEntry.date}
+                    onChange={(e) =>
+                      setWaistEntry((prev) => ({ ...prev, date: e.target.value }))
+                    }
+                  />
                 </label>
-                <label className="text-sm text-slate-700">Time
-                  <input type="time" className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={waistEntry.time} onChange={(e) => setWaistEntry((prev) => ({ ...prev, time: e.target.value }))} />
+
+                <label className="text-sm text-slate-700">
+                  Time
+                  <input
+                    type="time"
+                    className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2"
+                    value={waistEntry.time}
+                    onChange={(e) =>
+                      setWaistEntry((prev) => ({ ...prev, time: e.target.value }))
+                    }
+                  />
                 </label>
               </div>
             </div>
+
             <div className="mt-5 flex justify-end gap-2">
-              <button type="button" onClick={() => setIsWaistModalOpen(false)} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700">Cancel</button>
-              <button type="button" onClick={saveWaistProgress} className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-400">Save Waist Progress</button>
+              <button
+                type="button"
+                onClick={() => setIsWaistModalOpen(false)}
+                className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={saveWaistProgress}
+                className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-400"
+              >
+                Save Waist Progress
+              </button>
             </div>
           </div>
         </div>
@@ -881,11 +1297,17 @@ export default function ProfilePage() {
 
       {saveConfirmation ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-0 sm:p-4">
-          <div className="mobile-popup-panel w-full max-w-md max-h-[86vh] overflow-y-auto rounded-2xl bg-white p-4 shadow-xl ring-1 ring-slate-200 sm:p-6">
+          <div className="mobile-popup-panel max-h-[86vh] w-full max-w-md overflow-y-auto rounded-2xl bg-white p-4 shadow-xl ring-1 ring-slate-200 sm:p-6">
             <h3 className="text-lg font-semibold text-slate-900">Profile saved</h3>
             <p className="mt-2 text-sm text-slate-600">{saveConfirmation}</p>
             <div className="mt-5 flex justify-end">
-              <button type="button" onClick={() => setSaveConfirmation(null)} className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-400">OK</button>
+              <button
+                type="button"
+                onClick={() => setSaveConfirmation(null)}
+                className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-400"
+              >
+                OK
+              </button>
             </div>
           </div>
         </div>
@@ -893,13 +1315,36 @@ export default function ProfilePage() {
 
       {showUnsavedChangesPopup ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-0 sm:p-4">
-          <div className="mobile-popup-panel w-full max-w-md max-h-[86vh] overflow-y-auto rounded-2xl bg-white p-4 shadow-xl ring-1 ring-slate-200 sm:p-6">
+          <div className="mobile-popup-panel max-h-[86vh] w-full max-w-md overflow-y-auto rounded-2xl bg-white p-4 shadow-xl ring-1 ring-slate-200 sm:p-6">
             <h3 className="text-lg font-semibold text-slate-900">Unsaved changes</h3>
-            <p className="mt-2 text-sm text-slate-600">You have unsaved profile changes. Save before leaving this page?</p>
+            <p className="mt-2 text-sm text-slate-600">
+              You have unsaved profile changes. Save before leaving this page?
+            </p>
             <div className="mt-5 flex justify-end gap-2">
-              <button type="button" onClick={() => { setShowUnsavedChangesPopup(false); setPendingNavigationUrl(null); }} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700">Stay</button>
-              <button type="button" onClick={discardAndNavigate} className="rounded-xl border border-rose-200 px-4 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-50">Discard & leave</button>
-              <button type="button" onClick={saveAndNavigate} className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-400">Save & leave</button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowUnsavedChangesPopup(false);
+                  setPendingNavigationUrl(null);
+                }}
+                className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700"
+              >
+                Stay
+              </button>
+              <button
+                type="button"
+                onClick={discardAndNavigate}
+                className="rounded-xl border border-rose-200 px-4 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-50"
+              >
+                Discard & leave
+              </button>
+              <button
+                type="button"
+                onClick={saveAndNavigate}
+                className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-400"
+              >
+                Save & leave
+              </button>
             </div>
           </div>
         </div>
