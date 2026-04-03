@@ -1,0 +1,17 @@
+import { redirect } from "next/navigation";
+import { createClient } from "@/lib/supabase/server";
+
+export async function requireUser() {
+  const supabase = await createClient();
+  const {
+    data: { user }
+  } = await supabase.auth.getUser();
+
+  if (!user) redirect("/login");
+
+  return user;
+}
+
+export function userScopedStorageKey(baseKey: string, userId: string) {
+  return `${baseKey}:${userId}`;
+}
