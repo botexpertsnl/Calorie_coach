@@ -636,7 +636,7 @@ export function HomePageClient() {
   return (
     <>
       {deleteMealId ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-3 sm:p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-0 sm:p-4">
           <div className="mobile-popup-panel w-full max-w-md max-h-[86vh] overflow-y-auto rounded-2xl bg-white p-4 shadow-xl ring-1 ring-slate-200 sm:p-6">
             <h3 className="text-lg font-semibold text-slate-900">Delete meal?</h3>
             <p className="mt-2 text-sm text-slate-600">Are you sure you want to delete this meal?</p>
@@ -649,7 +649,7 @@ export function HomePageClient() {
         </div>
       ) : null}
       {editMealId ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-3 sm:p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-0 sm:p-4">
           <div className="mobile-popup-panel w-full max-w-lg max-h-[86vh] overflow-y-auto rounded-2xl bg-white p-4 shadow-xl ring-1 ring-slate-200 sm:p-6">
             <h3 className="text-lg font-semibold text-slate-900">Edit meal</h3>
             <div className="mt-4 space-y-3">

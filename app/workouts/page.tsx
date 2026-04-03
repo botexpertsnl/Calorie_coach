@@ -1029,7 +1029,7 @@ export default function WorkoutsPage() {
   return (
     <>
       {deleteExerciseId ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45 p-3 sm:p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45 p-0 sm:p-4">
           <div className="mobile-popup-panel w-full max-w-md max-h-[86vh] overflow-y-auto rounded-2xl bg-white p-4 shadow-xl ring-1 ring-slate-200 sm:p-6">
             <h3 className="text-lg font-semibold text-slate-900">Delete exercise?</h3>
             <p className="mt-2 text-sm text-slate-600">Choose whether to remove this exercise for just this date or from the weekly plan.</p>
@@ -1062,7 +1062,7 @@ export default function WorkoutsPage() {
       ) : null}
 
       {duplicateExercise ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45 p-3 sm:p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45 p-0 sm:p-4">
           <div className="mobile-popup-panel w-full max-w-md max-h-[86vh] overflow-y-auto rounded-2xl bg-white p-4 shadow-xl ring-1 ring-slate-200 sm:p-6">
             <div className="flex items-start justify-between">
               <div>
@@ -1098,7 +1098,7 @@ export default function WorkoutsPage() {
       ) : null}
 
       {progressExercise ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45 p-3 sm:p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45 p-0 sm:p-4">
           <div className="mobile-popup-panel w-full max-w-2xl max-h-[86vh] overflow-y-auto rounded-2xl bg-white p-4 shadow-xl ring-1 ring-slate-200 sm:p-6">
             <div className="flex items-start justify-between">
               <div>

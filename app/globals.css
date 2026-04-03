@@ -11,6 +11,14 @@ body {
 }
 
 @media (max-width: 768px) {
+  .mobile-popup-panel {
+    width: 100vw !important;
+    height: 100dvh !important;
+    max-width: none !important;
+    max-height: none !important;
+    border-radius: 0 !important;
+  }
+
   .mobile-popup-panel input,
   .mobile-popup-panel select,
   .mobile-popup-panel textarea {
