@@ -814,7 +814,14 @@ export default function ProfilePage() {
       {isWeightModalOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-0 sm:p-4">
           <div className="mobile-popup-panel w-full max-w-md max-h-[86vh] overflow-y-auto rounded-2xl bg-white p-4 shadow-xl ring-1 ring-slate-200 sm:p-6">
+<<<<<<< codex/add-option-to-save-meal-from-pop-up-gcuu2y
+            <div className="flex items-start justify-between gap-3">
+              <h3 className="text-lg font-semibold text-slate-900">Register Weight Progress</h3>
+              <button type="button" onClick={() => setIsWeightModalOpen(false)} className="rounded-md p-1 text-slate-400 hover:bg-slate-100" aria-label="Close register weight popup">✕</button>
+            </div>
+=======
             <h3 className="text-lg font-semibold text-slate-900">Register Weight Progress</h3>
+>>>>>>> main
             <p className="mt-2 text-sm text-slate-600">Previous value: <span className="font-semibold text-slate-900">{latestWeightEntry?.value ?? profile.weightKg} kg</span></p>
             <p className="text-xs text-slate-500">Saved on: {formatAmsterdamDateTime(latestWeightEntry?.recordedAt ?? latestWeightEntry?.createdAt)}</p>
             <div className="mt-4 space-y-3">
@@ -841,7 +848,14 @@ export default function ProfilePage() {
       {isWaistModalOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-0 sm:p-4">
           <div className="mobile-popup-panel w-full max-w-md max-h-[86vh] overflow-y-auto rounded-2xl bg-white p-4 shadow-xl ring-1 ring-slate-200 sm:p-6">
+<<<<<<< codex/add-option-to-save-meal-from-pop-up-gcuu2y
+            <div className="flex items-start justify-between gap-3">
+              <h3 className="text-lg font-semibold text-slate-900">Register Waist Progress</h3>
+              <button type="button" onClick={() => setIsWaistModalOpen(false)} className="rounded-md p-1 text-slate-400 hover:bg-slate-100" aria-label="Close register waist popup">✕</button>
+            </div>
+=======
             <h3 className="text-lg font-semibold text-slate-900">Register Waist Progress</h3>
+>>>>>>> main
             <p className="mt-2 text-sm text-slate-600">Previous value: <span className="font-semibold text-slate-900">{latestWaistEntry?.value ?? profile.waistCm} cm</span></p>
             <p className="text-xs text-slate-500">Saved on: {formatAmsterdamDateTime(latestWaistEntry?.recordedAt ?? latestWaistEntry?.createdAt)}</p>
             <div className="mt-4 space-y-3">
