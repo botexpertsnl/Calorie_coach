@@ -332,6 +332,17 @@ const defaultDraft: PlannerDraft = {
   crossfitUseWeight: false
 };
 
+const WEIGHT_STEP_KG = 1;
+
+function parseLocalizedWeightInput(value: string): number | null {
+  const normalized = value.replace(",", ".").trim();
+  if (!normalized) return null;
+
+  const parsed = Number(normalized);
+  if (!Number.isFinite(parsed) || parsed < 0) return null;
+  return parsed;
+}
+
 function toProgressEntry(exercise: WorkoutExercise): WorkoutProgressEntry {
   return {
     recordedAt: new Date().toISOString(),
@@ -469,6 +480,7 @@ export default function WorkoutsPage() {
   const [currentWeekStartDateKey, setCurrentWeekStartDateKey] = useState(getAmsterdamWeekStartDateKey());
   const [userId, setUserId] = useState<string | null>(null);
   const [popupSubmissionNotice, setPopupSubmissionNotice] = useState<string | null>(null);
+  const [weightInput, setWeightInput] = useState(() => String(defaultDraft.weight));
 
   useEffect(() => {
     let isMounted = true;
@@ -674,8 +686,27 @@ export default function WorkoutsPage() {
     return pausedIds;
   }, [exceptions, selectedDateKey]);
 
+  useEffect(() => {
+    setWeightInput(String(draft.weight));
+  }, [draft.weight]);
+
   function setDraftField<K extends keyof PlannerDraft>(key: K, value: PlannerDraft[K]) {
     setDraft((prev) => ({ ...prev, [key]: value }));
+  }
+
+  function handleWeightInputChange(rawValue: string) {
+    setWeightInput(rawValue);
+    const parsedWeight = parseLocalizedWeightInput(rawValue);
+    if (parsedWeight !== null) {
+      setDraftField("weight", parsedWeight);
+    }
+  }
+
+  function handleWeightInputBlur() {
+    const parsedWeight = parseLocalizedWeightInput(weightInput);
+    const nextWeight = parsedWeight ?? 0;
+    setDraftField("weight", nextWeight);
+    setWeightInput(String(nextWeight));
   }
 
   function validateDraft() {
@@ -1202,9 +1233,9 @@ export default function WorkoutsPage() {
                   </label>
                   <label className="text-sm text-slate-700">Weight (kg)
                     <div className="mt-1 flex rounded-xl border border-slate-200">
-                      <button type="button" onClick={() => setDraftField("weight", Math.max(0, draft.weight - 2.5))} className="px-3">-</button>
-                      <input type="number" min={0} step="0.5" className="w-full border-x border-slate-200 px-2 py-2" value={draft.weight} onChange={(event) => setDraftField("weight", Number(event.target.value))} />
-                      <button type="button" onClick={() => setDraftField("weight", draft.weight + 2.5)} className="px-3">+</button>
+                      <button type="button" onClick={() => setDraftField("weight", Math.max(0, draft.weight - WEIGHT_STEP_KG))} className="px-3">-</button>
+                      <input type="text" inputMode="decimal" className="w-full border-x border-slate-200 px-2 py-2" value={weightInput} onChange={(event) => handleWeightInputChange(event.target.value)} onBlur={handleWeightInputBlur} onFocus={(event) => event.target.select()} />
+                      <button type="button" onClick={() => setDraftField("weight", draft.weight + WEIGHT_STEP_KG)} className="px-3">+</button>
                     </div>
                   </label>
                 </div>
@@ -1257,9 +1288,9 @@ export default function WorkoutsPage() {
                         Weight (kg)
                       </span>
                       <div className={`mt-2 flex rounded-xl border ${draft.crossfitUseWeight ? "border-slate-200 bg-white" : "border-slate-200 bg-slate-100"}`}>
-                        <button type="button" disabled={!draft.crossfitUseWeight} onClick={() => setDraftField("weight", Math.max(0, draft.weight - 2.5))} className="px-3 disabled:cursor-not-allowed disabled:opacity-50">-</button>
-                        <input type="number" min={0} step="0.5" disabled={!draft.crossfitUseWeight} className="w-full border-x border-slate-200 px-2 py-2 disabled:bg-slate-100" value={draft.weight} onChange={(event) => setDraftField("weight", Number(event.target.value))} />
-                        <button type="button" disabled={!draft.crossfitUseWeight} onClick={() => setDraftField("weight", draft.weight + 2.5)} className="px-3 disabled:cursor-not-allowed disabled:opacity-50">+</button>
+                        <button type="button" disabled={!draft.crossfitUseWeight} onClick={() => setDraftField("weight", Math.max(0, draft.weight - WEIGHT_STEP_KG))} className="px-3 disabled:cursor-not-allowed disabled:opacity-50">-</button>
+                        <input type="text" inputMode="decimal" disabled={!draft.crossfitUseWeight} className="w-full border-x border-slate-200 px-2 py-2 disabled:bg-slate-100" value={weightInput} onChange={(event) => handleWeightInputChange(event.target.value)} onBlur={handleWeightInputBlur} onFocus={(event) => event.target.select()} />
+                        <button type="button" disabled={!draft.crossfitUseWeight} onClick={() => setDraftField("weight", draft.weight + WEIGHT_STEP_KG)} className="px-3 disabled:cursor-not-allowed disabled:opacity-50">+</button>
                       </div>
                     </label>
                   </div>
@@ -1404,9 +1435,9 @@ export default function WorkoutsPage() {
 
                     <label className={`text-sm ${draft.weight > 0 ? "text-slate-700" : "text-slate-400"}`}>Weight (kg)
                       <div className={`mt-1 flex rounded-xl border ${draft.weight > 0 ? "border-slate-200" : "border-slate-200 bg-slate-100"}`}>
-                        <button type="button" onClick={() => setDraftField("weight", Math.max(0, draft.weight - 2.5))} className="px-3">-</button>
-                        <input type="number" min={0} step="0.5" className="w-full border-x border-slate-200 px-2 py-2 bg-transparent" value={draft.weight} onChange={(event) => setDraftField("weight", Number(event.target.value))} />
-                        <button type="button" onClick={() => setDraftField("weight", draft.weight + 2.5)} className="px-3">+</button>
+                        <button type="button" onClick={() => setDraftField("weight", Math.max(0, draft.weight - WEIGHT_STEP_KG))} className="px-3">-</button>
+                        <input type="text" inputMode="decimal" className="w-full border-x border-slate-200 px-2 py-2 bg-transparent" value={weightInput} onChange={(event) => handleWeightInputChange(event.target.value)} onBlur={handleWeightInputBlur} onFocus={(event) => event.target.select()} />
+                        <button type="button" onClick={() => setDraftField("weight", draft.weight + WEIGHT_STEP_KG)} className="px-3">+</button>
                       </div>
                     </label>
                   </div>
@@ -1431,9 +1462,9 @@ export default function WorkoutsPage() {
                   </label>
                   <label className="text-sm text-slate-700">Weight (kg)
                     <div className="mt-1 flex rounded-xl border border-slate-200">
-                      <button type="button" onClick={() => setDraftField("weight", Math.max(0, draft.weight - 2.5))} className="px-3">-</button>
-                      <input type="number" min={0} step="0.5" className="w-full border-x border-slate-200 px-2 py-2" value={draft.weight} onChange={(event) => setDraftField("weight", Number(event.target.value))} />
-                      <button type="button" onClick={() => setDraftField("weight", draft.weight + 2.5)} className="px-3">+</button>
+                      <button type="button" onClick={() => setDraftField("weight", Math.max(0, draft.weight - WEIGHT_STEP_KG))} className="px-3">-</button>
+                      <input type="text" inputMode="decimal" className="w-full border-x border-slate-200 px-2 py-2" value={weightInput} onChange={(event) => handleWeightInputChange(event.target.value)} onBlur={handleWeightInputBlur} onFocus={(event) => event.target.select()} />
+                      <button type="button" onClick={() => setDraftField("weight", draft.weight + WEIGHT_STEP_KG)} className="px-3">+</button>
                     </div>
                   </label>
                 </div>
