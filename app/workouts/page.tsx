@@ -220,12 +220,6 @@ function matchesTypeFilter(exercise: WorkoutExercise, filter: "all" | "fitness" 
   return exercise.type === "cardio" || (exercise.type === "crossfit" && exercise.movementType === "conditioning");
 }
 
-function getExerciseMainFilterGroup(exercise: WorkoutExercise): "fitness" | "cardio" | "crossfit" {
-  if (exercise.type === "fitness") return "fitness";
-  if (exercise.type === "crossfit" && exercise.movementType !== "conditioning") return "crossfit";
-  return "cardio";
-}
-
 function inferExerciseDefaults(name: string): Partial<PlannerDraft> {
   const value = name.toLowerCase().trim();
   if (!value) return {};
@@ -464,6 +458,7 @@ export default function WorkoutsPage() {
   const [progressExerciseId, setProgressExerciseId] = useState<string | null>(null);
   const [duplicateExerciseId, setDuplicateExerciseId] = useState<string | null>(null);
   const [duplicateTargets, setDuplicateTargets] = useState<WorkoutDay[]>([]);
+  const [draggedExerciseId, setDraggedExerciseId] = useState<string | null>(null);
   const [isAddExerciseOpen, setIsAddExerciseOpen] = useState(false);
   const [showScheduleDays, setShowScheduleDays] = useState(false);
   const [addExerciseDays, setAddExerciseDays] = useState<WorkoutDay[]>([selectedDay]);
@@ -623,28 +618,13 @@ export default function WorkoutsPage() {
   }, [availableSpecifyMuscleFilters, specifyFilter]);
 
   const filteredExercises = useMemo(() => {
-    const sorted = selectedExercises
+    return selectedExercises
       .filter((exercise) => {
         const matchType = matchesTypeFilter(exercise, typeFilter);
         const matchSub = subFilter === "all" ? true : exercise.muscleGroup === subFilter;
         const matchSpecify = specifyFilter === "all" ? true : exercise.specifyMuscle === specifyFilter;
         return matchType && matchSub && matchSpecify;
-      })
-      .sort((a, b) => {
-        const typeOrder: Record<"fitness" | "cardio" | "crossfit", number> = { fitness: 0, cardio: 1, crossfit: 2 };
-        const aType = getExerciseMainFilterGroup(a);
-        const bType = getExerciseMainFilterGroup(b);
-
-        if (aType !== bType) return typeOrder[aType] - typeOrder[bType];
-
-        const aSub = muscleGroupLabels[a.muscleGroup];
-        const bSub = muscleGroupLabels[b.muscleGroup];
-
-        if (aSub !== bSub) return aSub.localeCompare(bSub);
-        return a.name.localeCompare(b.name);
       });
-
-    return sorted;
   }, [selectedExercises, specifyFilter, subFilter, typeFilter]);
 
   const progressExercise = useMemo(
@@ -1055,6 +1035,31 @@ export default function WorkoutsPage() {
 
     setMessage("Exercise schedule updated across selected days.");
     closeDuplicateModal();
+  }
+
+  function reorderExercisesForSelectedDay(sourceExerciseId: string, targetExerciseId: string) {
+    if (sourceExerciseId === targetExerciseId) return;
+
+    setPlan((prev) => {
+      const dayLog = prev[selectedDay];
+      const sourceIndex = dayLog.exercises.findIndex((exercise) => exercise.id === sourceExerciseId);
+      const targetIndex = dayLog.exercises.findIndex((exercise) => exercise.id === targetExerciseId);
+
+      if (sourceIndex < 0 || targetIndex < 0) return prev;
+
+      const nextExercises = [...dayLog.exercises];
+      const [movedExercise] = nextExercises.splice(sourceIndex, 1);
+      if (!movedExercise) return prev;
+      nextExercises.splice(targetIndex, 0, movedExercise);
+
+      return {
+        ...prev,
+        [selectedDay]: {
+          ...dayLog,
+          exercises: nextExercises
+        }
+      };
+    });
   }
 
   return (
@@ -1634,7 +1639,7 @@ export default function WorkoutsPage() {
                 </div>
               ) : null}
 
-              {(typeFilter !== "all" || subFilter !== "all" || specifyFilter !== "all") ? (
+            {(typeFilter !== "all" || subFilter !== "all" || specifyFilter !== "all") ? (
                 <button
                   type="button"
                   onClick={() => {
@@ -1648,6 +1653,7 @@ export default function WorkoutsPage() {
                 </button>
               ) : null}
             </div>
+            <p className="mt-3 text-xs text-slate-500">Tip: drag and drop exercises to change their display order.</p>
 
             {selectedExercises.length === 0 ? (
               <p className="mt-4 rounded-xl border border-dashed border-slate-200 p-8 text-center text-sm text-slate-500">No planned exercises yet.</p>
@@ -1658,7 +1664,29 @@ export default function WorkoutsPage() {
                 {filteredExercises.map((exercise) => {
                   const isPausedForDate = pausedExerciseIdsForSelectedDate.has(exercise.id);
                   return (
-                    <li key={exercise.id} className="rounded-xl border border-slate-200 p-4 cursor-pointer hover:bg-slate-50" onClick={() => openProgress(exercise)}>
+                    <li
+                      key={exercise.id}
+                      draggable
+                      onDragStart={(event) => {
+                        setDraggedExerciseId(exercise.id);
+                        event.dataTransfer.effectAllowed = "move";
+                        event.dataTransfer.setData("text/plain", exercise.id);
+                      }}
+                      onDragOver={(event) => {
+                        event.preventDefault();
+                        event.dataTransfer.dropEffect = "move";
+                      }}
+                      onDrop={(event) => {
+                        event.preventDefault();
+                        const sourceId = draggedExerciseId ?? event.dataTransfer.getData("text/plain");
+                        if (!sourceId) return;
+                        reorderExercisesForSelectedDay(sourceId, exercise.id);
+                        setDraggedExerciseId(null);
+                      }}
+                      onDragEnd={() => setDraggedExerciseId(null)}
+                      className={`rounded-xl border border-slate-200 p-4 cursor-pointer hover:bg-slate-50 ${draggedExerciseId === exercise.id ? "opacity-50" : ""}`}
+                      onClick={() => openProgress(exercise)}
+                    >
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div>
                           <p className={`font-semibold ${isPausedForDate ? "text-slate-500 line-through" : "text-slate-900"}`}>{exercise.name}</p>
