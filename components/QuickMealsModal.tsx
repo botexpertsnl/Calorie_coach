@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { QuickMeal } from "@/lib/types";
 import { QuickMealForm } from "@/components/QuickMealForm";
+import { AppModal } from "@/components/AppModal";
 
 type QuickMealsModalProps = {
   isOpen: boolean;
@@ -65,14 +66,19 @@ export function QuickMealsModal({
   const isFormView = isCreating || Boolean(editingMeal);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-0 sm:p-4">
-      <div className="mobile-popup-panel w-full max-w-3xl rounded-2xl bg-white p-6 shadow-xl">
-        <div className="mb-5 flex items-center justify-between">
-          <h2 className="text-2xl font-semibold text-slate-900">Quick Add</h2>
-          <button type="button" onClick={onClose} className="rounded-lg p-2 text-slate-400 hover:bg-slate-100">✕</button>
-        </div>
-
-        {isFormView ? (
+    <AppModal
+      title="Quick Add"
+      onClose={onClose}
+      maxWidthClassName="sm:max-w-3xl"
+      footer={!isFormView ? <div className="flex justify-end"><button
+        type="button"
+        onClick={onClose}
+        className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+      >
+        Close
+      </button></div> : undefined}
+    >
+      {isFormView ? (
           <QuickMealForm
             initialMeal={editingMeal}
             onCancel={() => {
@@ -85,7 +91,7 @@ export function QuickMealsModal({
               setEditingMealId(null);
             }}
           />
-        ) : (
+      ) : (
           <div className="space-y-3">
             <div className="flex justify-end">
               <button
@@ -147,8 +153,7 @@ export function QuickMealsModal({
               </ul>
             )}
           </div>
-        )}
-      </div>
-    </div>
+      )}
+    </AppModal>
   );
 }

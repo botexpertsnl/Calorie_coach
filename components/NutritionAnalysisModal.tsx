@@ -1,6 +1,7 @@
 import { ALL_WEEKDAYS } from "@/lib/meals";
 import { CalorieResponse, MealWeekday } from "@/lib/types";
 import { Spinner } from "@/components/Spinner";
+import { AppModal } from "@/components/AppModal";
 
 type NutritionAnalysisModalProps = {
   isOpen: boolean;
@@ -58,14 +59,19 @@ export function NutritionAnalysisModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-0 sm:p-4">
-      <div className="mobile-popup-panel w-full max-w-4xl rounded-3xl bg-white shadow-2xl ring-1 ring-slate-200">
-        <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
-          <h2 className="text-xl font-semibold text-slate-900">Nutrition Analysis</h2>
-          <button type="button" onClick={onClose} className="rounded-lg p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700" aria-label="Close nutrition analysis">✕</button>
+    <AppModal
+      title="Nutrition Analysis"
+      onClose={onClose}
+      maxWidthClassName="sm:max-w-4xl"
+      closeAriaLabel="Close nutrition analysis"
+      footer={(
+        <div className="flex justify-end gap-3">
+          <button type="button" onClick={onClose} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Cancel / Close</button>
+          <button type="button" onClick={onAddMeal} disabled={status !== "success" || !result || isAddingMeal} className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-50">Add Meal</button>
         </div>
-
-        <div className="max-h-[70vh] overflow-y-auto px-6 py-5">
+      )}
+    >
+      <div>
           {status === "loading" ? (
             <div className="flex min-h-64 flex-col items-center justify-center text-center">
               <Spinner />
@@ -137,13 +143,7 @@ export function NutritionAnalysisModal({
               {result.notes ? <p className="text-sm italic text-slate-500">{result.notes}</p> : <p className="text-sm italic text-slate-500">AI estimate based on visible ingredients and likely portions.</p>}
             </div>
           ) : null}
-        </div>
-
-        <div className="flex justify-end gap-3 border-t border-slate-100 px-6 py-4">
-          <button type="button" onClick={onClose} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Cancel / Close</button>
-          <button type="button" onClick={onAddMeal} disabled={status !== "success" || !result || isAddingMeal} className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-50">Add Meal</button>
-        </div>
       </div>
-    </div>
+    </AppModal>
   );
 }
