@@ -2,13 +2,38 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { logoutAction } from "@/app/auth/actions";
 import { MAIN_NAV_ITEMS } from "@/lib/main-navigation";
 
 export function AppHeaderNav() {
   const pathname = usePathname();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  useEffect(() => {
+    if (!isMobileMenuOpen) {
+      return;
+    }
+
+    const scrollY = window.scrollY;
+    const previousBodyOverflow = document.body.style.overflow;
+    const previousBodyPosition = document.body.style.position;
+    const previousBodyTop = document.body.style.top;
+    const previousBodyWidth = document.body.style.width;
+
+    document.body.style.overflow = "hidden";
+    document.body.style.position = "fixed";
+    document.body.style.top = `-${scrollY}px`;
+    document.body.style.width = "100%";
+
+    return () => {
+      document.body.style.overflow = previousBodyOverflow;
+      document.body.style.position = previousBodyPosition;
+      document.body.style.top = previousBodyTop;
+      document.body.style.width = previousBodyWidth;
+      window.scrollTo(0, scrollY);
+    };
+  }, [isMobileMenuOpen]);
 
   return (
     <>
@@ -65,7 +90,7 @@ export function AppHeaderNav() {
         onClick={() => setIsMobileMenuOpen(false)}
       >
         <aside
-          className={`absolute right-0 top-0 h-full w-[82%] max-w-xs bg-white p-4 shadow-xl transition-transform duration-200 ${
+          className={`fixed right-0 top-0 flex h-[100dvh] w-80 max-w-[82vw] flex-col bg-white p-4 shadow-xl transition-transform duration-200 ${
             isMobileMenuOpen ? "translate-x-0" : "translate-x-full"
           }`}
           onClick={(event) => event.stopPropagation()}
@@ -82,7 +107,7 @@ export function AppHeaderNav() {
             </button>
           </div>
 
-          <nav className="space-y-2">
+          <nav className="space-y-2 overflow-y-auto">
             {MAIN_NAV_ITEMS.map((item) => {
               const isActive = pathname === item.href;
               return (
