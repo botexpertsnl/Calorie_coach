@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { AppHeaderNav } from "@/components/AppHeaderNav";
+import { AppModal } from "@/components/AppModal";
 import { recalculateAndPersistTodayTargets } from "@/lib/daily-targets";
 import { getCurrentUserId, loadProfile, loadWorkoutExceptions, loadWorkoutPlan, replaceWorkoutExceptions, saveDailyTargets, saveWorkoutPlan } from "@/lib/supabase/user-data";
 import { calculateTrainingVolume, estimateCaloriesForType } from "@/lib/workouts";
@@ -1065,9 +1066,17 @@ export default function WorkoutsPage() {
   return (
     <>
       {deleteExerciseId ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45 p-0 sm:p-4">
-          <div className="mobile-popup-panel w-full max-w-md max-h-[86vh] overflow-y-auto rounded-2xl bg-white p-4 shadow-xl ring-1 ring-slate-200 sm:p-6">
-            <h3 className="text-lg font-semibold text-slate-900">Delete exercise?</h3>
+        <AppModal
+          title="Delete exercise?"
+          onClose={() => { setDeleteExerciseId(null); setDeleteExerciseScope("single_date"); }}
+          maxWidthClassName="sm:max-w-md"
+          footer={(
+            <div className="flex justify-end gap-2">
+              <button type="button" onClick={() => { setDeleteExerciseId(null); setDeleteExerciseScope("single_date"); }} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700">Cancel</button>
+              <button type="button" onClick={confirmDelete} className="rounded-xl bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-500">Delete</button>
+            </div>
+          )}
+        >
             <p className="mt-2 text-sm text-slate-600">Choose whether to remove this exercise for just this date or from the weekly plan.</p>
             <div className="mt-4 space-y-2">
               <label className="flex items-start gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700">
@@ -1089,26 +1098,23 @@ export default function WorkoutsPage() {
                 <span>Remove from weekly schedule</span>
               </label>
             </div>
-            <div className="mt-5 flex justify-end gap-2">
-              <button type="button" onClick={() => { setDeleteExerciseId(null); setDeleteExerciseScope("single_date"); }} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700">Cancel</button>
-              <button type="button" onClick={confirmDelete} className="rounded-xl bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-500">Delete</button>
-            </div>
-          </div>
-        </div>
+        </AppModal>
       ) : null}
 
       {duplicateExercise ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45 p-0 sm:p-4">
-          <div className="mobile-popup-panel w-full max-w-md max-h-[86vh] overflow-y-auto rounded-2xl bg-white p-4 shadow-xl ring-1 ring-slate-200 sm:p-6">
-            <div className="flex items-start justify-between">
-              <div>
-                <h3 className="text-lg font-semibold text-slate-900">Duplicate Exercise</h3>
-                <p className="mt-1 text-sm font-medium text-slate-700">{duplicateExercise.name}</p>
-                <p className="text-xs text-slate-500">Currently on: {dayLabels[selectedDay]}</p>
-              </div>
-              <button type="button" onClick={closeDuplicateModal} className="rounded-md p-1 text-slate-400 hover:bg-slate-100">✕</button>
+        <AppModal
+          title="Duplicate Exercise"
+          onClose={closeDuplicateModal}
+          maxWidthClassName="sm:max-w-md"
+          footer={(
+            <div className="flex justify-end gap-2">
+              <button type="button" onClick={closeDuplicateModal} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700">Cancel</button>
+              <button type="button" onClick={duplicateExerciseToDays} disabled={!duplicateTargets.length} className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-400 disabled:cursor-not-allowed disabled:bg-slate-300">Duplicate Exercise</button>
             </div>
-
+          )}
+        >
+            <p className="text-sm font-medium text-slate-700">{duplicateExercise.name}</p>
+            <p className="text-xs text-slate-500">Currently on: {dayLabels[selectedDay]}</p>
             <div className="mt-4 space-y-2">
               <p className="text-sm font-medium text-slate-700">Copy to:</p>
               {dayOrder.map((day) => {
@@ -1125,20 +1131,22 @@ export default function WorkoutsPage() {
               })}
             </div>
 
-            <div className="mt-5 flex justify-end gap-2">
-              <button type="button" onClick={closeDuplicateModal} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700">Cancel</button>
-              <button type="button" onClick={duplicateExerciseToDays} disabled={!duplicateTargets.length} className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-400 disabled:cursor-not-allowed disabled:bg-slate-300">Duplicate Exercise</button>
-            </div>
-          </div>
-        </div>
+        </AppModal>
       ) : null}
 
       {progressExercise ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45 p-0 sm:p-4">
-          <div className="mobile-popup-panel w-full max-w-2xl max-h-[86vh] overflow-y-auto rounded-2xl bg-white p-4 shadow-xl ring-1 ring-slate-200 sm:p-6">
-            <div className="flex items-start justify-between">
+        <AppModal
+          title="Exercise Progress"
+          onClose={closeProgress}
+          maxWidthClassName="sm:max-w-2xl"
+          footer={(
+            <div className="flex justify-end gap-2">
+              <button type="button" onClick={closeProgress} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700">Close</button>
+              <button type="submit" form="exercise-progress-form" className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-400">Save Changes</button>
+            </div>
+          )}
+        >
               <div>
-                <h3 className="text-xl font-semibold text-slate-900">Exercise Progress</h3>
                 <p className="text-sm text-slate-500">{progressExercise.name}</p>
                 <div className="mt-3 overflow-x-auto rounded-xl border border-slate-200">
                   <table className="min-w-full text-xs">
@@ -1176,10 +1184,7 @@ export default function WorkoutsPage() {
                   </table>
                 </div>
               </div>
-              <button type="button" onClick={closeProgress} className="rounded-md p-1 text-slate-400 hover:bg-slate-100">✕</button>
-            </div>
-
-            <form onSubmit={saveExercise} className="mt-4 space-y-4">
+            <form id="exercise-progress-form" onSubmit={saveExercise} className="mt-4 space-y-4">
               <label className="block text-sm text-slate-700">Exercise name / description
                 <input className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={draft.name} onChange={(event) => setDraftField("name", event.target.value)} />
               </label>
@@ -1306,26 +1311,26 @@ export default function WorkoutsPage() {
                 <textarea className="mt-1 min-h-20 w-full rounded-xl border border-slate-200 px-3 py-2" value={draft.notes} onChange={(event) => setDraftField("notes", event.target.value)} />
               </label>
 
-              <div className="flex justify-end gap-2">
-                <button type="button" onClick={closeProgress} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700">Close</button>
-                <button type="submit" className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-400">Save Changes</button>
-              </div>
             </form>
-          </div>
-        </div>
+        </AppModal>
       ) : null}
 
       {isAddExerciseOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45 p-0 sm:p-4">
-          <div className="mobile-popup-panel h-full w-full max-w-none overflow-y-auto rounded-none bg-white p-4 shadow-xl ring-0 sm:max-h-[90vh] sm:max-w-2xl sm:rounded-2xl sm:p-6 sm:ring-1 sm:ring-slate-200">
-            <div className="flex items-start justify-between">
-              <div>
-                <h3 className="text-xl font-semibold text-slate-900">{editingExerciseId ? "Edit Exercise" : "Add Exercise"}</h3>
-                <p className="text-sm text-slate-500">{dayLabels[selectedDay]}</p>
+        <AppModal
+          title={editingExerciseId ? "Edit Exercise" : "Add Exercise"}
+          onClose={closeAddExerciseModal}
+          maxWidthClassName="sm:max-w-2xl"
+          footer={(
+            <div className="space-y-3">
+              <div className="flex gap-2">
+                <button type="button" onClick={closeAddExerciseModal} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700">Cancel</button>
+                <button type="button" onClick={saveExerciseForSelectedDays} className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-400">Save Exercise</button>
               </div>
-              <button type="button" onClick={closeAddExerciseModal} className="rounded-md p-1 text-slate-400 hover:bg-slate-100">✕</button>
+              {message ? <p className="text-sm text-slate-600">{message}</p> : null}
             </div>
-
+          )}
+        >
+            <p className="text-sm text-slate-500">{dayLabels[selectedDay]}</p>
             <form onSubmit={(event) => event.preventDefault()} className="mt-4 space-y-4">
               <label className="block text-sm text-slate-700">Exercise name / description
                 <input className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" value={draft.name} onChange={(event) => {
@@ -1533,16 +1538,9 @@ export default function WorkoutsPage() {
                   <p className="text-xs text-slate-500">Exercise will be scheduled for {dayLabels[selectedDay]}.</p>
                 )}
 
-                <div className="flex gap-2">
-                  <button type="button" onClick={closeAddExerciseModal} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700">Cancel</button>
-                  <button type="button" onClick={saveExerciseForSelectedDays} className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-400">Save Exercise</button>
-                </div>
               </div>
             </form>
-
-            {message ? <p className="mt-3 text-sm text-slate-600">{message}</p> : null}
-          </div>
-        </div>
+        </AppModal>
       ) : null}
       {popupSubmissionNotice ? (
         <div className="fixed inset-x-4 bottom-4 z-[60] mx-auto w-full max-w-sm rounded-xl bg-slate-900 px-4 py-3 text-center text-sm font-medium text-white shadow-lg">

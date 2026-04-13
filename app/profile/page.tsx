@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { AppHeaderNav } from "@/components/AppHeaderNav";
+import { AppModal } from "@/components/AppModal";
 import {
   TARGETS_UPDATED_EVENT,
   getDailyMacroTargets,
@@ -1108,22 +1109,18 @@ export default function ProfilePage() {
       </section>
 
       {isWeightModalOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-0 sm:p-4">
-          <div className="mobile-popup-panel max-h-[86vh] w-full max-w-md overflow-y-auto rounded-2xl bg-white p-4 shadow-xl ring-1 ring-slate-200 sm:p-6">
-            <div className="flex items-start justify-between gap-3">
-              <h3 className="text-lg font-semibold text-slate-900">
-                Register Weight Progress
-              </h3>
-              <button
-                type="button"
-                onClick={() => setIsWeightModalOpen(false)}
-                className="rounded-md p-1 text-slate-400 hover:bg-slate-100"
-                aria-label="Close register weight popup"
-              >
-                ✕
-              </button>
+        <AppModal
+          title="Register Weight Progress"
+          onClose={() => setIsWeightModalOpen(false)}
+          maxWidthClassName="sm:max-w-md"
+          closeAriaLabel="Close register weight popup"
+          footer={(
+            <div className="flex justify-end gap-2">
+              <button type="button" onClick={() => setIsWeightModalOpen(false)} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700">Cancel</button>
+              <button type="button" onClick={saveWeightProgress} className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-400">Save Weight Progress</button>
             </div>
-
+          )}
+        >
             <p className="mt-2 text-sm text-slate-600">
               Previous value:{" "}
               <span className="font-semibold text-slate-900">
@@ -1181,43 +1178,22 @@ export default function ProfilePage() {
               </div>
             </div>
 
-            <div className="mt-5 flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setIsWeightModalOpen(false)}
-                className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={saveWeightProgress}
-                className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-400"
-              >
-                Save Weight Progress
-              </button>
-            </div>
-          </div>
-        </div>
+        </AppModal>
       ) : null}
 
       {isWaistModalOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-0 sm:p-4">
-          <div className="mobile-popup-panel max-h-[86vh] w-full max-w-md overflow-y-auto rounded-2xl bg-white p-4 shadow-xl ring-1 ring-slate-200 sm:p-6">
-            <div className="flex items-start justify-between gap-3">
-              <h3 className="text-lg font-semibold text-slate-900">
-                Register Waist Progress
-              </h3>
-              <button
-                type="button"
-                onClick={() => setIsWaistModalOpen(false)}
-                className="rounded-md p-1 text-slate-400 hover:bg-slate-100"
-                aria-label="Close register waist popup"
-              >
-                ✕
-              </button>
+        <AppModal
+          title="Register Waist Progress"
+          onClose={() => setIsWaistModalOpen(false)}
+          maxWidthClassName="sm:max-w-md"
+          closeAriaLabel="Close register waist popup"
+          footer={(
+            <div className="flex justify-end gap-2">
+              <button type="button" onClick={() => setIsWaistModalOpen(false)} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700">Cancel</button>
+              <button type="button" onClick={saveWaistProgress} className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-400">Save Waist Progress</button>
             </div>
-
+          )}
+        >
             <p className="mt-2 text-sm text-slate-600">
               Previous value:{" "}
               <span className="font-semibold text-slate-900">
@@ -1275,52 +1251,34 @@ export default function ProfilePage() {
               </div>
             </div>
 
-            <div className="mt-5 flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setIsWaistModalOpen(false)}
-                className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={saveWaistProgress}
-                className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-400"
-              >
-                Save Waist Progress
-              </button>
-            </div>
-          </div>
-        </div>
+        </AppModal>
       ) : null}
 
       {saveConfirmation ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-0 sm:p-4">
-          <div className="mobile-popup-panel max-h-[86vh] w-full max-w-md overflow-y-auto rounded-2xl bg-white p-4 shadow-xl ring-1 ring-slate-200 sm:p-6">
-            <h3 className="text-lg font-semibold text-slate-900">Profile saved</h3>
-            <p className="mt-2 text-sm text-slate-600">{saveConfirmation}</p>
-            <div className="mt-5 flex justify-end">
-              <button
-                type="button"
-                onClick={() => setSaveConfirmation(null)}
-                className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-400"
-              >
-                OK
-              </button>
+        <AppModal
+          title="Profile saved"
+          onClose={() => setSaveConfirmation(null)}
+          maxWidthClassName="sm:max-w-md"
+          footer={(
+            <div className="flex justify-end">
+              <button type="button" onClick={() => setSaveConfirmation(null)} className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-400">OK</button>
             </div>
-          </div>
-        </div>
+          )}
+        >
+            <p className="mt-2 text-sm text-slate-600">{saveConfirmation}</p>
+        </AppModal>
       ) : null}
 
       {showUnsavedChangesPopup ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-0 sm:p-4">
-          <div className="mobile-popup-panel max-h-[86vh] w-full max-w-md overflow-y-auto rounded-2xl bg-white p-4 shadow-xl ring-1 ring-slate-200 sm:p-6">
-            <h3 className="text-lg font-semibold text-slate-900">Unsaved changes</h3>
-            <p className="mt-2 text-sm text-slate-600">
-              You have unsaved profile changes. Save before leaving this page?
-            </p>
-            <div className="mt-5 flex justify-end gap-2">
+        <AppModal
+          title="Unsaved changes"
+          onClose={() => {
+            setShowUnsavedChangesPopup(false);
+            setPendingNavigationUrl(null);
+          }}
+          maxWidthClassName="sm:max-w-md"
+          footer={(
+            <div className="flex justify-end gap-2">
               <button
                 type="button"
                 onClick={() => {
@@ -1331,23 +1289,15 @@ export default function ProfilePage() {
               >
                 Stay
               </button>
-              <button
-                type="button"
-                onClick={discardAndNavigate}
-                className="rounded-xl border border-rose-200 px-4 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-50"
-              >
-                Discard & leave
-              </button>
-              <button
-                type="button"
-                onClick={saveAndNavigate}
-                className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-400"
-              >
-                Save & leave
-              </button>
+              <button type="button" onClick={discardAndNavigate} className="rounded-xl border border-rose-200 px-4 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-50">Discard & leave</button>
+              <button type="button" onClick={saveAndNavigate} className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-400">Save & leave</button>
             </div>
-          </div>
-        </div>
+          )}
+        >
+            <p className="mt-2 text-sm text-slate-600">
+              You have unsaved profile changes. Save before leaving this page?
+            </p>
+        </AppModal>
       ) : null}
 
       {message ? <p className="text-sm text-slate-600">{message}</p> : null}

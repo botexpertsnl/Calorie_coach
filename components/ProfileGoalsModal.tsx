@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { DailyStepsRange, Gender, ProfileInput, TrainingExperience } from "@/lib/types";
+import { AppModal } from "@/components/AppModal";
 
 type ProfileGoalsModalProps = {
   isOpen: boolean;
@@ -47,21 +48,25 @@ export function ProfileGoalsModal({ isOpen, initialProfile, onClose, onSave }: P
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-0 sm:p-4">
-      <div className="mobile-popup-panel w-full max-w-3xl rounded-2xl bg-white p-6 shadow-xl">
-        <div className="mb-5 flex items-center justify-between">
-          <h2 className="text-2xl font-semibold text-slate-900">User Profile &amp; Goals</h2>
+    <AppModal
+      title="User Profile & Goals"
+      onClose={onClose}
+      maxWidthClassName="sm:max-w-3xl"
+      closeAriaLabel="Close profile modal"
+      footer={(
+        <div className="flex justify-end">
           <button
             type="button"
-            onClick={onClose}
-            className="rounded-lg p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
-            aria-label="Close profile modal"
+            onClick={handleSave}
+            disabled={isSaving}
+            className="rounded-xl bg-emerald-500 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-400 disabled:opacity-60"
           >
-            ✕
+            {isSaving ? "Calculating..." : "Save &amp; Calculate Goals"}
           </button>
         </div>
-
-        <div className="grid gap-4 md:grid-cols-2">
+      )}
+    >
+      <div className="grid gap-4 md:grid-cols-2">
           <label className="text-sm text-slate-700">
             Height (cm)
             <input
@@ -159,19 +164,7 @@ export function ProfileGoalsModal({ isOpen, initialProfile, onClose, onSave }: P
               onChange={(event) => setField("goalText", event.target.value)}
             />
           </label>
-        </div>
-
-        <div className="mt-6 flex justify-end">
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={isSaving}
-            className="rounded-xl bg-emerald-500 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-400 disabled:opacity-60"
-          >
-            {isSaving ? "Calculating..." : "Save &amp; Calculate Goals"}
-          </button>
-        </div>
       </div>
-    </div>
+    </AppModal>
   );
 }

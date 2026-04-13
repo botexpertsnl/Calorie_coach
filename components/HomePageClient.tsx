@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { AppHeaderNav } from "@/components/AppHeaderNav";
 import { QuickMealsModal } from "@/components/QuickMealsModal";
 import { Spinner } from "@/components/Spinner";
+import { AppModal } from "@/components/AppModal";
 import { TARGETS_UPDATED_EVENT } from "@/lib/daily-targets";
 import { ALL_WEEKDAYS, applyDailyMealsForDate, getLocalDateKey, getMealsForDate, toCalorieResponseFromQuickMeal } from "@/lib/meals";
 import { getCurrentUserId, loadDailyTargets, loadMeals, loadQuickMeals, loadUserSettings, replaceMeals, replaceQuickMeals } from "@/lib/supabase/user-data";
@@ -636,22 +637,33 @@ export function HomePageClient() {
   return (
     <>
       {deleteMealId ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-0 sm:p-4">
-          <div className="mobile-popup-panel w-full max-w-md max-h-[86vh] overflow-y-auto rounded-2xl bg-white p-4 shadow-xl ring-1 ring-slate-200 sm:p-6">
-            <h3 className="text-lg font-semibold text-slate-900">Delete meal?</h3>
-            <p className="mt-2 text-sm text-slate-600">Are you sure you want to delete this meal?</p>
-            {mealPendingDelete ? <p className="mt-2 text-xs text-slate-500">{mealPendingDelete.text}</p> : null}
-            <div className="mt-5 flex justify-end gap-2">
+        <AppModal
+          title="Delete meal?"
+          onClose={() => setDeleteMealId(null)}
+          maxWidthClassName="sm:max-w-md"
+          footer={(
+            <div className="flex justify-end gap-2">
               <button type="button" onClick={() => setDeleteMealId(null)} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700">Cancel</button>
               <button type="button" onClick={confirmDeleteMeal} className="rounded-xl bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-500">Delete</button>
             </div>
-          </div>
-        </div>
+          )}
+        >
+            <p className="mt-2 text-sm text-slate-600">Are you sure you want to delete this meal?</p>
+            {mealPendingDelete ? <p className="mt-2 text-xs text-slate-500">{mealPendingDelete.text}</p> : null}
+        </AppModal>
       ) : null}
       {editMealId ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-0 sm:p-4">
-          <div className="mobile-popup-panel w-full max-w-lg max-h-[86vh] overflow-y-auto rounded-2xl bg-white p-4 shadow-xl ring-1 ring-slate-200 sm:p-6">
-            <h3 className="text-lg font-semibold text-slate-900">Edit meal</h3>
+        <AppModal
+          title="Edit meal"
+          onClose={() => setEditMealId(null)}
+          maxWidthClassName="sm:max-w-lg"
+          footer={(
+            <div className="flex justify-end gap-2">
+              <button type="button" onClick={() => setEditMealId(null)} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700">Cancel</button>
+              <button type="button" onClick={saveEditedMeal} className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-400">Save changes</button>
+            </div>
+          )}
+        >
             <div className="mt-4 space-y-3">
               <label className="block text-sm text-slate-700">Meal description
                 <input type="text" value={editMealText} onChange={(event) => setEditMealText(event.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2" />
@@ -701,22 +713,23 @@ export function HomePageClient() {
                 </label>
               </div>
             </div>
-            <div className="mt-5 flex justify-end gap-2">
-              <button type="button" onClick={() => setEditMealId(null)} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700">Cancel</button>
-              <button type="button" onClick={saveEditedMeal} className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-400">Save changes</button>
-            </div>
-          </div>
-        </div>
+        </AppModal>
       ) : null}
 
 
       {analysisModalOpen && analysisResult ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-0 sm:p-4">
-          <div className="mobile-popup-panel h-full w-full max-w-none overflow-y-auto rounded-none bg-white p-4 shadow-xl ring-0 sm:h-auto sm:max-w-2xl sm:max-h-[86vh] sm:rounded-2xl sm:ring-1 sm:ring-slate-200 sm:p-6">
-            <div className="flex items-start justify-between gap-3">
-              <h3 className="text-lg font-semibold text-slate-900">Analyzed meal macros</h3>
-              <button type="button" onClick={() => { setAnalysisModalOpen(false); setAnalysisMeta(null); setAnalysisResult(null); }} className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700" aria-label="Close analyzed meal modal">✕</button>
+        <AppModal
+          title="Analyzed meal macros"
+          onClose={() => { setAnalysisModalOpen(false); setAnalysisMeta(null); setAnalysisResult(null); }}
+          closeAriaLabel="Close analyzed meal modal"
+          maxWidthClassName="sm:max-w-2xl"
+          footer={(
+            <div className="flex justify-end gap-2">
+              <button type="button" onClick={() => { setAnalysisModalOpen(false); setAnalysisMeta(null); setAnalysisResult(null); }} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700">Cancel</button>
+              <button type="button" onClick={addAnalyzedMealFromModal} className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-400">Add meal</button>
             </div>
+          )}
+        >
             <p className="mt-1 text-sm text-slate-500">Review and edit macros before adding this meal.</p>
 
             <div className="mt-4 grid gap-3 md:grid-cols-2">
@@ -767,12 +780,7 @@ export function HomePageClient() {
 
             {analysisMeta ? <p className="mt-3 text-xs text-slate-500">Meal: {analysisMeta.text}</p> : null}
 
-            <div className="mt-5 flex justify-end gap-2">
-              <button type="button" onClick={() => { setAnalysisModalOpen(false); setAnalysisMeta(null); setAnalysisResult(null); }} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700">Cancel</button>
-              <button type="button" onClick={addAnalyzedMealFromModal} className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-400">Add meal</button>
-            </div>
-          </div>
-        </div>
+        </AppModal>
       ) : null}
       {popupNotice ? (
         <div className="fixed inset-x-4 bottom-4 z-[60] mx-auto w-full max-w-sm rounded-xl bg-slate-900 px-4 py-3 text-center text-sm font-medium text-white shadow-lg">
