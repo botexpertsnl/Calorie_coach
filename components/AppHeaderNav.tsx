@@ -4,13 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { logoutAction } from "@/app/auth/actions";
-
-const navItems = [
-  { label: "Meals", href: "/" },
-  { label: "Workouts", href: "/workouts" },
-  { label: "Insights", href: "/insights" },
-  { label: "Profile", href: "/profile" }
-];
+import { MAIN_NAV_ITEMS } from "@/lib/main-navigation";
 
 export function AppHeaderNav() {
   const pathname = usePathname();
@@ -37,7 +31,7 @@ export function AppHeaderNav() {
         </button>
 
         <nav className="hidden flex-wrap items-center gap-2 md:flex">
-          {navItems.map((item) => {
+          {MAIN_NAV_ITEMS.map((item) => {
             const isActive = pathname === item.href;
             return (
               <Link
@@ -89,7 +83,7 @@ export function AppHeaderNav() {
           </div>
 
           <nav className="space-y-2">
-            {navItems.map((item) => {
+            {MAIN_NAV_ITEMS.map((item) => {
               const isActive = pathname === item.href;
               return (
                 <Link

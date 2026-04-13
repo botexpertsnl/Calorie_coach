@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { AppHeaderNav } from "@/components/AppHeaderNav";
+import { MobileSwipePage } from "@/components/MobileSwipePage";
 import { QuickMealsModal } from "@/components/QuickMealsModal";
 import { Spinner } from "@/components/Spinner";
 import { AppModal } from "@/components/AppModal";
@@ -798,7 +799,7 @@ export function HomePageClient() {
         onDeleteQuickMeal={handleDeleteQuickMeal}
       />
 
-      <main className="mx-auto w-full max-w-6xl space-y-6 px-4 py-8 md:px-8">
+      <MobileSwipePage className="mx-auto w-full max-w-6xl space-y-6 px-4 py-8 md:px-8">
         <AppHeaderNav />
 
         {confirmation ? (
@@ -883,7 +884,7 @@ export function HomePageClient() {
             </ul>
           )}
         </section>
-      </main>
+      </MobileSwipePage>
     </>
   );
 }
