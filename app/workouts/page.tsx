@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { AppHeaderNav } from "@/components/AppHeaderNav";
+import { MobileSwipePage } from "@/components/MobileSwipePage";
 import { AppModal } from "@/components/AppModal";
 import { recalculateAndPersistTodayTargets } from "@/lib/daily-targets";
 import { getCurrentUserId, loadProfile, loadWorkoutExceptions, loadWorkoutPlan, replaceWorkoutExceptions, saveDailyTargets, saveWorkoutPlan } from "@/lib/supabase/user-data";
@@ -1548,7 +1549,7 @@ export default function WorkoutsPage() {
         </div>
       ) : null}
 
-      <main className="mx-auto w-full max-w-6xl space-y-6 px-4 py-8 md:px-8">
+      <MobileSwipePage className="mx-auto w-full max-w-6xl space-y-6 px-4 py-8 md:px-8">
         <AppHeaderNav />
 
         <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
@@ -1735,7 +1736,7 @@ export default function WorkoutsPage() {
             </div>
           </div>
         </section>
-      </main>
+      </MobileSwipePage>
     </>
   );
 }

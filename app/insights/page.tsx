@@ -2,6 +2,7 @@
 
 import { ReactNode, useEffect, useMemo, useState } from "react";
 import { AppHeaderNav } from "@/components/AppHeaderNav";
+import { MobileSwipePage } from "@/components/MobileSwipePage";
 import { TARGETS_UPDATED_EVENT, getDailyMacroTargets } from "@/lib/daily-targets";
 import { getCurrentUserId, loadBodyProgress, loadDailyTargets, loadMeals, loadProfile, loadUserSettings, loadWorkoutExceptions, loadWorkoutPlan } from "@/lib/supabase/user-data";
 import { buildEffectiveWorkoutInstances, buildWorkoutAdjustedSummary, getDateKeysInRange } from "@/lib/workout-execution";
@@ -791,7 +792,7 @@ export default function InsightsPage() {
   }, [workoutExceptions, workouts]);
 
   return (
-    <main className="mx-auto w-full max-w-6xl space-y-6 px-4 py-8 md:px-8">
+    <MobileSwipePage className="mx-auto w-full max-w-6xl space-y-6 px-4 py-8 md:px-8">
       <AppHeaderNav />
 
       <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
@@ -970,7 +971,7 @@ export default function InsightsPage() {
           </div>
         </div>
       </ChartCard>
-    </main>
+    </MobileSwipePage>
   );
 }
 

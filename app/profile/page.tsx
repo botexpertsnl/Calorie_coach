@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { AppHeaderNav } from "@/components/AppHeaderNav";
+import { MobileSwipePage } from "@/components/MobileSwipePage";
 import { AppModal } from "@/components/AppModal";
 import {
   TARGETS_UPDATED_EVENT,
@@ -718,7 +719,7 @@ export default function ProfilePage() {
   }
 
   return (
-    <main className="mx-auto w-full max-w-6xl space-y-6 px-4 py-8 md:px-8">
+    <MobileSwipePage className="mx-auto w-full max-w-6xl space-y-6 px-4 py-8 md:px-8">
       <AppHeaderNav />
 
       <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
@@ -1301,6 +1302,6 @@ export default function ProfilePage() {
       ) : null}
 
       {message ? <p className="text-sm text-slate-600">{message}</p> : null}
-    </main>
+    </MobileSwipePage>
   );
 }
