@@ -171,6 +171,37 @@ function getMetricUnit(metricKind: ExerciseMetricKind) {
   return "min";
 }
 
+function getExerciseCurrentRecordedAt(exercise: WorkoutExercise) {
+  return exercise.updatedAt || exercise.createdAt || new Date(0).toISOString();
+}
+
+function toSortableTimestamp(value: string, fallback: number) {
+  const timestamp = new Date(value).getTime();
+  return Number.isFinite(timestamp) ? timestamp : fallback;
+}
+
+function getSortedExerciseHistoryValues(exercise: WorkoutExercise, metricKind: ExerciseMetricKind): ExerciseHistoryValue[] {
+  const history = Array.isArray(exercise.progressHistory) ? exercise.progressHistory : [];
+
+  return history
+    .map((entry, index) => {
+      const recordedAt = entry.recordedAt || exercise.createdAt || new Date(0).toISOString();
+      return {
+        recordedAt,
+        value: getMetricValue(exercise, metricKind, entry),
+        index
+      };
+    })
+    .filter((item) => Number.isFinite(item.value))
+    .sort((a, b) => {
+      const aTs = toSortableTimestamp(a.recordedAt, a.index);
+      const bTs = toSortableTimestamp(b.recordedAt, b.index);
+      if (aTs !== bTs) return bTs - aTs;
+      return b.index - a.index;
+    })
+    .map(({ recordedAt, value }) => ({ recordedAt, value }));
+}
+
 function getRangeWindow(rangePreset: RangePreset, customStart: string, customEnd: string) {
   const end = rangePreset === "custom" && customEnd ? new Date(customEnd) : new Date();
   if (rangePreset !== "custom") {
@@ -749,31 +780,21 @@ export default function InsightsPage() {
     const byExercise = new Map<string, ExerciseProgressRow>();
     const pushExercise = (exercise: WorkoutExercise) => {
       const metricKind = chooseExerciseMetricKind(exercise);
-      const history = (Array.isArray(exercise.progressHistory) ? exercise.progressHistory : [])
-        .map((entry) => ({
-          recordedAt: entry.recordedAt || exercise.updatedAt || exercise.createdAt,
-          value: getMetricValue(exercise, metricKind, entry)
-        }))
-        .filter((item) => Number.isFinite(item.value)) as ExerciseHistoryValue[];
-
-      history.push({
-        recordedAt: exercise.updatedAt || exercise.createdAt,
-        value: getMetricValue(exercise, metricKind)
-      });
-
-      const sorted = history.sort((a, b) => new Date(b.recordedAt).getTime() - new Date(a.recordedAt).getTime());
-      const latest = sorted[0];
-      if (!latest) return;
+      const sortedHistory = getSortedExerciseHistoryValues(exercise, metricKind);
+      const latestDate = getExerciseCurrentRecordedAt(exercise);
+      const latestValue = getMetricValue(exercise, metricKind);
 
       const existing = byExercise.get(exercise.id);
-      if (existing && new Date(existing.latestDate).getTime() >= new Date(latest.recordedAt).getTime()) return;
+      const existingTs = toSortableTimestamp(existing?.latestDate ?? "", -1);
+      const currentTs = toSortableTimestamp(latestDate, -1);
+      if (existing && existingTs >= currentTs) return;
 
       byExercise.set(exercise.id, {
         id: exercise.id,
         title: exercise.name,
-        latestDate: latest.recordedAt,
-        latestValue: latest.value,
-        previousValues: sorted.slice(1, 4).map((item) => item.value),
+        latestDate,
+        latestValue,
+        previousValues: sortedHistory.slice(0, 3).map((item) => item.value),
         unit: getMetricUnit(metricKind)
       });
     };
