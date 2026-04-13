@@ -44,6 +44,16 @@ type ExerciseRecord = {
 type TrendPoint = { x: string; y: number; tooltipLabel?: string };
 type MultiSeriesPoint = { x: string; y: number; tooltipLabel?: string };
 type MultiSeries = { key: string; label: string; color: string; points: MultiSeriesPoint[] };
+type ExerciseMetricKind = "weight" | "reps" | "duration";
+type ExerciseHistoryValue = { recordedAt: string; value: number };
+type ExerciseProgressRow = {
+  id: string;
+  title: string;
+  latestDate: string;
+  latestValue: number;
+  previousValues: number[];
+  unit: string;
+};
 
 const rangeOptions: Array<{ value: RangePreset; label: string }> = [
   { value: "7d", label: "Last 7 Days" },
@@ -133,6 +143,32 @@ function formatDateOnly(value: string) {
   const date = new Date(`${value}T12:00:00`);
   if (Number.isNaN(date.getTime())) return value;
   return new Intl.DateTimeFormat("en-GB", { year: "numeric", month: "short", day: "2-digit" }).format(date);
+}
+
+function chooseExerciseMetricKind(exercise: WorkoutExercise): ExerciseMetricKind {
+  if (exercise.type === "cardio") return "duration";
+  const history = Array.isArray(exercise.progressHistory) ? exercise.progressHistory : [];
+  const hasWeight = history.some((entry) => (entry.weight ?? 0) > 0) || ("weight" in exercise && (exercise.weight ?? 0) > 0);
+  if (hasWeight) return "weight";
+  const hasReps = history.some((entry) => (entry.reps ?? 0) > 0) || ("reps" in exercise && (exercise.reps ?? 0) > 0);
+  if (hasReps) return "reps";
+  return "duration";
+}
+
+function getMetricValue(exercise: WorkoutExercise, metricKind: ExerciseMetricKind, entry?: { weight?: number; reps?: number; durationMinutes?: number }) {
+  if (metricKind === "weight") {
+    return entry?.weight ?? ("weight" in exercise ? exercise.weight ?? 0 : 0);
+  }
+  if (metricKind === "reps") {
+    return entry?.reps ?? ("reps" in exercise ? exercise.reps ?? 0 : 0);
+  }
+  return entry?.durationMinutes ?? ("durationMinutes" in exercise ? exercise.durationMinutes : 0);
+}
+
+function getMetricUnit(metricKind: ExerciseMetricKind) {
+  if (metricKind === "weight") return "KG";
+  if (metricKind === "reps") return "reps";
+  return "min";
 }
 
 function getRangeWindow(rangePreset: RangePreset, customStart: string, customEnd: string) {
@@ -707,6 +743,53 @@ export default function InsightsPage() {
     return tips.slice(0, 5);
   }, [exerciseProgressSeries, profile, summary, trainingBalanceBars, waistSeries, weightSeries]);
 
+  const exerciseProgressTableRows = useMemo<ExerciseProgressRow[]>(() => {
+    if (!workouts) return [];
+
+    const byExercise = new Map<string, ExerciseProgressRow>();
+    const pushExercise = (exercise: WorkoutExercise) => {
+      const metricKind = chooseExerciseMetricKind(exercise);
+      const history = (Array.isArray(exercise.progressHistory) ? exercise.progressHistory : [])
+        .map((entry) => ({
+          recordedAt: entry.recordedAt || exercise.updatedAt || exercise.createdAt,
+          value: getMetricValue(exercise, metricKind, entry)
+        }))
+        .filter((item) => Number.isFinite(item.value)) as ExerciseHistoryValue[];
+
+      history.push({
+        recordedAt: exercise.updatedAt || exercise.createdAt,
+        value: getMetricValue(exercise, metricKind)
+      });
+
+      const sorted = history.sort((a, b) => new Date(b.recordedAt).getTime() - new Date(a.recordedAt).getTime());
+      const latest = sorted[0];
+      if (!latest) return;
+
+      const existing = byExercise.get(exercise.id);
+      if (existing && new Date(existing.latestDate).getTime() >= new Date(latest.recordedAt).getTime()) return;
+
+      byExercise.set(exercise.id, {
+        id: exercise.id,
+        title: exercise.name,
+        latestDate: latest.recordedAt,
+        latestValue: latest.value,
+        previousValues: sorted.slice(1, 4).map((item) => item.value),
+        unit: getMetricUnit(metricKind)
+      });
+    };
+
+    (Object.values(workouts) as Array<{ exercises: WorkoutExercise[] }>).forEach((dayLog) => {
+      dayLog.exercises.forEach(pushExercise);
+    });
+
+    workoutExceptions.forEach((item) => {
+      if (item.extraWorkoutData) pushExercise(item.extraWorkoutData);
+      if (item.replacementWorkoutData) pushExercise(item.replacementWorkoutData);
+    });
+
+    return Array.from(byExercise.values()).sort((a, b) => a.title.localeCompare(b.title));
+  }, [workoutExceptions, workouts]);
+
   return (
     <main className="mx-auto w-full max-w-6xl space-y-6 px-4 py-8 md:px-8">
       <AppHeaderNav />
@@ -812,6 +895,55 @@ export default function InsightsPage() {
             }}
           />
           <p className="mt-3 text-xs text-slate-500">Y-axis uses workload score derived from training volume, sets, reps, weight, and duration over time.</p>
+        </div>
+
+        <div className="mt-4 relative rounded-xl border border-slate-200">
+          <div className="overflow-x-auto px-1 py-1 md:px-0 md:py-0">
+            <table className="min-w-[920px] divide-y divide-slate-200 text-sm md:min-w-full">
+              <thead className="bg-slate-50">
+                <tr>
+                  <th className="px-3 py-2 text-left font-semibold text-slate-700">Exercise</th>
+                  <th className="px-3 py-2 text-left font-semibold text-slate-700">Latest change</th>
+                  <th className="px-3 py-2 text-left font-semibold text-slate-700">Latest value</th>
+                  <th className="px-3 py-2 text-left font-semibold text-slate-700">Previous</th>
+                  <th className="px-3 py-2 text-left font-semibold text-slate-700">Earlier</th>
+                  <th className="px-3 py-2 text-left font-semibold text-slate-700">Older</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {exerciseProgressTableRows.length ? (
+                  exerciseProgressTableRows.map((row) => {
+                    const previous = row.previousValues[0];
+                    const diff = typeof previous === "number" ? row.latestValue - previous : null;
+                    const diffText = diff === null || diff === 0 ? "" : ` (${diff > 0 ? "+" : ""}${Math.round(diff * 10) / 10})`;
+                    const formatValue = (value?: number) => (typeof value === "number" ? `${Math.round(value * 10) / 10} ${row.unit}` : "–");
+
+                    return (
+                      <tr key={row.id} className="hover:bg-slate-50/70">
+                        <td className="px-3 py-2 font-medium text-slate-700">{row.title}</td>
+                        <td className="px-3 py-2 text-slate-600">{formatDateOnly(toDateKey(row.latestDate))}</td>
+                        <td className="px-3 py-2 font-medium text-slate-800 whitespace-nowrap">
+                          {formatValue(row.latestValue)}
+                          <span className={diff === null || diff === 0 ? "text-slate-500" : diff > 0 ? "text-emerald-600" : "text-rose-600"}>
+                            {diffText}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2 text-slate-600 whitespace-nowrap">{formatValue(row.previousValues[0])}</td>
+                        <td className="px-3 py-2 text-slate-600 whitespace-nowrap">{formatValue(row.previousValues[1])}</td>
+                        <td className="px-3 py-2 text-slate-600 whitespace-nowrap">{formatValue(row.previousValues[2])}</td>
+                      </tr>
+                    );
+                  })
+                ) : (
+                  <tr>
+                    <td colSpan={6} className="px-3 py-5 text-center text-sm text-slate-500">
+                      No exercise progress available yet.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       </ChartCard>
 
